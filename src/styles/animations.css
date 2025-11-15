@@ -1,0 +1,115 @@
+/* 自定义动画 */
+@keyframes twinkle {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { 
+    box-shadow: 0 0 20px rgba(255, 215, 0, 0.4);
+  }
+  50% { 
+    box-shadow: 0 0 40px rgba(255, 215, 0, 0.8);
+  }
+}
+
+@keyframes shooting-star {
+  0% {
+    transform: translateX(-100px) translateY(100px);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(100px) translateY(-100px);
+    opacity: 0;
+  }
+}
+
+/* 自定义类 */
+.animate-twinkle {
+  animation: twinkle 2s ease-in-out infinite;
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+.animate-shooting-star {
+  animation: shooting-star 3s linear infinite;
+}
+
+/* 星空背景渐变 */
+.starry-gradient {
+  background: linear-gradient(
+    to bottom,
+    #0f1419 0%,
+    #1a1a2e 25%,
+    #16213e 50%,
+    #0f1419 75%,
+    #000000 100%
+  );
+}
+
+/* 玻璃拟态效果 */
+.glass-effect {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* 星星闪烁效果 */
+.star-twinkle {
+  position: relative;
+}
+
+.star-twinkle::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 2px;
+  height: 2px;
+  background: white;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  animation: twinkle 1.5s ease-in-out infinite;
+}
+
+/* 响应式字体大小 */
+@media (max-width: 640px) {
+  .text-responsive {
+    font-size: clamp(1rem, 4vw, 1.5rem);
+  }
+}
+
+/* 自定义滚动条 */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.5);
+}
