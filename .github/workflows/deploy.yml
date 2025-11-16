@@ -1,3 +1,5 @@
+# deploy.yml
+
 name: Deploy to GitHub Pages
 
 on:
@@ -35,11 +37,17 @@ jobs:
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
+      # ====================================================================
+      # ↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓ 这是我们修正的核心部分 ↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓
+      # ====================================================================
       - name: Build
         env:
-          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+          # 使用了正确的 `secrets.` 语法来引用 CloudBase 的环境变量
+          VITE_TCB_ENV_ID: ${{ secrets.VITE_TCB_ENV_ID }}
         run: pnpm run build
+      # ====================================================================
+      # ↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
+      # ====================================================================
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
