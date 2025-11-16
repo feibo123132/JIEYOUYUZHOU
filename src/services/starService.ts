@@ -1,9 +1,12 @@
-import { supabase, mockDatabase } from './supabase';
-import api from './api';
-import { isBackendReachable } from './connectivity';
-import { enqueue, flush } from '../utils/syncQueue';
-import tcbService, { isTcbReachable, tcbApp } from './tcb';
+// src/services/starService.ts (修改后的完整版，含追踪日志)
 
+import { supabase, mockDatabase } from './supabase';
+import { api } from './api';
+import { isBackendReachable } from './connectivity';
+import { enqueue } from '../utils/syncQueue'; // 移除了 flush 的导入，因为它未使用
+import { tcbService, isTcbReachable, tcbApp } from './tcb';
+
+// StarData 接口定义
 export interface StarData {
   id: string;
   user_id: string;
@@ -17,6 +20,7 @@ export interface StarData {
   created_at: string;
 }
 
+// UserData 接口定义
 export interface UserData {
   id: string;
   nickname: string;
@@ -25,26 +29,47 @@ export interface UserData {
 }
 
 // 用户服务
-export const userService = {
+const userService = {
   async createUser(nickname: string): Promise<UserData> {
+    // ↓↓↓↓↓↓ 追踪日志 #1: 函数入口 ↓↓↓↓↓↓
+    console.log('--- STAR_SERVICE: createUser called. Analyzing backend options...');
+
+    // 检查 Supabase (已知会跳过)
     if (supabase) {
+      console.log('--- STAR_SERVICE: Supabase client exists. Attempting to use Supabase...');
       const { data, error } = await supabase
         .from('users')
         .insert([{ nickname }])
         .select()
         .single();
-      
       if (error) throw error;
       return data;
     } else {
-      if (tcbApp && await isTcbReachable()) {
-        return tcbService.createUser(nickname);
+      // ↓↓↓↓↓↓ 追踪日志 #2: 检查 TCB ↓↓↓↓↓↓
+      console.log('--- STAR_SERVICE: Supabase client not found. Checking TCB backend. `tcbApp` object is:', tcbApp);
+      
+      if (tcbApp) {
+        const reachable = await isTcbReachable();
+        // ↓↓↓↓↓↓ 追踪日志 #3: TCB 可达性结果 ↓↓↓↓↓↓
+        console.log(`--- STAR_SERVICE: isTcbReachable() check returned: ${reachable}`);
+        
+        if (reachable) {
+          console.log('--- STAR_SERVICE: TCB is reachable. Calling tcbService.createUser...');
+          return tcbService.createUser(nickname);
+        }
       }
-      if (await isBackendReachable()) {
-        return api.createUser(nickname);
-      }
-      return mockDatabase.createUser(nickname);
     }
+
+    // ↓↓↓↓↓↓ 追踪日志 #4: 检查自定义后端 ↓↓↓↓↓↓
+    console.log('--- STAR_SERVICE: Checking custom REST backend...');
+    if (await isBackendReachable()) {
+      console.log('--- STAR_SERVICE: Custom REST backend is reachable! Using it.');
+      return api.createUser(nickname);
+    }
+    
+    // ↓↓↓↓↓↓ 追踪日志 #5: 最终的兜底方案 ↓↓↓↓↓↓
+    console.log('--- STAR_SERVICE: All remote backends failed. Falling back to mock database.');
+    return mockDatabase.createUser(nickname);
   },
 
   async getUser(userId: string): Promise<UserData | null> {
@@ -54,7 +79,6 @@ export const userService = {
         .select('*')
         .eq('id', userId)
         .single();
-      
       if (error) {
         console.error('获取用户失败:', error);
         return null;
@@ -63,11 +87,11 @@ export const userService = {
     } else {
       return mockDatabase.getUser(userId);
     }
-  }
+  },
 };
 
 // 星星服务
-export const starService = {
+const starService = {
   async createStar(
     userId: string,
     nickname: string,
@@ -82,14 +106,11 @@ export const starService = {
           position_x: position.x,
           position_y: position.y,
           color: options?.color,
-          message: options?.message
+          message: options?.message,
+          // userslinner(nickname) 似乎是特定语法，保持原样
         }])
-        .select(`
-          *,
-          users!inner(nickname)
-        `)
+        .select('*, users!inner(nickname)')
         .single();
-      
       if (error) throw error;
       return {
         ...data,
@@ -129,17 +150,12 @@ export const starService = {
     if (supabase) {
       const { data, error } = await supabase
         .from('stars')
-        .select(`
-          *,
-          users!inner(nickname)
-        `)
+        .select('*, users!inner(nickname)')
         .order('created_at', { ascending: false });
-      
       if (error) {
         console.error('获取星星失败:', error);
         return [];
       }
-      
       return data.map(star => ({
         ...star,
         nickname: star.users.nickname
@@ -159,18 +175,13 @@ export const starService = {
     if (supabase) {
       const { data, error } = await supabase
         .from('stars')
-        .select(`
-          *,
-          users!inner(nickname)
-        `)
+        .select('*, users!inner(nickname)')
         .eq('user_id', userId)
         .order('created_at', { ascending: false });
-      
       if (error) {
         console.error('获取用户星星失败:', error);
         return [];
       }
-      
       return data.map(star => ({
         ...star,
         nickname: star.users.nickname
@@ -187,6 +198,7 @@ export const starService = {
       return await mockDatabase.getUserStars(userId) as StarData[];
     }
   },
+
   async deleteStar(starId: string): Promise<boolean> {
     if (supabase) {
       const { error } = await supabase.from('stars').delete().eq('id', starId);

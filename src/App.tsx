@@ -1,14 +1,16 @@
 import React, { useState } from 'react';
 import { Toaster, toast } from 'sonner';
-import useAppStore from './store/appStore';
+import { useAppStore } from './store/appStore';
 import WelcomeScreen from './components/Welcome/WelcomeScreen';
 import NicknameInput from './components/Welcome/NicknameInput';
 import StarrySky from './components/StarrySky/StarrySky';
 import StarryCanvas from './components/StarrySky/StarryCanvas';
-import { userService } from './services/starService';
+import userService from './services/starService'; // 注意：您这里导入的是 starService，我将保持一致
 
 function App() {
+  // ↓↓↓↓↓↓ 诊断日志 #1: 检查环境变量 ↓↓↓↓↓↓
   console.log('--- 诊断信息 --- 我拿到的 TCB Env ID 是:', import.meta.env.VITE_TCB_ENV_ID);
+
   const { currentView, setCurrentView, setUser, user } = useAppStore();
   const [isLoading, setIsLoading] = useState(false);
 
@@ -17,7 +19,7 @@ function App() {
     if (user) {
       setCurrentView('starry-sky');
     } else {
-      toast.info('请先输入你的别称');
+      toast.info('请输入你的别称');
       const el = document.getElementById('nickname-input');
       if (el) {
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -27,19 +29,23 @@ function App() {
 
   // 处理昵称提交
   const handleNicknameSubmit = async (nickname: string) => {
+    // ↓↓↓↓↓↓ 追踪日志 #2: 确认函数被触发 ↓↓↓↓↓↓
+    console.log('1. `handleNicknameSubmit` 已触发，准备创建用户...');
     setIsLoading(true);
-    
+
     try {
       // 使用用户服务创建用户
+      // ↓↓↓↓↓↓ 追踪日志 #3: 确认即将调用服务 ↓↓↓↓↓↓
+      console.log('2. 即将调用 `userService.createUser`...');
       const userData = await userService.createUser(nickname);
-      
+
       setUser({
         id: userData.id,
         nickname: userData.nickname,
         isAuthenticated: false
       });
       setCurrentView('starry-sky');
-      
+
     } catch (error) {
       console.error('创建用户失败:', error);
     } finally {
@@ -56,26 +62,26 @@ function App() {
     <div className="min-h-screen bg-gradient-to-b from-gray-900 via-purple-900 to-indigo-900 relative overflow-hidden">
       {/* 3D星空背景 */}
       <StarryCanvas />
-      
+
       {/* 主要内容 */}
       <div className="relative z-10">
         {currentView === 'welcome' && (
           <div className="min-h-screen flex flex-col items-center justify-center">
             <WelcomeScreen onEnter={handleWelcomeEnter} />
-            
+
             {/* 昵称输入区域 */}
             <div id="nickname-input" className="mt-8 w-full max-w-md px-4">
               <NicknameInput 
-                onSubmit={handleNicknameSubmit} 
+                onSubmit={handleNicknameSubmit}
                 isLoading={isLoading}
               />
             </div>
           </div>
         )}
-        
+
         {currentView === 'starry-sky' && user && (
-          <StarrySky 
-            userNickname={user.nickname} 
+          <StarrySky
+            userNickname={user.nickname}
             userId={user.id}
             onBack={handleBackToWelcome}
           />
@@ -83,7 +89,7 @@ function App() {
       </div>
       
       {/* 通知组件 */}
-      <Toaster 
+      <Toaster
         position="top-center"
         toastOptions={{
           duration: 3000,
