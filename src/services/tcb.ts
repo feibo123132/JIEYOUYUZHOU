@@ -1,4 +1,4 @@
-// src/services/tcb.ts (修改后的完整版)
+// src/services/tcb.ts (最终修正版，可直接复制)
 
 import cloudbase from '@cloudbase/js-sdk';
 
@@ -12,64 +12,62 @@ export let tcbDb: any = null;
 
 // 3. 只有在 envId 存在时，才尝试初始化
 if (envId) {
-  // ====================================================================
-  // ↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓ 这是我们添加的核心诊断逻辑 ↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓
-  // ====================================================================
   try {
-    // 在尝试初始化前，先打印一次我们拿到的值
     console.log(`>>> 准备初始化 TCB SDK，使用的 envId 是: "${envId}"`);
-
-    // 执行初始化
     tcbApp = cloudbase.init({
       env: envId,
     });
-
-    // 初始化认证和数据库实例
     tcbAuth = tcbApp.auth({ persistence: 'local' });
     tcbDb = tcbApp.database();
-
-    // 如果成功，打印成功信息
     console.log('>>> TCB SDK 初始化成功！实例已创建。');
-
   } catch (error) {
-    // 如果失败，将错误用 console.error 打印出来，这样会是红色的
     console.error('>>> 致命错误：TCB SDK 初始化失败！原因:', error);
-    
-    // 确保在失败时，所有实例都为 null
     tcbApp = null;
     tcbAuth = null;
     tcbDb = null;
   }
-  // ====================================================================
-  // ↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
-  // ====================================================================
 } else {
-  // 如果连 envId 都没有，也打印一个日志
   console.warn('>>> 警告：未找到 VITE_TCB_ENV_ID 环境变量，无法初始化 TCB SDK。');
 }
 
-
-// --- 后续的业务逻辑代码保持不变 ---
-
+// 确保登录状态的函数
 export const ensureSignIn = async () => {
   if (!tcbAuth) return;
   const state = await (tcbAuth as any).getLoginState();
   if (!state) {
+    console.log('--- isTcbReachable: 用户未登录，正在尝试匿名登录...');
     await (tcbAuth as any).anonymousAuthProvider().signIn();
+    console.log('--- isTcbReachable: 匿名登录成功！');
+  } else {
+    console.log('--- isTcbReachable: 用户已登录。');
   }
 };
 
+// 检查 TCB 是否可达的函数 (已修正)
 export const isTcbReachable = async (): Promise<boolean> => {
-  if (!tcbDb) return false;
+  if (!tcbDb) {
+    console.log('--- isTcbReachable: 检查失败，因为 `tcbDb` 实例不存在。');
+    return false;
+  }
+  
   try {
+    console.log('--- isTcbReachable: 步骤 1/2 - 正在确保登录状态...');
     await ensureSignIn();
+    
+    console.log('--- isTcbReachable: 步骤 2/2 - 正在尝试从 "stars" 集合读取1条数据...');
     await (tcbDb as any).collection('stars').limit(1).get();
+    
+    console.log('--- isTcbReachable: 检查成功！TCB 可达。');
     return true;
-  } catch {
+
+  } catch (error) {
+    // ↓↓↓↓↓↓ [最终修正] 我们在这里让错误信息“开口说话” ↓↓↓↓↓↓
+    console.error('--- isTcbReachable: 检查失败！TCB 不可达。根本原因:', error);
     return false;
   }
 };
 
+// 核心服务逻辑 (保持不变)
 export const tcbService = {
   async createUser(nickname: string) {
     if (!tcbDb) throw new Error('tcb_unavailable');
