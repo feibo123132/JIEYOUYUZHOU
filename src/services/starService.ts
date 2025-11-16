@@ -1,4 +1,8 @@
 import { supabase, mockDatabase } from './supabase';
+import api from './api';
+import { isBackendReachable } from './connectivity';
+import { enqueue, flush } from '../utils/syncQueue';
+import tcbService, { isTcbReachable, tcbApp } from './tcb';
 
 export interface StarData {
   id: string;
@@ -33,7 +37,12 @@ export const userService = {
       if (error) throw error;
       return data;
     } else {
-      // 使用模拟数据库
+      if (tcbApp && await isTcbReachable()) {
+        return tcbService.createUser(nickname);
+      }
+      if (await isBackendReachable()) {
+        return api.createUser(nickname);
+      }
       return mockDatabase.createUser(nickname);
     }
   },
@@ -87,7 +96,32 @@ export const starService = {
         nickname: data.users.nickname
       };
     } else {
-      return mockDatabase.createStar(userId, nickname, position, options);
+      if (tcbApp && await isTcbReachable()) {
+        return tcbService.createStar({
+          user_id: userId,
+          position_x: position.x,
+          position_y: position.y,
+          color: options?.color,
+          size: options?.size,
+          shape: options?.shape,
+          message: options?.message,
+          nickname,
+        });
+      }
+      if (await isBackendReachable()) {
+        return api.createStar({
+          user_id: userId,
+          position_x: position.x,
+          position_y: position.y,
+          color: options?.color,
+          size: options?.size,
+          shape: options?.shape,
+          message: options?.message,
+        });
+      }
+      const local = await mockDatabase.createStar(userId, nickname, position, options);
+      enqueue({ type: 'createStar', payload: { userId, nickname, position, options } });
+      return local;
     }
   },
 
@@ -111,6 +145,12 @@ export const starService = {
         nickname: star.users.nickname
       }));
     } else {
+      if (tcbApp && await isTcbReachable()) {
+        return tcbService.getAllStars();
+      }
+      if (await isBackendReachable()) {
+        return api.getAllStars();
+      }
       return await mockDatabase.getAllStars() as StarData[];
     }
   },
@@ -136,6 +176,14 @@ export const starService = {
         nickname: star.users.nickname
       }));
     } else {
+      if (tcbApp && await isTcbReachable()) {
+        const stars = await tcbService.getAllStars();
+        return stars.filter((s: any) => s.user_id === userId);
+      }
+      if (await isBackendReachable()) {
+        const stars = await api.getAllStars();
+        return stars.filter((s: any) => s.user_id === userId);
+      }
       return await mockDatabase.getUserStars(userId) as StarData[];
     }
   },
@@ -148,6 +196,13 @@ export const starService = {
       }
       return true;
     } else {
+      if (tcbApp && await isTcbReachable()) {
+        try { await tcbService.deleteStar(starId); return true; } catch { return false; }
+      }
+      if (await isBackendReachable()) {
+        try { await api.deleteStar(starId); return true; } catch { return false; }
+      }
+      enqueue({ type: 'deleteStar', payload: { starId } });
       return await mockDatabase.deleteStar(starId);
     }
   }
