@@ -8,6 +8,7 @@ import StarryCanvas from './components/StarrySky/StarryCanvas';
 import { userService } from './services/starService';
 
 function App() {
+  console.log('--- 诊断信息 --- 我拿到的 TCB Env ID 是:', import.meta.env.VITE_TCB_ENV_ID);
   const { currentView, setCurrentView, setUser, user } = useAppStore();
   const [isLoading, setIsLoading] = useState(false);
 
