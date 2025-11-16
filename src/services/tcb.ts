@@ -1,4 +1,4 @@
-// src/services/tcb.ts (最终修正版，可直接复制)
+// src/services/tcb.ts (最终胜利版，可直接复制)
 
 import cloudbase from '@cloudbase/js-sdk';
 
@@ -14,9 +14,7 @@ export let tcbDb: any = null;
 if (envId) {
   try {
     console.log(`>>> 准备初始化 TCB SDK，使用的 envId 是: "${envId}"`);
-    tcbApp = cloudbase.init({
-      env: envId,
-    });
+    tcbApp = cloudbase.init({ env: envId });
     tcbAuth = tcbApp.auth({ persistence: 'local' });
     tcbDb = tcbApp.database();
     console.log('>>> TCB SDK 初始化成功！实例已创建。');
@@ -30,20 +28,21 @@ if (envId) {
   console.warn('>>> 警告：未找到 VITE_TCB_ENV_ID 环境变量，无法初始化 TCB SDK。');
 }
 
-// 确保登录状态的函数
+// 确保登录状态的函数 (已修正)
 export const ensureSignIn = async () => {
   if (!tcbAuth) return;
   const state = await (tcbAuth as any).getLoginState();
   if (!state) {
     console.log('--- isTcbReachable: 用户未登录，正在尝试匿名登录...');
-    await (tcbAuth as any).anonymousAuthProvider().signIn();
+    // ↓↓↓↓↓↓ [最终修正] 使用了正确的匿名登录函数 `signInAnonymously` ↓↓↓↓↓↓
+    await (tcbAuth as any).signInAnonymously();
     console.log('--- isTcbReachable: 匿名登录成功！');
   } else {
     console.log('--- isTcbReachable: 用户已登录。');
   }
 };
 
-// 检查 TCB 是否可达的函数 (已修正)
+// 检查 TCB 是否可达的函数
 export const isTcbReachable = async (): Promise<boolean> => {
   if (!tcbDb) {
     console.log('--- isTcbReachable: 检查失败，因为 `tcbDb` 实例不存在。');
@@ -61,7 +60,6 @@ export const isTcbReachable = async (): Promise<boolean> => {
     return true;
 
   } catch (error) {
-    // ↓↓↓↓↓↓ [最终修正] 我们在这里让错误信息“开口说话” ↓↓↓↓↓↓
     console.error('--- isTcbReachable: 检查失败！TCB 不可达。根本原因:', error);
     return false;
   }
