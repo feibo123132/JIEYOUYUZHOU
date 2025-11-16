@@ -1,14 +1,21 @@
+// src/App.tsx (修正后的完整版)
+
 import React, { useState } from 'react';
 import { Toaster, toast } from 'sonner';
-import { useAppStore } from './store/appStore';
+
+// [修正 #1] 使用默认导入
+import useAppStore from './store/appStore'; 
 import WelcomeScreen from './components/Welcome/WelcomeScreen';
 import NicknameInput from './components/Welcome/NicknameInput';
 import StarrySky from './components/StarrySky/StarrySky';
 import StarryCanvas from './components/StarrySky/StarryCanvas';
-import userService from './services/starService'; // 注意：您这里导入的是 starService，我将保持一致
+
+// [修正 #2] 使用默认导入并解构，代码更清晰
+import services from './services/starService';
+const { userService } = services; // 解构出 userService
 
 function App() {
-  // ↓↓↓↓↓↓ 诊断日志 #1: 检查环境变量 ↓↓↓↓↓↓
+  // 我们的“间谍”日志，用于诊断问题
   console.log('--- 诊断信息 --- 我拿到的 TCB Env ID 是:', import.meta.env.VITE_TCB_ENV_ID);
 
   const { currentView, setCurrentView, setUser, user } = useAppStore();
@@ -29,14 +36,12 @@ function App() {
 
   // 处理昵称提交
   const handleNicknameSubmit = async (nickname: string) => {
-    // ↓↓↓↓↓↓ 追踪日志 #2: 确认函数被触发 ↓↓↓↓↓↓
     console.log('1. `handleNicknameSubmit` 已触发，准备创建用户...');
     setIsLoading(true);
 
     try {
-      // 使用用户服务创建用户
-      // ↓↓↓↓↓↓ 追踪日志 #3: 确认即将调用服务 ↓↓↓↓↓↓
       console.log('2. 即将调用 `userService.createUser`...');
+      // [修正 #3] 现在可以直接、正确地调用 userService.createUser
       const userData = await userService.createUser(nickname);
 
       setUser({
