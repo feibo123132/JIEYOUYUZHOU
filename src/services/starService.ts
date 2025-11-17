@@ -1,9 +1,9 @@
-// src/services/starService.ts (修改后的完整版，含追踪日志)
+// src/services/starService.ts (回退前的稳定版本)
 
 import { supabase, mockDatabase } from './supabase';
 import { api } from './api';
 import { isBackendReachable } from './connectivity';
-import { enqueue } from '../utils/syncQueue'; // 移除了 flush 的导入，因为它未使用
+import { enqueue } from '../utils/syncQueue';
 import { tcbService, isTcbReachable, tcbApp } from './tcb';
 
 // StarData 接口定义
@@ -107,7 +107,6 @@ const starService = {
           position_y: position.y,
           color: options?.color,
           message: options?.message,
-          // userslinner(nickname) 似乎是特定语法，保持原样
         }])
         .select('*, users!inner(nickname)')
         .single();

@@ -1,27 +1,62 @@
-// src/App.tsx (修正后的完整版)
+// src/App.tsx (最终、符合 Hooks 规则的完整版)
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Toaster, toast } from 'sonner';
 
-// [修正 #1] 使用默认导入
+// 使用默认导入
 import useAppStore from './store/appStore'; 
 import WelcomeScreen from './components/Welcome/WelcomeScreen';
 import NicknameInput from './components/Welcome/NicknameInput';
 import StarrySky from './components/StarrySky/StarrySky';
 import StarryCanvas from './components/StarrySky/StarryCanvas';
 
-// [修正 #2] 使用默认导入并解构，代码更清晰
+// 使用默认导入并解构，代码更清晰
 import services from './services/starService';
 const { userService } = services; // 解构出 userService
 
 function App() {
-  // 我们的“间谍”日志，用于诊断问题
-  console.log('--- 诊断信息 --- 我拿到的 TCB Env ID 是:', import.meta.env.VITE_TCB_ENV_ID);
-
+  // ===================================================
+  // 步骤 1: 所有 Hooks 调用全部集中在最前面
+  // ===================================================
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
   const { currentView, setCurrentView, setUser, user } = useAppStore();
   const [isLoading, setIsLoading] = useState(false);
 
-  // 处理欢迎页面进入
+  // useEffect 用于初始化 Audio 对象
+  useEffect(() => {
+    if (!audioRef.current) {
+      audioRef.current = new Audio('/你终将会找到属于自己的月亮.mp3');
+      audioRef.current.loop = true;
+    }
+    (window as any).__bgAudio = audioRef.current;
+  }, []);
+
+  // ===================================================
+  // 步骤 2: 放置其他的普通代码（例如日志）
+  // ===================================================
+  // 我们的“间谍”日志，用于诊断问题
+  console.log('--- 诊断信息 --- 我拿到的 TCB Env ID 是:', import.meta.env.VITE_TCB_ENV_ID);
+
+  // ===================================================
+  // 步骤 3: 所有的函数定义
+  // ===================================================
+  const toggleMusic = () => {
+    if (!audioRef.current) return;
+    const newIsPlaying = !isPlaying;
+    setIsPlaying(newIsPlaying);
+
+    if (newIsPlaying) {
+      audioRef.current.play().catch(error => {
+        console.error('音频播放失败:', error);
+        toast.info('需要您的允许才能播放音乐哦');
+        setIsPlaying(false);
+      });
+    } else {
+      audioRef.current.pause();
+    }
+  };
+
   const handleWelcomeEnter = () => {
     if (user) {
       setCurrentView('starry-sky');
@@ -34,14 +69,12 @@ function App() {
     }
   };
 
-  // 处理昵称提交
   const handleNicknameSubmit = async (nickname: string) => {
     console.log('1. `handleNicknameSubmit` 已触发，准备创建用户...');
     setIsLoading(true);
 
     try {
       console.log('2. 即将调用 `userService.createUser`...');
-      // [修正 #3] 现在可以直接、正确地调用 userService.createUser
       const userData = await userService.createUser(nickname);
 
       setUser({
@@ -58,11 +91,13 @@ function App() {
     }
   };
 
-  // 处理返回欢迎页面
   const handleBackToWelcome = () => {
     setCurrentView('welcome');
   };
-
+  
+  // ===================================================
+  // 步骤 4: 最后是 return 语句
+  // ===================================================
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-900 via-purple-900 to-indigo-900 relative overflow-hidden">
       {/* 3D星空背景 */}
@@ -72,7 +107,7 @@ function App() {
       <div className="relative z-10">
         {currentView === 'welcome' && (
           <div className="min-h-screen flex flex-col items-center justify-center">
-            <WelcomeScreen onEnter={handleWelcomeEnter} />
+            <WelcomeScreen onEnter={handleWelcomeEnter} onToggleMusic={toggleMusic} isPlaying={isPlaying} />
 
             {/* 昵称输入区域 */}
             <div id="nickname-input" className="mt-8 w-full max-w-md px-4">

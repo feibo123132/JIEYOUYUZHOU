@@ -15,17 +15,17 @@ const NicknameInput: React.FC<NicknameInputProps> = ({ onSubmit, isLoading = fal
     
     // 验证昵称
     if (!nickname.trim()) {
-      setError('请输入你的别称');
+      setError('请输入星星的别称');
       return;
     }
     
-    if (nickname.length < 2) {
-      setError('别称至少需要2个字符');
+    if (nickname.length < 1) {
+      setError('别称至少需要1个字符');
       return;
     }
     
-    if (nickname.length > 12) {
-      setError('别称不能超过12个字符');
+    if (nickname.length > 30) {
+      setError('别称不能超过30个字符');
       return;
     }
     
@@ -61,8 +61,8 @@ const NicknameInput: React.FC<NicknameInputProps> = ({ onSubmit, isLoading = fal
             type="text"
             value={nickname}
             onChange={handleInputChange}
-            placeholder="请输入你的别称（2-12个字符）"
-            maxLength={12}
+            placeholder="请输入星星的别称（1-30个字符）"
+            maxLength={30}
             disabled={isLoading}
             className={`block w-full pl-10 pr-3 py-3 border rounded-xl shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all duration-200 bg-white/90 backdrop-blur-sm ${
               error 
@@ -82,7 +82,7 @@ const NicknameInput: React.FC<NicknameInputProps> = ({ onSubmit, isLoading = fal
           <div className={`transition-colors duration-200 ${
             nickname.length > 0 ? 'text-purple-600' : 'text-gray-500'
           }`}>
-            {nickname.length > 0 && `${nickname.length}/12`}
+            {nickname.length > 0 && `${nickname.length}/30`}
           </div>
           {error && (
             <div className="text-red-500 text-sm animate-pulse">
