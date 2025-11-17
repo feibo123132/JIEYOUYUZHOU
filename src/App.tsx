@@ -26,7 +26,9 @@ function App() {
   // useEffect 用于初始化 Audio 对象
   useEffect(() => {
     if (!audioRef.current) {
-      audioRef.current = new Audio('/你终将会找到属于自己的月亮.mp3');
+      const base = (import.meta.env.BASE_URL || '/').endsWith('/') ? (import.meta.env.BASE_URL || '/') : (import.meta.env.BASE_URL || '/') + '/';
+      const url = base + encodeURI('你终将会找到属于自己的月亮.mp3');
+      audioRef.current = new Audio(url);
       audioRef.current.loop = true;
     }
     (window as any).__bgAudio = audioRef.current;
