@@ -27,7 +27,7 @@ function App() {
   useEffect(() => {
     if (!audioRef.current) {
       const base = (import.meta.env.BASE_URL || '/').endsWith('/') ? (import.meta.env.BASE_URL || '/') : (import.meta.env.BASE_URL || '/') + '/';
-      const url = base + encodeURI('你终将会找到属于自己的月亮.mp3');
+      const url = base + encodeURIComponent('你终将会找到属于自己的月亮.mp3');
       audioRef.current = new Audio(url);
       audioRef.current.loop = true;
     }
