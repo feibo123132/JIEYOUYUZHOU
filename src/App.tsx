@@ -30,37 +30,6 @@ function App() {
       const url = base + encodeURIComponent('你终将会找到属于自己的月亮.mp3');
       audioRef.current = new Audio(url);
       audioRef.current.loop = true;
-      audioRef.current.preload = 'auto';
-      (audioRef.current as any).crossOrigin = 'anonymous';
-      audioRef.current.load();
-
-      (window as any).__sfxBase = base;
-      (window as any).__sfxFiles = [
-        '点亮星星的音效.mp3',
-        '朝着自己的月亮走.mp3',
-        '欢迎你到解忧宇宙逛游.mp3',
-        '每当宇宙闪烁.mp3',
-        '你本就是万千色彩.mp3',
-        '你终将会找到属于自己的月亮②.mp3',
-        '生活所有的无奈.mp3',
-        '愿你开心每一天.mp3',
-        '愿世界你似温柔.mp3',
-        '月影穿梭会到来.mp3',
-        '祝你有美好的一天.mp3'
-      ];
-      (window as any).__initSfx = () => {
-        if ((window as any).__sfxMap) return;
-        const m: Record<string, HTMLAudioElement> = {} as any;
-        for (const name of (window as any).__sfxFiles) {
-          const u = base + encodeURIComponent(name);
-          const a = new Audio(u);
-          a.preload = 'auto';
-          (a as any).crossOrigin = 'anonymous';
-          try { a.load(); } catch {}
-          m[name] = a;
-        }
-        (window as any).__sfxMap = m;
-      };
     }
     (window as any).__bgAudio = audioRef.current;
   }, []);
