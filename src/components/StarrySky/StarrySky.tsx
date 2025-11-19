@@ -6,6 +6,7 @@ import { Star as PStar, Heart, Cloud, Moon, Mountains, Leaf, MusicNotes, Bird, C
 import UserStar from './UserStar';
 import { toast } from 'sonner';
 import CreateStarModal from './CreateStarModal';
+import { tcbService, isTcbReachable, tcbApp } from '../../services/tcb';
 
 // ↓↓↓↓↓↓ [修正] 使用正确的默认导入并解构出 starService ↓↓↓↓↓↓
 import services from '../../services/starService';
@@ -193,6 +194,26 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
     } finally {
       setIsCreating(false);
     }
+  };
+
+  const preCheckSfx = async (): Promise<boolean> => {
+    const bypass = userNickname === 'JIEYOU不解忧';
+    if (bypass) return true;
+    const q = readQuota();
+    if (q.count >= 3) {
+      toast.error('今日点亮次数已用完');
+      return false;
+    }
+    try {
+      if (tcbApp && await isTcbReachable()) {
+        const c = await tcbService.getTodayCountByNickname(userNickname);
+        if (c >= 3) {
+          toast.error('今日点亮次数已达上限 (3 次)');
+          return false;
+        }
+      }
+    } catch {}
+    return true;
   };
 
   const handleDeleteStar = async (starId: string) => {
@@ -442,6 +463,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
         onConfirm={handleConfirmCreate}
         defaultColor="#FFD700" // 简化了 draft 状态
         allowSfx={userNickname === 'JIEYOU不解忧' || readQuota().count < 3}
+        onPreCheck={preCheckSfx}
       />
     </div>
   );

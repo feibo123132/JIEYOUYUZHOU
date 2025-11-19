@@ -94,6 +94,19 @@ export const tcbService = {
     }));
   },
 
+  async getTodayCountByNickname(nickname: string) {
+    if (!tcbDb) throw new Error('tcb_unavailable');
+    await ensureSignIn();
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const tag = `${y}-${m}-${dd}`;
+    const r = await (tcbDb as any).collection('stars').where({ nickname }).orderBy('created_at', 'desc').get();
+    const c = (r.data || []).filter((x: any) => (x.created_at || '').startsWith(tag)).length;
+    return c;
+  },
+
   async createStar(payload: {
     user_id: string;
     position_x: number;
