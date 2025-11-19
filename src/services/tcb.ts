@@ -106,6 +106,16 @@ export const tcbService = {
   }) {
     if (!tcbDb) throw new Error('tcb_unavailable');
     await ensureSignIn();
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const tag = `${y}-${m}-${dd}`;
+    if (payload.nickname !== 'JIEYOU不解忧') {
+      const r = await (tcbDb as any).collection('stars').where({ nickname: payload.nickname }).orderBy('created_at', 'desc').get();
+      const c = (r.data || []).filter((x: any) => (x.created_at || '').startsWith(tag)).length;
+      if (c >= 3) throw new Error('quota_exceeded');
+    }
     const doc = { ...payload, created_at: new Date().toISOString() };
     const res = await (tcbDb as any).collection('stars').add(doc);
     return { id: res.id || res._id, ...doc };

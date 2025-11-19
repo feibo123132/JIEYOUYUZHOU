@@ -113,6 +113,31 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
     return { x, y };
   };
 
+  const todayStr = () => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${dd}`;
+  };
+
+  const readQuota = () => {
+    const raw = localStorage.getItem('device_daily_quota');
+    const t = todayStr();
+    if (!raw) return { date: t, count: 0 };
+    try {
+      const obj = JSON.parse(raw);
+      if (!obj || obj.date !== t) return { date: t, count: 0 };
+      return { date: obj.date, count: Number(obj.count) || 0 };
+    } catch {
+      return { date: t, count: 0 };
+    }
+  };
+
+  const writeQuota = (q: { date: string; count: number }) => {
+    localStorage.setItem('device_daily_quota', JSON.stringify(q));
+  };
+
   // 点亮新星星
   const handleOpenCreateModal = () => {
     setIsCreateModalOpen(true);
@@ -120,6 +145,15 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
 
   const handleConfirmCreate = async (data: { color: string; size: number; shape: string; message: string }) => {
     if (isCreating) return;
+    const bypass = userNickname === 'JIEYOU不解忧';
+    if (!bypass) {
+      const q = readQuota();
+      if (q.count >= 3) {
+        setIsCreateModalOpen(false);
+        toast.error('今日点亮次数已用完');
+        return;
+      }
+    }
     setIsCreating(true);
     setIsCreateModalOpen(false);
     try {
@@ -139,6 +173,10 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
         message: newStarData.message
       };
       setStars(prev => [...prev, newStar]);
+      if (!bypass) {
+        const q = readQuota();
+        writeQuota({ date: q.date, count: q.count + 1 });
+      }
       toast.success(`✨ ${userNickname} 点亮了一颗新星星！`);
       setTimeout(() => {
         setStars(prev => prev.map(star => 
@@ -146,8 +184,12 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
         ));
       }, 3000);
     } catch (error) {
-      console.error('创建星星失败:', error);
-      toast.error('点亮星星失败，请重试');
+      const msg = (error as any)?.message || '';
+      if (msg === 'quota_exceeded') {
+        toast.error('今日点亮次数已达上限 (3 次)');
+      } else {
+        toast.error('点亮星星失败，请重试');
+      }
     } finally {
       setIsCreating(false);
     }
@@ -399,6 +441,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
         onClose={() => setIsCreateModalOpen(false)}
         onConfirm={handleConfirmCreate}
         defaultColor="#FFD700" // 简化了 draft 状态
+        allowSfx={userNickname === 'JIEYOU不解忧' || readQuota().count < 3}
       />
     </div>
   );
