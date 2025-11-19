@@ -1,11 +1,12 @@
 // src/components/StarrySky/StarrySky.tsx (修正后的完整版)
 
 import React, { useState, useEffect } from 'react';
-import { Plus, RotateCcw, Trash2, Sparkles, Search, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, RotateCcw, Trash2, Sparkles } from 'lucide-react';
 import { Star as PStar, Heart, Cloud, Moon, Mountains, Leaf, MusicNotes, Bird, Cat, Dog, Waves, PaperPlane } from 'phosphor-react';
 import UserStar from './UserStar';
 import { toast } from 'sonner';
 import CreateStarModal from './CreateStarModal';
+import AssistantSidebar from './AssistantSidebar';
 import { tcbService, isTcbReachable, tcbApp } from '../../services/tcb';
 
 // ↓↓↓↓↓↓ [修正] 使用正确的默认导入并解构出 starService ↓↓↓↓↓↓
@@ -42,6 +43,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [calYear, setCalYear] = useState<number>(new Date().getFullYear());
   const [calMonth, setCalMonth] = useState<number>(new Date().getMonth());
+  const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
 
   const formatYMD = (d: Date) => {
     const y = d.getFullYear();
@@ -95,22 +97,34 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
 
   // 生成随机位置
   const generateRandomPosition = (): { x: number; y: number } => {
-    let x, y;
+    let x = 50, y = 50;
     let attempts = 0;
-    const minDistance = 15; // 最小距离百分比
-    
+    const minDistance = 15; // 与其他星星的最小距离（百分比）
+    const MARGIN = 12; // 与边缘的安全边距（百分比）
+    const blockedZones = [
+      { x1: 0, y1: 0, x2: 100, y2: 8 },   // 顶部标题区域
+      { x1: 0, y1: 85, x2: 100, y2: 100 }, // 底部按钮区域
+      { x1: 0, y1: 0, x2: 18, y2: 18 },   // 左上角返回按钮区域
+      { x1: 82, y1: 0, x2: 100, y2: 22 },  // 右上角用户/助手按钮区域
+      { x1: 35, y1: 80, x2: 65, y2: 95 },  // 底部居中CTA近邻
+    ];
+
+    const inBlocked = (px: number, py: number) => blockedZones.some(z => px >= z.x1 && px <= z.x2 && py >= z.y1 && py <= z.y2);
+
     do {
-      x = Math.random() * 80 + 10; // 10-90% 范围
-      y = Math.random() * 80 + 10;
+      x = Math.random() * (100 - MARGIN * 2) + MARGIN; // 留出边缘安全区
+      y = Math.random() * (100 - MARGIN * 2) + MARGIN;
       attempts++;
     } while (
-      attempts < 50 && 
-      stars.some(star => {
-        const distance = Math.sqrt(Math.pow(star.x - x, 2) + Math.pow(star.y - y, 2));
-        return distance < minDistance;
-      })
+      attempts < 80 && (
+        inBlocked(x, y) ||
+        stars.some(star => {
+          const distance = Math.sqrt(Math.pow(star.x - x, 2) + Math.pow(star.y - y, 2));
+          return distance < minDistance;
+        })
+      )
     );
-    
+
     return { x, y };
   };
 
@@ -251,62 +265,24 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
           <Sparkles className="w-6 h-6 text-yellow-300 animate-pulse" />
         </div>
       </div>
-      <div className="absolute top-16 left-1/2 -translate-x-1/2 z-10">
-        <div className="flex items-center gap-3 bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl px-4 py-2 text-white">
-          <div className="flex items-center bg-black/30 rounded-xl px-3 py-2">
-            <Search className="w-4 h-4 mr-2 text-gray-200" />
-            <input
-              value={searchName}
-              onChange={(e) => setSearchName(e.target.value)}
-              placeholder="按用户名搜索"
-              className="bg-transparent outline-none placeholder-gray-300 text-sm w-40"
-            />
-          </div>
-          <button
-            onClick={() => setCalendarOpen((v) => !v)}
-            className="flex items-center bg-black/30 rounded-xl px-3 py-2 hover:bg-black/40"
-          >
-            <Calendar className="w-4 h-4 mr-2 text-gray-200" />
-            <span className="text-sm text-gray-100">{searchDate || '年/月/日'}</span>
-          </button>
-          <button
-            onClick={() => { setSearchName(''); setSearchDate(''); }}
-            className="text-xs bg-white/20 hover:bg-white/30 rounded-xl px-3 py-2"
-          >
-            重置
-          </button>
-        </div>
-        {calendarOpen && (
-          <div className="mt-2 bg-white/95 text-gray-800 rounded-2xl shadow-2xl border border-white/20 p-4 w-80 z-30">
-            <div className="flex items-center justify-between mb-3">
-              <div className="font-semibold">{calYear}年 {calMonth + 1}月</div>
-              <div className="flex items-center gap-2">
-                <button onClick={() => setCalMonth((m) => { if (m===0){ setCalYear(calYear-1); return 11;} return m-1; })} className="p-1 rounded hover:bg-gray-100">
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-                <button onClick={() => setCalMonth((m) => { if (m===11){ setCalYear(calYear+1); return 0;} return m+1; })} className="p-1 rounded hover:bg-gray-100">
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-            <div className="grid grid-cols-7 gap-2 text-center text-xs text-gray-500 mb-2">
-              {['日','一','二','三','四','五','六'].map(w => (<div key={w}>{w}</div>))}
-            </div>
-            <div className="grid grid-cols-7 gap-2">
-              {buildMonthDays(calYear, calMonth).map((d, idx) => (
-                <button
-                  key={idx}
-                  disabled={!d}
-                  onClick={() => { if (!d) return; const val = formatYMD(d); setSearchDate(val); setCalendarOpen(false); }}
-                  className={`h-8 rounded ${d ? 'hover:bg-purple-100' : ''} ${searchDate && d && formatYMD(d)===searchDate ? 'bg-purple-600 text-white' : 'bg-white/80 text-gray-800'}`}
-                >
-                  {d ? d.getDate() : ''}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
+      <AssistantSidebar
+        searchName={searchName}
+        setSearchName={setSearchName}
+        searchDate={searchDate}
+        setSearchDate={setSearchDate}
+        calendarOpen={calendarOpen}
+        setCalendarOpen={setCalendarOpen}
+        calYear={calYear}
+        calMonth={calMonth}
+        setCalYear={setCalYear}
+        setCalMonth={setCalMonth}
+        buildMonthDays={buildMonthDays}
+        formatYMD={formatYMD}
+        onReset={() => { setSearchName(''); setSearchDate(''); }}
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        onOpen={() => setSidebarOpen(true)}
+      />
 
       {/* 顶部导航 */}
       <div className="relative z-10 flex justify-between items-center p-4">

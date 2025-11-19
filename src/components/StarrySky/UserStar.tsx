@@ -93,6 +93,20 @@ const UserStar: React.FC<UserStarProps> = ({
 
   const IconComponent = shapeMap[shape] || PStar;
   const iconSize = Math.max(20, Math.min(36, size));
+  const tipSide = y > 75 ? 'top' : 'bottom';
+  const tipAlign = x > 70 ? 'right' : x < 30 ? 'left' : 'center';
+  const tipContainerClass = (() => {
+    const base = 'absolute opacity-0 group-hover:opacity-100 transition-all duration-200 pointer-events-auto z-30';
+    if (tipSide === 'bottom') {
+      if (tipAlign === 'center') return base + ' top-full left-1/2 transform -translate-x-1/2 mt-2';
+      if (tipAlign === 'left') return base + ' top-full left-0 mt-2';
+      return base + ' top-full right-0 mt-2';
+    } else {
+      if (tipAlign === 'center') return base + ' bottom-full left-1/2 transform -translate-x-1/2 mb-2';
+      if (tipAlign === 'left') return base + ' bottom-full left-0 mb-2';
+      return base + ' bottom-full right-0 mb-2';
+    }
+  })();
   return (
     <div
       className={`absolute transform -translate-x-1/2 -translate-y-1/2 cursor-pointer group ${
@@ -122,8 +136,8 @@ const UserStar: React.FC<UserStarProps> = ({
         }`} style={{ backgroundColor: color }}></div>
       </div>
 
-      <div className="absolute top-full left-1/2 transform -translate-x-1/2 mt-2 opacity-0 group-hover:opacity-100 transition-all duration-200 pointer-events-auto">
-        <div className="bg-transparent text-white text-xs px-4 py-3 rounded-xl w-80 sm:w-96">
+      <div className={tipContainerClass}>
+        <div className="bg-transparent text-white text-xs px-4 py-3 rounded-xl w-56 sm:w-64">
           <div className="mb-2">
             <div className="font-semibold text-white">{nickname}</div>
             <div className="text-gray-300 text-[12px] mt-1">{formatTime(createdAt)}</div>
@@ -144,8 +158,11 @@ const UserStar: React.FC<UserStarProps> = ({
             </div>
           )}
         </div>
-        
-        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-b-4 border-transparent border-b-transparent"></div>
+        {tipSide === 'bottom' ? (
+          <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-b-4 border-transparent border-b-transparent"></div>
+        ) : (
+          <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-transparent"></div>
+        )}
       </div>
 
       {isNew && (

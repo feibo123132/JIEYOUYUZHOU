@@ -113,3 +113,12 @@
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.5);
 }
+@keyframes breathSlow {
+  0% { transform: scale(0.94); }
+  50% { transform: scale(1.08); }
+  100% { transform: scale(0.94); }
+}
+
+.breath-slow {
+  animation: breathSlow 2.4s ease-in-out infinite;
+}
