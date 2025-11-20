@@ -44,6 +44,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
   const [calYear, setCalYear] = useState<number>(new Date().getFullYear());
   const [calMonth, setCalMonth] = useState<number>(new Date().getMonth());
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
+  const [displayMode, setDisplayMode] = useState<'random' | 'full'>('random');
 
   const formatYMD = (d: Date) => {
     const y = d.getFullYear();
@@ -282,6 +283,8 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
         onOpen={() => setSidebarOpen(true)}
+        displayMode={displayMode}
+        onChangeDisplayMode={(mode) => setDisplayMode(mode)}
       />
 
       {/* 顶部导航 */}
@@ -293,19 +296,27 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
           <RotateCcw className="w-4 h-4" />
           <span>返回</span>
         </button>
-        <div className="bg-white/20 backdrop-blur-sm text-white px-4 py-2 rounded-lg">
-          <span className="text-sm">当前用户: </span>
-          <span className="font-semibold text-yellow-300">{userNickname}</span>
-        </div>
       </div>
 
       {/* 星星显示区域 */}
       <div className="relative w-full h-screen">
-        {(stars.filter((s) => {
-          const nameOk = searchName ? s.nickname.includes(searchName) : true;
-          const dateOk = searchDate ? (() => { const d = new Date(s.createdAt); const y = d.getFullYear(); const m = String(d.getMonth()+1).padStart(2,'0'); const dd = String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${dd}` === searchDate; })() : true;
-          return nameOk && dateOk;
-        })).map((star) => (
+        {(() => {
+          const filtered = stars.filter((s) => {
+            const nameOk = searchName ? s.nickname.includes(searchName) : true;
+            const dateOk = searchDate ? (() => { const d = new Date(s.createdAt); const y = d.getFullYear(); const m = String(d.getMonth()+1).padStart(2,'0'); const dd = String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${dd}` === searchDate; })() : true;
+            return nameOk && dateOk;
+          });
+          const needAll = Boolean(searchName) || Boolean(searchDate) || displayMode === 'full';
+          let visible = filtered;
+          if (!needAll) {
+            const arr = [...filtered];
+            for (let i = arr.length - 1; i > 0; i--) {
+              const j = Math.floor(Math.random() * (i + 1));
+              [arr[i], arr[j]] = [arr[j], arr[i]];
+            }
+            visible = arr.slice(0, 30);
+          }
+          return visible.map((star) => (
           <UserStar
             key={star.id}
             x={star.x}
@@ -321,7 +332,8 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
             canDelete={star.userId === userId}
             onDelete={() => handleDeleteStar(star.id)}
           />
-        ))}
+          ));
+        })()}
       </div>
 
       {/* 底部操作区域 */}
@@ -440,6 +452,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
         defaultColor="#FFD700" // 简化了 draft 状态
         allowSfx={userNickname === 'JIEYOU不解忧' || readQuota().count < 3}
         onPreCheck={preCheckSfx}
+        currentUserName={userNickname}
       />
     </div>
   );

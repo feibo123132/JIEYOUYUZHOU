@@ -17,6 +17,7 @@ interface CreateStarModalProps {
   defaultColor?: string;
   allowSfx?: boolean;
   onPreCheck?: () => Promise<boolean>;
+  currentUserName?: string;
 }
 
 const EmojiIcon = (emoji: string) => (props: any) => (
@@ -93,7 +94,7 @@ const shapeCategories: Record<ShapeOption, Category> = {
   // 其他（已覆盖在最前行）
 };
 
-const CreateStarModal: React.FC<CreateStarModalProps> = ({ open, onClose, onConfirm, defaultColor = '#FFD700', allowSfx = true, onPreCheck }) => {
+const CreateStarModal: React.FC<CreateStarModalProps> = ({ open, onClose, onConfirm, defaultColor = '#FFD700', allowSfx = true, onPreCheck, currentUserName }) => {
   const [color, setColor] = useState(defaultColor);
   const [size, setSize] = useState(24);
   const [shape, setShape] = useState<ShapeOption>('star');
@@ -122,6 +123,14 @@ const CreateStarModal: React.FC<CreateStarModalProps> = ({ open, onClose, onConf
         </div>
 
         <div className="space-y-6">
+          {currentUserName && (
+            <div className="mb-2">
+              <div className="inline-flex items-center gap-2 bg-black/10 text-gray-800 px-3 py-1 rounded-lg">
+                <span className="text-sm">当前用户:</span>
+                <span className="font-semibold text-yellow-600">{currentUserName}</span>
+              </div>
+            </div>
+          )}
           <div>
             <label className="block text-sm text-gray-700 mb-2">留言</label>
             <textarea

@@ -18,6 +18,8 @@ interface AssistantSidebarProps {
   open: boolean
   onClose: () => void
   onOpen: () => void
+  displayMode: 'random' | 'full'
+  onChangeDisplayMode: (mode: 'random' | 'full') => void
 }
 
 const AssistantSidebar: React.FC<AssistantSidebarProps> = ({
@@ -37,13 +39,16 @@ const AssistantSidebar: React.FC<AssistantSidebarProps> = ({
   open,
   onClose,
   onOpen,
+  displayMode,
+  onChangeDisplayMode,
 }) => {
   const [searchFoldOpen, setSearchFoldOpen] = useState(true)
+  const [displayFoldOpen, setDisplayFoldOpen] = useState(true)
   if (!open) {
     return (
       <button
         onClick={onOpen}
-        className="fixed top-20 right-4 z-20 bg-transparent text-3xl"
+        className="fixed top-4 right-4 z-20 bg-transparent text-3xl"
         aria-label="打开助手栏"
       >
         <span role="img" aria-label="cat" className="inline-block transition-transform duration-200 hover:scale-125 hover:rotate-12 breath-slow">🐱</span>
@@ -124,6 +129,45 @@ const AssistantSidebar: React.FC<AssistantSidebarProps> = ({
                 >
                   重置
                 </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="bg-white/5 backdrop-blur-md rounded-2xl border border-white/5 overflow-hidden">
+          <button
+            onClick={() => setDisplayFoldOpen(!displayFoldOpen)}
+            className="w-full flex items-center justify-between px-4 py-3 text-white"
+          >
+            <span className="font-semibold text-lg">⭐ 星星展示</span>
+            <ChevronDown className={`w-4 h-4 transition-transform ${displayFoldOpen ? 'rotate-0' : '-rotate-90'}`} />
+          </button>
+          {displayFoldOpen && (
+            <div className="p-3 space-y-3">
+              <div className="flex items-center justify-between bg-white/5 rounded-xl px-3 py-2">
+                <span className="text-sm text-white/90">随机部分（30颗，刷新重置）</span>
+                <label className="inline-flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={displayMode === 'random'}
+                    onChange={(e) => onChangeDisplayMode(e.target.checked ? 'random' : 'full')}
+                  />
+                  <span className="text-xs text-white/80">{displayMode === 'random' ? '开启' : '关闭'}</span>
+                </label>
+              </div>
+              <div className="flex items-center justify-between bg-white/5 rounded-xl px-3 py-2">
+                <span className="text-sm text-white/90">完全展示（全部星星）</span>
+                <label className="inline-flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={displayMode === 'full'}
+                    onChange={(e) => onChangeDisplayMode(e.target.checked ? 'full' : 'random')}
+                  />
+                  <span className="text-xs text-white/80">{displayMode === 'full' ? '开启' : '关闭'}</span>
+                </label>
+              </div>
+              <div className="text-xs text-white/60">
+                提示：使用“检索”时总是展示所有匹配星星。
               </div>
             </div>
           )}
