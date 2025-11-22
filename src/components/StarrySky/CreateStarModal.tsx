@@ -18,6 +18,7 @@ interface CreateStarModalProps {
   allowSfx?: boolean;
   onPreCheck?: () => Promise<boolean>;
   currentUserName?: string;
+  incomingIndex?: number;
 }
 
 const EmojiIcon = (emoji: string) => (props: any) => (
@@ -94,7 +95,7 @@ const shapeCategories: Record<ShapeOption, Category> = {
   // 其他（已覆盖在最前行）
 };
 
-const CreateStarModal: React.FC<CreateStarModalProps> = ({ open, onClose, onConfirm, defaultColor = '#FFD700', allowSfx = true, onPreCheck, currentUserName }) => {
+const CreateStarModal: React.FC<CreateStarModalProps> = ({ open, onClose, onConfirm, defaultColor = '#FFD700', allowSfx = true, onPreCheck, currentUserName, incomingIndex }) => {
   const [color, setColor] = useState(defaultColor);
   const [size, setSize] = useState(24);
   const [shape, setShape] = useState<ShapeOption>('star');
@@ -128,6 +129,14 @@ const CreateStarModal: React.FC<CreateStarModalProps> = ({ open, onClose, onConf
               <div className="inline-flex items-center gap-2 bg-black/10 text-gray-800 px-3 py-1 rounded-lg">
                 <span className="text-sm">当前用户:</span>
                 <span className="font-semibold text-yellow-600">{currentUserName}</span>
+              </div>
+            </div>
+          )}
+          {typeof incomingIndex === 'number' && (
+            <div className="mb-1">
+              <div className="inline-flex items-center gap-2 bg-black/10 text-gray-800 px-3 py-2 rounded-lg">
+                <span className="text-sm">你即将点亮的是：</span>
+                <span className="font-semibold text-purple-600">JIEYOU宇宙的第 {incomingIndex} 颗星星</span>
               </div>
             </div>
           )}

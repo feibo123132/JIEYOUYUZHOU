@@ -20,6 +20,7 @@ interface StarData {
   nickname: string;
   createdAt: string;
   isNew?: boolean;
+  isJustCreated?: boolean;
   color?: string;
   size?: number;
   shape?: string;
@@ -46,6 +47,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
   const [displayMode, setDisplayMode] = useState<'random' | 'full'>('random');
   const [isAdminDevice, setIsAdminDevice] = useState<boolean>(false);
+  const [welcomeInfo, setWelcomeInfo] = useState<{ nickname: string; count: number } | null>(null);
 
   const formatYMD = (d: Date) => {
     const y = d.getFullYear();
@@ -189,13 +191,18 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
         nickname: newStarData.nickname,
         createdAt: newStarData.created_at,
         isNew: true,
+        isJustCreated: true,
         color: newStarData.color,
         size: newStarData.size,
         shape: newStarData.shape,
         userId: newStarData.user_id,
         message: newStarData.message
       };
-      setStars(prev => [...prev, newStar]);
+      setStars(prev => {
+        const next = [...prev, newStar];
+        setWelcomeInfo({ nickname: userNickname, count: next.length });
+        return next;
+      });
       if (!bypass) {
         const q = readQuota();
         writeQuota({ date: q.date, count: q.count + 1 });
@@ -206,6 +213,11 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
           star.id === newStar.id ? { ...star, isNew: false } : star
         ));
       }, 3000);
+      setTimeout(() => {
+        setStars(prev => prev.map(star => 
+          star.id === newStar.id ? { ...star, isJustCreated: false } : star
+        ));
+      }, 12000);
     } catch (error) {
       const msg = (error as any)?.message || '';
       if (msg === 'quota_exceeded') {
@@ -278,6 +290,13 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
     return arr.slice(0, 30);
   }, [stars, searchName, searchDate, displayMode]);
 
+  useEffect(() => {
+    if (welcomeInfo) {
+      const t = setTimeout(() => setWelcomeInfo(null), 6500);
+      return () => clearTimeout(t);
+    }
+  }, [welcomeInfo]);
+
   return (
     <div className="min-h-screen relative overflow-hidden">
       <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 text-center pointer-events-none">
@@ -333,6 +352,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
             nickname={star.nickname}
             createdAt={star.createdAt}
             isNew={star.isNew}
+            isJustCreated={star.isJustCreated}
             onClick={() => setSelectedStar(star)}
             color={star.color}
             size={star.size}
@@ -453,6 +473,22 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
         </div>
       )}
 
+      {welcomeInfo && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white/90 backdrop-blur-xl rounded-2xl p-6 max-w-sm w-full border border-white/20 shadow-2xl">
+            <div className="flex items-center justify-center gap-3 mb-2">
+              <Sparkles className="w-6 h-6 text-purple-500" />
+              <div className="text-xl font-extrabold text-gray-900">欢迎 {welcomeInfo.nickname} 的到来</div>
+              <Sparkles className="w-6 h-6 text-purple-500" />
+            </div>
+            <div className="text-gray-700 text-sm text-center">已为你点亮 JIEYOU 宇宙的第 <span className="text-purple-600 font-semibold">{welcomeInfo.count}</span> 颗星星</div>
+            <div className="mt-4 flex justify-center">
+              <button onClick={() => setWelcomeInfo(null)} className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg">好的</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <CreateStarModal
         open={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
@@ -460,6 +496,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
         defaultColor="#FFD700" // 简化了 draft 状态
         allowSfx={isAdminDevice || userNickname === 'JIEYOU不解忧' || readQuota().count < 3}
         onPreCheck={preCheckSfx}
+        incomingIndex={stars.length + 1}
       />
     </div>
   );

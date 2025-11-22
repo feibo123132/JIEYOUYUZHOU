@@ -9,6 +9,7 @@ interface UserStarProps {
   createdAt: string;
   onClick: () => void;
   isNew?: boolean;
+  isJustCreated?: boolean;
   color?: string;
   size?: number;
   shape?: string;
@@ -73,6 +74,7 @@ const UserStar: React.FC<UserStarProps> = ({
   createdAt, 
   onClick, 
   isNew = false,
+  isJustCreated = false,
   color = '#FFD700',
   size = 24,
   shape = 'star',
@@ -164,6 +166,14 @@ const UserStar: React.FC<UserStarProps> = ({
           <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-transparent"></div>
         )}
       </div>
+
+      {isJustCreated && (
+        <>
+          <div className="absolute -inset-6 rounded-full opacity-40 animate-ping pointer-events-none" style={{ backgroundColor: '#FFFFFF' }}></div>
+          <div className="absolute -inset-10 rounded-full opacity-25 animate-ping pointer-events-none" style={{ backgroundColor: '#FFFFFF', animationDelay: '0.8s' }}></div>
+          <div className="absolute -inset-14 rounded-full opacity-20 animate-ping pointer-events-none" style={{ backgroundColor: '#FFFFFF', animationDelay: '1.6s' }}></div>
+        </>
+      )}
 
       {isNew && (
         <>
