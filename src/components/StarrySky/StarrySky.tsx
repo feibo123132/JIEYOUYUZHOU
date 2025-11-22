@@ -1,6 +1,6 @@
 // src/components/StarrySky/StarrySky.tsx (修正后的完整版)
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Plus, RotateCcw, Trash2, Sparkles } from 'lucide-react';
 import { Star as PStar, Heart, Cloud, Moon, Mountains, Leaf, MusicNotes, Bird, Cat, Dog, Waves, PaperPlane } from 'phosphor-react';
 import UserStar from './UserStar';
@@ -45,6 +45,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
   const [calMonth, setCalMonth] = useState<number>(new Date().getMonth());
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
   const [displayMode, setDisplayMode] = useState<'random' | 'full'>('random');
+  const [isAdminDevice, setIsAdminDevice] = useState<boolean>(false);
 
   const formatYMD = (d: Date) => {
     const y = d.getFullYear();
@@ -88,6 +89,12 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
     };
 
     loadStars();
+  }, []);
+
+  useEffect(() => {
+    try {
+      setIsAdminDevice(localStorage.getItem('is_admin_device') === 'true');
+    } catch {}
   }, []);
 
   useEffect(() => {
@@ -161,7 +168,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
 
   const handleConfirmCreate = async (data: { color: string; size: number; shape: string; message: string }) => {
     if (isCreating) return;
-    const bypass = userNickname === 'JIEYOU不解忧';
+    const bypass = userNickname === 'JIEYOU不解忧' || isAdminDevice;
     if (!bypass) {
       const q = readQuota();
       if (q.count >= 3) {
@@ -174,7 +181,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
     setIsCreateModalOpen(false);
     try {
       const position = generateRandomPosition();
-      const newStarData = await starService.createStar(userId, userNickname, position, data);
+      const newStarData = await starService.createStar(userId, userNickname, position, { ...data, isAdminDevice });
       const newStar: StarData = {
         id: newStarData.id,
         x: newStarData.position_x,
@@ -212,7 +219,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
   };
 
   const preCheckSfx = async (): Promise<boolean> => {
-    const bypass = userNickname === 'JIEYOU不解忧';
+    const bypass = userNickname === 'JIEYOU不解忧' || isAdminDevice;
     if (bypass) return true;
     const q = readQuota();
     if (q.count >= 3) {
@@ -255,6 +262,22 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
     }
   };
 
+  const visibleStars = useMemo(() => {
+    const filtered = stars.filter((s) => {
+      const nameOk = searchName ? s.nickname.includes(searchName) : true;
+      const dateOk = searchDate ? (() => { const d = new Date(s.createdAt); const y = d.getFullYear(); const m = String(d.getMonth()+1).padStart(2,'0'); const dd = String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${dd}` === searchDate; })() : true;
+      return nameOk && dateOk;
+    });
+    const needAll = Boolean(searchName) || Boolean(searchDate) || displayMode === 'full';
+    if (needAll) return filtered;
+    const arr = [...filtered];
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr.slice(0, 30);
+  }, [stars, searchName, searchDate, displayMode]);
+
   return (
     <div className="min-h-screen relative overflow-hidden">
       <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 text-center pointer-events-none">
@@ -285,6 +308,8 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
         onOpen={() => setSidebarOpen(true)}
         displayMode={displayMode}
         onChangeDisplayMode={(mode) => setDisplayMode(mode)}
+        isAdminDevice={isAdminDevice}
+        onSetAdminDevice={(v) => { try { localStorage.setItem('is_admin_device', v ? 'true' : 'false'); } catch {}; setIsAdminDevice(v); }}
       />
 
       {/* 顶部导航 */}
@@ -300,23 +325,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
 
       {/* 星星显示区域 */}
       <div className="relative w-full h-screen">
-        {(() => {
-          const filtered = stars.filter((s) => {
-            const nameOk = searchName ? s.nickname.includes(searchName) : true;
-            const dateOk = searchDate ? (() => { const d = new Date(s.createdAt); const y = d.getFullYear(); const m = String(d.getMonth()+1).padStart(2,'0'); const dd = String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${dd}` === searchDate; })() : true;
-            return nameOk && dateOk;
-          });
-          const needAll = Boolean(searchName) || Boolean(searchDate) || displayMode === 'full';
-          let visible = filtered;
-          if (!needAll) {
-            const arr = [...filtered];
-            for (let i = arr.length - 1; i > 0; i--) {
-              const j = Math.floor(Math.random() * (i + 1));
-              [arr[i], arr[j]] = [arr[j], arr[i]];
-            }
-            visible = arr.slice(0, 30);
-          }
-          return visible.map((star) => (
+        {visibleStars.map((star) => (
           <UserStar
             key={star.id}
             x={star.x}
@@ -332,8 +341,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
             canDelete={star.userId === userId}
             onDelete={() => handleDeleteStar(star.id)}
           />
-          ));
-        })()}
+        ))}
       </div>
 
       {/* 底部操作区域 */}
@@ -450,9 +458,8 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
         onClose={() => setIsCreateModalOpen(false)}
         onConfirm={handleConfirmCreate}
         defaultColor="#FFD700" // 简化了 draft 状态
-        allowSfx={userNickname === 'JIEYOU不解忧' || readQuota().count < 3}
+        allowSfx={isAdminDevice || userNickname === 'JIEYOU不解忧' || readQuota().count < 3}
         onPreCheck={preCheckSfx}
-        currentUserName={userNickname}
       />
     </div>
   );

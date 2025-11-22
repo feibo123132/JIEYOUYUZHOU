@@ -20,6 +20,8 @@ interface AssistantSidebarProps {
   onOpen: () => void
   displayMode: 'random' | 'full'
   onChangeDisplayMode: (mode: 'random' | 'full') => void
+  isAdminDevice: boolean
+  onSetAdminDevice: (v: boolean) => void
 }
 
 const AssistantSidebar: React.FC<AssistantSidebarProps> = ({
@@ -41,9 +43,11 @@ const AssistantSidebar: React.FC<AssistantSidebarProps> = ({
   onOpen,
   displayMode,
   onChangeDisplayMode,
+  isAdminDevice,
+  onSetAdminDevice,
 }) => {
-  const [searchFoldOpen, setSearchFoldOpen] = useState(true)
-  const [displayFoldOpen, setDisplayFoldOpen] = useState(true)
+  const [searchFoldOpen, setSearchFoldOpen] = useState(false)
+  const [displayFoldOpen, setDisplayFoldOpen] = useState(false)
   if (!open) {
     return (
       <button
@@ -171,6 +175,38 @@ const AssistantSidebar: React.FC<AssistantSidebarProps> = ({
               </div>
             </div>
           )}
+        </div>
+
+        <div className="bg-white/5 backdrop-blur-md rounded-2xl border border-white/5 overflow-hidden">
+          <div className="p-3 flex items-center justify-between text-white/90">
+            <span className="text-sm">管理员模式</span>
+            {isAdminDevice ? (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-green-300">已开启</span>
+                <button
+                  className="text-xs bg-white/10 hover:bg-white/20 px-2 py-1 rounded"
+                  onClick={() => { onSetAdminDevice(false); alert('管理员模式已退出'); }}
+                >
+                  退出
+                </button>
+              </div>
+            ) : (
+              <button
+                className="text-xs bg-white/10 hover:bg-white/20 px-2 py-1 rounded"
+                onClick={() => {
+                  const pwd = window.prompt('请输入管理员模式密码');
+                  if (pwd && pwd === 'JIEYOU2025') {
+                    onSetAdminDevice(true);
+                    alert('管理员模式已开启');
+                  } else if (pwd !== null) {
+                    alert('密码错误');
+                  }
+                }}
+              >
+                开启
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

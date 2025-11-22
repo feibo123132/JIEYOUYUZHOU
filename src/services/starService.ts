@@ -96,7 +96,7 @@ const starService = {
     userId: string,
     nickname: string,
     position: { x: number; y: number },
-    options?: { color?: string; size?: number; shape?: string; message?: string }
+    options?: { color?: string; size?: number; shape?: string; message?: string; isAdminDevice?: boolean }
   ): Promise<StarData> {
     if (supabase) {
       const { data, error } = await supabase
@@ -126,6 +126,7 @@ const starService = {
           shape: options?.shape,
           message: options?.message,
           nickname,
+          isAdminDevice: options?.isAdminDevice,
         });
       }
       if (await isBackendReachable()) {

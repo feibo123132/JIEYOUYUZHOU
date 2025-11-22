@@ -116,6 +116,7 @@ export const tcbService = {
     shape?: string;
     message?: string;
     nickname: string;
+    isAdminDevice?: boolean;
   }) {
     if (!tcbDb) throw new Error('tcb_unavailable');
     await ensureSignIn();
@@ -124,7 +125,7 @@ export const tcbService = {
     const m = String(d.getMonth() + 1).padStart(2, '0');
     const dd = String(d.getDate()).padStart(2, '0');
     const tag = `${y}-${m}-${dd}`;
-    if (payload.nickname !== 'JIEYOU不解忧') {
+    if (!payload.isAdminDevice && payload.nickname !== 'JIEYOU不解忧') {
       const r = await (tcbDb as any).collection('stars').where({ nickname: payload.nickname }).orderBy('created_at', 'desc').get();
       const c = (r.data || []).filter((x: any) => (x.created_at || '').startsWith(tag)).length;
       if (c >= 3) throw new Error('quota_exceeded');
