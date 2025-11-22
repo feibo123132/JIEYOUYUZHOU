@@ -134,9 +134,9 @@ const CreateStarModal: React.FC<CreateStarModalProps> = ({ open, onClose, onConf
           )}
           {typeof incomingIndex === 'number' && (
             <div className="mb-1">
-              <div className="inline-flex items-center gap-2 bg-black/10 text-gray-800 px-3 py-2 rounded-lg">
-                <span className="text-sm">你即将点亮的是：</span>
-                <span className="font-semibold text-purple-600">JIEYOU宇宙的第 {incomingIndex} 颗星星</span>
+              <div className="inline-flex items-center gap-1 bg-black/10 text-gray-800 px-2 py-1 rounded-lg whitespace-nowrap">
+                <span className="text-sm whitespace-nowrap">即将点亮：</span>
+                <span className="font-semibold text-purple-600 whitespace-nowrap">JIEYOU宇宙的第{incomingIndex}颗星星</span>
               </div>
             </div>
           )}
