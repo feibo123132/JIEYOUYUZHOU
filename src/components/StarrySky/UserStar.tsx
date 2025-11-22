@@ -96,7 +96,7 @@ const UserStar: React.FC<UserStarProps> = ({
   const tipSide = y > 75 ? 'top' : 'bottom';
   const tipAlign = x > 70 ? 'right' : x < 30 ? 'left' : 'center';
   const tipContainerClass = (() => {
-    const base = 'absolute opacity-0 group-hover:opacity-100 transition-all duration-200 pointer-events-auto z-30';
+    const base = 'absolute opacity-0 peer-hover:opacity-100 transition-all duration-200 pointer-events-none z-30';
     if (tipSide === 'bottom') {
       if (tipAlign === 'center') return base + ' top-full left-1/2 transform -translate-x-1/2 mt-2';
       if (tipAlign === 'left') return base + ' top-full left-0 mt-2';
@@ -109,18 +109,18 @@ const UserStar: React.FC<UserStarProps> = ({
   })();
   return (
     <div
-      className={`absolute transform -translate-x-1/2 -translate-y-1/2 cursor-pointer group ${
+      className={`absolute transform -translate-x-1/2 -translate-y-1/2 cursor-pointer ${
         isNew ? 'animate-pulse' : ''
       }`}
       style={{ left: `${x}%`, top: `${y}%` }}
       onClick={onClick}
     >
-      <div className="relative">
+      <div className="relative peer">
         <IconComponent 
           className={`drop-shadow-lg transition-all duration-300 ${
             isNew 
               ? 'animate-bounce' 
-              : 'group-hover:scale-110'
+              : 'peer-hover:scale-110'
           }`}
           size={iconSize}
           color={color}
@@ -128,11 +128,11 @@ const UserStar: React.FC<UserStarProps> = ({
         />
         
         <div className={`absolute inset-0 rounded-full opacity-30 ${
-          isNew ? 'animate-ping' : 'group-hover:animate-ping'
+          isNew ? 'animate-ping' : 'peer-hover:animate-ping'
         }`} style={{ backgroundColor: color }}></div>
         
         <div className={`absolute -inset-2 rounded-full opacity-20 ${
-          isNew ? 'animate-pulse' : 'group-hover:animate-pulse'
+          isNew ? 'animate-pulse' : 'peer-hover:animate-pulse'
         }`} style={{ backgroundColor: color }}></div>
       </div>
 
@@ -151,7 +151,7 @@ const UserStar: React.FC<UserStarProps> = ({
             <div className="flex justify-end mt-3">
               <button
                 onClick={(e) => { e.stopPropagation(); onDelete(); }}
-                className="flex items-center gap-1 bg-red-600 hover:bg-red-700 text-white px-2 py-1 rounded-md text-[11px]"
+                className="pointer-events-auto flex items-center gap-1 bg-red-600 hover:bg-red-700 text-white px-2 py-1 rounded-md text-[11px]"
               >
                 <Trash2 className="w-3 h-3" /> 删除
               </button>

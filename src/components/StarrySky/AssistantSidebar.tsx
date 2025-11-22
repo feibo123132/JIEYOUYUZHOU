@@ -48,6 +48,7 @@ const AssistantSidebar: React.FC<AssistantSidebarProps> = ({
 }) => {
   const [searchFoldOpen, setSearchFoldOpen] = useState(false)
   const [displayFoldOpen, setDisplayFoldOpen] = useState(false)
+  const [toolsFoldOpen, setToolsFoldOpen] = useState(false)
   if (!open) {
     return (
       <button
@@ -178,35 +179,46 @@ const AssistantSidebar: React.FC<AssistantSidebarProps> = ({
         </div>
 
         <div className="bg-white/5 backdrop-blur-md rounded-2xl border border-white/5 overflow-hidden">
-          <div className="p-3 flex items-center justify-between text-white/90">
-            <span className="text-sm">管理员模式</span>
-            {isAdminDevice ? (
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-green-300">已开启</span>
-                <button
-                  className="text-xs bg-white/10 hover:bg-white/20 px-2 py-1 rounded"
-                  onClick={() => { onSetAdminDevice(false); alert('管理员模式已退出'); }}
-                >
-                  退出
-                </button>
+          <button
+            onClick={() => setToolsFoldOpen(!toolsFoldOpen)}
+            className="w-full flex items-center justify-between px-4 py-3 text-white"
+          >
+            <span className="font-semibold text-lg">🔧 小工具</span>
+            <ChevronDown className={`w-4 h-4 transition-transform ${toolsFoldOpen ? 'rotate-0' : '-rotate-90'}`} />
+          </button>
+          {toolsFoldOpen && (
+            <div className="p-3 space-y-3">
+              <div className="flex items-center justify-between bg-white/5 rounded-xl px-3 py-2">
+                <span className="text-sm text-white/90">管理员模式</span>
+                {isAdminDevice ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-green-300">已开启</span>
+                    <button
+                      className="text-xs bg-white/10 hover:bg-white/20 px-2 py-1 rounded"
+                      onClick={() => { onSetAdminDevice(false); alert('管理员模式已退出'); }}
+                    >
+                      退出
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    className="text-xs bg-white/10 hover:bg-white/20 px-2 py-1 rounded"
+                    onClick={() => {
+                      const pwd = window.prompt('请输入管理员模式密码');
+                      if (pwd && pwd === 'JIEYOU2025') {
+                        onSetAdminDevice(true);
+                        alert('管理员模式已开启');
+                      } else if (pwd !== null) {
+                        alert('密码错误');
+                      }
+                    }}
+                  >
+                    开启
+                  </button>
+                )}
               </div>
-            ) : (
-              <button
-                className="text-xs bg-white/10 hover:bg-white/20 px-2 py-1 rounded"
-                onClick={() => {
-                  const pwd = window.prompt('请输入管理员模式密码');
-                  if (pwd && pwd === 'JIEYOU2025') {
-                    onSetAdminDevice(true);
-                    alert('管理员模式已开启');
-                  } else if (pwd !== null) {
-                    alert('密码错误');
-                  }
-                }}
-              >
-                开启
-              </button>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
