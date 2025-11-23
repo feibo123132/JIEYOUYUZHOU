@@ -10,13 +10,10 @@ const NicknameInput: React.FC<NicknameInputProps> = ({ onSubmit, isLoading = fal
   const [nickname, setNickname] = useState('');
   const [error, setError] = useState('');
 
-  const baseUrl = (import.meta.env.BASE_URL || '/').endsWith('/') ? (import.meta.env.BASE_URL || '/') : (import.meta.env.BASE_URL || '/') + '/';
-  const getPublicUrl = (name: string) => baseUrl + encodeURI(name);
-  const playPop = () => { try { const a = new Audio(getPublicUrl('pop.mp3')); a.currentTime = 0; a.play().catch(() => {}); } catch {} };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    playPop();
+    (window as any).playClickSound?.();
     
     // 验证昵称
     if (!nickname.trim()) {
