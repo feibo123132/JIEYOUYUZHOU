@@ -218,7 +218,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
         setStars(prev => prev.map(star => 
           star.id === newStar.id ? { ...star, isJustCreated: false } : star
         ));
-      }, 12000);
+      }, 10000);
     } catch (error) {
       const msg = (error as any)?.message || '';
       if (msg === 'quota_exceeded') {
@@ -335,7 +335,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
       {/* 顶部导航 */}
       <div className="relative z-10 flex justify-between items-center p-4">
         <button
-          onClick={onBack}
+          onClick={() => { (window as any).playClickSound?.(); onBack(); }}
           className="bg-white/20 backdrop-blur-sm text-white px-4 py-2 rounded-lg hover:bg-white/30 transition-all duration-200 flex items-center space-x-2"
         >
           <RotateCcw className="w-4 h-4" />
@@ -459,11 +459,11 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
                 {selectedStar.message && (<p className="text-gray-700 text-sm mt-2">{selectedStar.message}</p>)}
               </div>
               <div className="flex space-x-3">
-                <button onClick={() => setSelectedStar(null)} className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 py-2 px-4 rounded-lg transition-colors duration-200">
+                <button onClick={() => { (window as any).playClickSound?.(); setSelectedStar(null); }} className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 py-2 px-4 rounded-lg transition-colors duration-200">
                   关闭
                 </button>
                 {selectedStar.userId === userId && (
-                  <button onClick={() => handleDeleteStar(selectedStar.id)} className="flex-1 bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center space-x-2">
+                  <button onClick={() => { (window as any).playClickSound?.(); handleDeleteStar(selectedStar.id); }} className="flex-1 bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center space-x-2">
                     <Trash2 className="w-4 h-4" />
                     <span>删除</span>
                   </button>

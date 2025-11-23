@@ -207,7 +207,7 @@ const CreateStarModal: React.FC<CreateStarModalProps> = ({ open, onClose, onConf
                     return (
                       <button
                         key={key}
-                        onClick={() => setShape(key)}
+                        onClick={() => { (window as any).playClickSound?.(); setShape(key); }}
                         className={`p-3 rounded-xl border text-center transition-all ${
                           active ? 'border-purple-500 bg-purple-50' : 'border-gray-300 hover:bg-gray-50'
                         }`}
