@@ -12,6 +12,9 @@ interface WelcomeScreenProps {
 }
 
 const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onEnter, onToggleMusic, isPlaying = false }) => {
+  const baseUrl = (import.meta.env.BASE_URL || '/').endsWith('/') ? (import.meta.env.BASE_URL || '/') : (import.meta.env.BASE_URL || '/') + '/'
+  const getPublicUrl = (name: string) => baseUrl + encodeURI(name)
+  const playPop = () => { try { const a = new Audio(getPublicUrl('pop.mp3')); a.currentTime = 0; a.play().catch(() => {}); } catch {} }
   return (
     <div className="min-h-screen flex flex-col items-center justify-center relative z-10 px-4">
       
@@ -77,7 +80,7 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onEnter, onToggleMusic, i
 
       {/* 进入按钮 */}
       <button
-        onClick={onEnter}
+        onClick={() => { playPop(); onEnter(); }}
         className="group relative bg-gradient-to-r from-purple-600 via-purple-700 to-indigo-700 hover:from-purple-500 hover:via-purple-600 hover:to-indigo-600 text-white font-semibold py-4 px-8 rounded-full text-lg transition-all duration-300 transform hover:scale-105 hover:shadow-2xl hover:shadow-purple-500/25 active:scale-95"
       >
         <div className="flex items-center justify-center">

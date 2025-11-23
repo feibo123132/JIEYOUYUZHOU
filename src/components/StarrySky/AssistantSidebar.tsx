@@ -49,10 +49,13 @@ const AssistantSidebar: React.FC<AssistantSidebarProps> = ({
   const [searchFoldOpen, setSearchFoldOpen] = useState(false)
   const [displayFoldOpen, setDisplayFoldOpen] = useState(false)
   const [toolsFoldOpen, setToolsFoldOpen] = useState(false)
+  const baseUrl = (import.meta.env.BASE_URL || '/').endsWith('/') ? (import.meta.env.BASE_URL || '/') : (import.meta.env.BASE_URL || '/') + '/'
+  const getPublicUrl = (name: string) => baseUrl + encodeURI(name)
+  const playPop = () => { try { const a = new Audio(getPublicUrl('pop.mp3')); a.currentTime = 0; a.play().catch(() => {}); } catch {} }
   if (!open) {
     return (
       <button
-        onClick={onOpen}
+        onClick={() => { playPop(); onOpen(); }}
         className="fixed top-4 right-4 z-20 bg-transparent text-3xl"
         aria-label="打开助手栏"
       >

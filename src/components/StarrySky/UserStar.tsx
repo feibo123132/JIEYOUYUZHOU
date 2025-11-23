@@ -82,6 +82,9 @@ const UserStar: React.FC<UserStarProps> = ({
   , canDelete = false,
   onDelete,
 }) => {
+  const baseUrl = (import.meta.env.BASE_URL || '/').endsWith('/') ? (import.meta.env.BASE_URL || '/') : (import.meta.env.BASE_URL || '/') + '/';
+  const getPublicUrl = (name: string) => baseUrl + encodeURI(name);
+  const playPop = () => { try { const a = new Audio(getPublicUrl('pop.mp3')); a.currentTime = 0; a.play().catch(() => {}); } catch {} };
   const formatTime = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleString('zh-CN', {
@@ -115,9 +118,9 @@ const UserStar: React.FC<UserStarProps> = ({
         isNew ? 'animate-pulse' : ''
       }`}
       style={{ left: `${x}%`, top: `${y}%` }}
-      onClick={onClick}
+      onClick={() => { playPop(); onClick(); }}
     >
-      <div className="relative peer">
+      <div className="relative peer breath-slow">
         <IconComponent 
           className={`drop-shadow-lg transition-all duration-300 ${
             isNew 

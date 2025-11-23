@@ -165,6 +165,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
 
   // 点亮新星星
   const handleOpenCreateModal = () => {
+    playPop();
     setIsCreateModalOpen(true);
   };
 
@@ -503,3 +504,6 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
 };
 
 export default StarrySky;
+  const baseUrl = (import.meta.env.BASE_URL || '/').endsWith('/') ? (import.meta.env.BASE_URL || '/') : (import.meta.env.BASE_URL || '/') + '/';
+  const getPublicUrl = (name: string) => baseUrl + encodeURI(name);
+  const playPop = () => { try { const a = new Audio(getPublicUrl('pop.mp3')); a.currentTime = 0; a.play().catch(() => {}); } catch {} };
