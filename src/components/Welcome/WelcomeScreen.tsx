@@ -1,8 +1,10 @@
 // src/components/Welcome/WelcomeScreen.tsx (修正后的完整版)
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 // ↓↓↓↓↓↓ [修正] 统一使用 lucide-react 的图标库 ↓↓↓↓↓↓
 import { Star, Sparkles, Music, Music2 } from 'lucide-react';
+import services from '../../services/starService';
+const { starService } = services;
 
 interface WelcomeScreenProps {
   onEnter: () => void;
@@ -12,6 +14,8 @@ interface WelcomeScreenProps {
 }
 
 const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onEnter, onToggleMusic, isPlaying = false }) => {
+  const [starCount, setStarCount] = useState<number | null>(null);
+  useEffect(() => { (async () => { try { const all = await starService.getAllStars(); setStarCount(all.length); } catch {} })(); }, []);
   return (
     <div className="min-h-screen flex flex-col items-center justify-center relative z-10 px-4">
       
@@ -49,7 +53,7 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onEnter, onToggleMusic, i
           </div>
           
           <div className="space-y-4">
-            <h2 className="text-2xl font-semibold text-white">欢迎来到我们的JIEYOU宇宙</h2>
+            <h2 className="text-2xl font-semibold text-white">欢迎JIEYOU宇宙的<span className="text-purple-600 inline-block mx-1 text-[1.75rem] md:text-[2rem]">第{((starCount ?? 0) + 1)}颗</span>星星</h2>
             <p className="text-gray-300 text-sm leading-relaxed">
               在宇宙中点亮一颗独属于你自己的星星
               <br />
