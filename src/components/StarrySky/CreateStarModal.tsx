@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Star as PStar, Heart, Cloud, Moon, Mountains, Leaf, MusicNotes, Bird, Cat, Dog, Waves, PaperPlane, X } from 'phosphor-react';
+import type { ThemeConfig } from '../../themes/themeConfig';
 
 type ShapeOption =
   | 'star' | 'heart' | 'cloud' | 'moon' | 'fullmoon' | 'mountain' | 'leaf' | 'music' | 'bird'
@@ -11,6 +12,7 @@ type ShapeOption =
 type Category = '全部' | '萌宠' | '宇宙' | '水果' | '星座' | '其他';
 
 interface CreateStarModalProps {
+  theme: ThemeConfig;
   open: boolean;
   onClose: () => void;
   onConfirm: (data: { color: string; size: number; shape: ShapeOption; message: string }) => void;
@@ -95,7 +97,7 @@ const shapeCategories: Record<ShapeOption, Category> = {
   // 其他（已覆盖在最前行）
 };
 
-const CreateStarModal: React.FC<CreateStarModalProps> = ({ open, onClose, onConfirm, defaultColor = '#FFD700', allowSfx = true, onPreCheck, currentUserName, incomingIndex }) => {
+const CreateStarModal: React.FC<CreateStarModalProps> = ({ theme, open, onClose, onConfirm, defaultColor = '#FFD700', allowSfx = true, onPreCheck, currentUserName, incomingIndex }) => {
   const [color, setColor] = useState(defaultColor);
   const [size, setSize] = useState(24);
   const [shape, setShape] = useState<ShapeOption>('star');
@@ -117,7 +119,7 @@ const CreateStarModal: React.FC<CreateStarModalProps> = ({ open, onClose, onConf
         style={{ overscrollBehavior: 'none' }}
       >
         <div className="flex justify-between items-center mb-4">
-          <h3 className="text-lg font-bold text-gray-800">点亮星星</h3>
+          <h3 className="text-lg font-bold text-gray-800">{theme.sky.createLabel}</h3>
           <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100">
             <X className="w-5 h-5 text-gray-600" />
           </button>
@@ -135,19 +137,19 @@ const CreateStarModal: React.FC<CreateStarModalProps> = ({ open, onClose, onConf
           {typeof incomingIndex === 'number' && (
             <div className="mb-1">
               <div className="inline-flex items-center gap-1 bg-black/10 text-gray-800 px-2 py-1 rounded-lg whitespace-nowrap">
-                <span className="text-sm whitespace-nowrap">即将点亮：JIEYOU宇宙的</span>
-                <span className="font-semibold text-purple-600 text-base whitespace-nowrap">第{incomingIndex}颗</span>
-                <span className="text-sm whitespace-nowrap">星星</span>
+                <span className="text-sm whitespace-nowrap">即将点亮：{theme.hub.name}的</span>
+                <span className="font-semibold text-base whitespace-nowrap" style={{ color: theme.visual.defaultStarColor }}>第{incomingIndex}颗</span>
+                <span className="text-sm whitespace-nowrap">{theme.sky.detailNoun}</span>
               </div>
             </div>
           )}
           <div>
-            <label className="block text-sm text-gray-700 mb-2">留言</label>
+            <label className="block text-sm text-gray-700 mb-2">{theme.sky.modalPrompt}</label>
             <textarea
               value={message}
               onChange={(e) => setMessage(e.target.value.slice(0, 200))}
-              placeholder="写下你的感受、心情、愿望、想说的话或想听的歌"
-              className="w-full p-3 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              placeholder={theme.sky.modalPlaceholder}
+              className={`w-full p-3 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 ${theme.visual.focusRingClass}`}
               rows={3}
               maxLength={200}
             />
@@ -189,7 +191,7 @@ const CreateStarModal: React.FC<CreateStarModalProps> = ({ open, onClose, onConf
                   key={c}
                   onClick={() => setCategory(c)}
                   className={`px-3 py-1 rounded-full text-sm border ${
-                    category === c ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                    category === c ? `bg-gradient-to-r ${theme.visual.buttonGradientClass} text-white border-transparent` : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
                   }`}
                 >
                   {c}
@@ -210,10 +212,10 @@ const CreateStarModal: React.FC<CreateStarModalProps> = ({ open, onClose, onConf
                         key={key}
                         onClick={() => { (window as any).playClickSound?.(); setShape(key); }}
                         className={`p-3 rounded-xl border text-center transition-all ${
-                          active ? 'border-purple-500 bg-purple-50' : 'border-gray-300 hover:bg-gray-50'
+                          active ? (theme.visual.accent === 'gold' ? 'border-amber-500 bg-amber-50' : 'border-purple-500 bg-purple-50') : 'border-gray-300 hover:bg-gray-50'
                         }`}
                       >
-                        <Icon className="mx-auto" size={24} color={active ? '#7c3aed' : '#6b7280'} weight="fill" />
+                        <Icon className="mx-auto" size={24} color={active ? theme.visual.defaultStarColor : '#6b7280'} weight="fill" />
                         <div className="text-xs mt-1 text-gray-600">{shapeLabels[key]}</div>
                       </button>
                     );
@@ -231,10 +233,10 @@ const CreateStarModal: React.FC<CreateStarModalProps> = ({ open, onClose, onConf
               取消
             </button>
             <button
-              onClick={async () => { if (!allowSfx) { onConfirm({ color, size, shape, message }); return; } if (onPreCheck) { try { const ok = await onPreCheck(); if (!ok) { onClose(); return; } } catch {} } const bg = (window as any).__bgAudio as HTMLAudioElement | undefined; const ensure = (window as any).__ensureBgAudioGraph as (() => Promise<void>) | undefined; if (ensure) { try { ensure(); } catch {} } const gain = (window as any).__bgGain as any; if (bg || gain) { if ((window as any).__bgAudioRampTimer) { clearInterval((window as any).__bgAudioRampTimer); (window as any).__bgAudioRampTimer = null; } if (gain) { try { gain.gain.value = 0.35; } catch {} } else if (bg) { (window as any).__bgAudioOriginalVolume = (window as any).__bgAudioOriginalVolume ?? bg.volume; bg.volume = Math.max(0, ((window as any).__bgAudioOriginalVolume) * 0.35); } } const inc = () => { (window as any).__sfxPlayingCount = ((window as any).__sfxPlayingCount || 0) + 1; }; const rampUp = () => { const g = (window as any).__bgGain as any; if (g) { const from = g.gain.value; const to = 1; const steps = 20; const duration = 1000; let i = 0; if ((window as any).__bgAudioRampTimer) { clearInterval((window as any).__bgAudioRampTimer); } (window as any).__bgAudioRampTimer = setInterval(() => { i++; const t = i / steps; const v = from + (to - from) * t; try { g.gain.value = Math.min(1, Math.max(0, v)); } catch {} if (i >= steps) { clearInterval((window as any).__bgAudioRampTimer); (window as any).__bgAudioRampTimer = null; } }, Math.max(10, Math.floor(duration / steps))); return; } if (!bg) return; const fromV = bg.volume; const toV = 1; const stepsV = 20; const durationV = 1000; let j = 0; if ((window as any).__bgAudioRampTimer) { clearInterval((window as any).__bgAudioRampTimer); } (window as any).__bgAudioRampTimer = setInterval(() => { j++; const t = j / stepsV; const v = fromV + (toV - fromV) * t; bg.volume = Math.min(1, Math.max(0, v)); if (j >= stepsV) { clearInterval((window as any).__bgAudioRampTimer); (window as any).__bgAudioRampTimer = null; } }, Math.max(10, Math.floor(durationV / stepsV))); }; const dec = () => { const c = ((window as any).__sfxPlayingCount || 0) - 1; (window as any).__sfxPlayingCount = c < 0 ? 0 : c; if ((window as any).__sfxPlayingCount === 0) { rampUp(); } }; const s = new Audio(getPublicUrl('点亮星星的音效.mp3')); s.currentTime = 0; inc(); s.addEventListener('ended', dec); s.addEventListener('error', dec); s.play().catch(dec); const list = ['朝着自己的月亮走.mp3','欢迎你到解忧宇宙遨游.mp3','每当宇宙闪烁.mp3','你本就是万千色彩.mp3','你终将会找到属于自己的月亮②.mp3','生活所有的无奈.mp3','愿你开心每一天.mp3','愿世界待你以温柔.mp3','月亮终究会到来.mp3','祝你有美好的一天.mp3']; const pick = list[Math.floor(Math.random()*list.length)]; const a = new Audio(getPublicUrl(pick)); a.currentTime = 0; inc(); a.addEventListener('ended', dec); a.addEventListener('error', dec); a.play().catch(dec); onConfirm({ color, size, shape, message }); }}
-              className="flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white py-2 px-4 rounded-lg"
+              onClick={async () => { if (!allowSfx) { onConfirm({ color, size, shape, message }); return; } if (onPreCheck) { try { const ok = await onPreCheck(); if (!ok) { onClose(); return; } } catch {} } const bg = (window as any).__bgAudio as HTMLAudioElement | undefined; const ensure = (window as any).__ensureBgAudioGraph as (() => Promise<void>) | undefined; if (ensure) { try { ensure(); } catch {} } const gain = (window as any).__bgGain as any; if (bg || gain) { if ((window as any).__bgAudioRampTimer) { clearInterval((window as any).__bgAudioRampTimer); (window as any).__bgAudioRampTimer = null; } if (gain) { try { gain.gain.value = 0.35; } catch {} } else if (bg) { (window as any).__bgAudioOriginalVolume = (window as any).__bgAudioOriginalVolume ?? bg.volume; bg.volume = Math.max(0, ((window as any).__bgAudioOriginalVolume) * 0.35); } } const inc = () => { (window as any).__sfxPlayingCount = ((window as any).__sfxPlayingCount || 0) + 1; }; const rampUp = () => { const g = (window as any).__bgGain as any; if (g) { const from = g.gain.value; const to = 1; const steps = 20; const duration = 1000; let i = 0; if ((window as any).__bgAudioRampTimer) { clearInterval((window as any).__bgAudioRampTimer); } (window as any).__bgAudioRampTimer = setInterval(() => { i++; const t = i / steps; const v = from + (to - from) * t; try { g.gain.value = Math.min(1, Math.max(0, v)); } catch {} if (i >= steps) { clearInterval((window as any).__bgAudioRampTimer); (window as any).__bgAudioRampTimer = null; } }, Math.max(10, Math.floor(duration / steps))); return; } if (!bg) return; const fromV = bg.volume; const toV = 1; const stepsV = 20; const durationV = 1000; let j = 0; if ((window as any).__bgAudioRampTimer) { clearInterval((window as any).__bgAudioRampTimer); } (window as any).__bgAudioRampTimer = setInterval(() => { j++; const t = j / stepsV; const v = fromV + (toV - fromV) * t; bg.volume = Math.min(1, Math.max(0, v)); if (j >= stepsV) { clearInterval((window as any).__bgAudioRampTimer); (window as any).__bgAudioRampTimer = null; } }, Math.max(10, Math.floor(durationV / stepsV))); }; const dec = () => { const c = ((window as any).__sfxPlayingCount || 0) - 1; (window as any).__sfxPlayingCount = c < 0 ? 0 : c; if ((window as any).__sfxPlayingCount === 0) { rampUp(); } }; const s = new Audio(getPublicUrl('点亮星星的音效.mp3')); s.currentTime = 0; inc(); s.addEventListener('ended', dec); s.addEventListener('error', dec); s.play().catch(dec); const list = theme.audio.voices; const pick = list[Math.floor(Math.random()*list.length)]; if (pick) { const a = new Audio(getPublicUrl(pick)); a.currentTime = 0; inc(); a.addEventListener('ended', dec); a.addEventListener('error', dec); a.play().catch(dec); } onConfirm({ color, size, shape, message }); }}
+              className={`flex-1 bg-gradient-to-r ${theme.visual.buttonGradientClass} ${theme.visual.buttonHoverClass} text-white py-2 px-4 rounded-lg`}
             >
-              点亮
+              {theme.sky.modalConfirmLabel}
             </button>
           </div>
         </div>

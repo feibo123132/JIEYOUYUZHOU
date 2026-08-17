@@ -1,6 +1,7 @@
 // src/services/tcb.ts (最终胜利版，可直接复制)
 
 import cloudbase from '@cloudbase/js-sdk';
+import { getThemeConfig, type ThemeId } from '../themes/themeConfig';
 
 // 1. 获取环境变量
 const envId = import.meta.env.VITE_TCB_ENV_ID;
@@ -43,7 +44,7 @@ export const ensureSignIn = async () => {
 };
 
 // 检查 TCB 是否可达的函数
-export const isTcbReachable = async (): Promise<boolean> => {
+export const isTcbReachable = async (themeId: ThemeId = 'jieyou'): Promise<boolean> => {
   if (!tcbDb) {
     console.log('--- isTcbReachable: 检查失败，因为 `tcbDb` 实例不存在。');
     return false;
@@ -53,8 +54,9 @@ export const isTcbReachable = async (): Promise<boolean> => {
     console.log('--- isTcbReachable: 步骤 1/2 - 正在确保登录状态...');
     await ensureSignIn();
     
-    console.log('--- isTcbReachable: 步骤 2/2 - 正在尝试从 "stars" 集合读取1条数据...');
-    await (tcbDb as any).collection('stars').limit(1).get();
+    const collectionName = getThemeConfig(themeId).data.starsCollection;
+    console.log(`--- isTcbReachable: 步骤 2/2 - 正在尝试从 "${collectionName}" 集合读取1条数据...`);
+    await (tcbDb as any).collection(collectionName).limit(1).get();
     
     console.log('--- isTcbReachable: 检查成功！TCB 可达。');
     return true;
@@ -76,10 +78,11 @@ export const tcbService = {
     return { id, nickname, created_at: now, total_stars: 0 };
   },
 
-  async getAllStars() {
+  async getAllStars(themeId: ThemeId) {
     if (!tcbDb) throw new Error('tcb_unavailable');
     await ensureSignIn();
-    const res = await (tcbDb as any).collection('stars').orderBy('created_at', 'desc').get();
+    const collectionName = getThemeConfig(themeId).data.starsCollection;
+    const res = await (tcbDb as any).collection(collectionName).orderBy('created_at', 'desc').get();
     return (res.data || []).map((d: any) => ({
       id: d._id || d.id,
       user_id: d.user_id,
@@ -94,7 +97,7 @@ export const tcbService = {
     }));
   },
 
-  async getTodayCountByNickname(nickname: string) {
+  async getTodayCountByNickname(themeId: ThemeId, nickname: string) {
     if (!tcbDb) throw new Error('tcb_unavailable');
     await ensureSignIn();
     const d = new Date();
@@ -102,12 +105,13 @@ export const tcbService = {
     const m = String(d.getMonth() + 1).padStart(2, '0');
     const dd = String(d.getDate()).padStart(2, '0');
     const tag = `${y}-${m}-${dd}`;
-    const r = await (tcbDb as any).collection('stars').where({ nickname }).orderBy('created_at', 'desc').get();
+    const collectionName = getThemeConfig(themeId).data.starsCollection;
+    const r = await (tcbDb as any).collection(collectionName).where({ nickname }).orderBy('created_at', 'desc').get();
     const c = (r.data || []).filter((x: any) => (x.created_at || '').startsWith(tag)).length;
     return c;
   },
 
-  async createStar(payload: {
+  async createStar(themeId: ThemeId, payload: {
     user_id: string;
     position_x: number;
     position_y: number;
@@ -126,43 +130,48 @@ export const tcbService = {
     const dd = String(d.getDate()).padStart(2, '0');
     const tag = `${y}-${m}-${dd}`;
     if (!payload.isAdminDevice && payload.nickname !== 'JIEYOU不解忧') {
-      const r = await (tcbDb as any).collection('stars').where({ nickname: payload.nickname }).orderBy('created_at', 'desc').get();
+      const collectionName = getThemeConfig(themeId).data.starsCollection;
+      const r = await (tcbDb as any).collection(collectionName).where({ nickname: payload.nickname }).orderBy('created_at', 'desc').get();
       const c = (r.data || []).filter((x: any) => (x.created_at || '').startsWith(tag)).length;
       if (c >= 3) throw new Error('quota_exceeded');
     }
     const doc = { ...payload, created_at: new Date().toISOString() };
-    const res = await (tcbDb as any).collection('stars').add(doc);
+    const collectionName = getThemeConfig(themeId).data.starsCollection;
+    const res = await (tcbDb as any).collection(collectionName).add(doc);
     return { id: res.id || res._id, ...doc };
   },
 
-  async deleteStar(id: string) {
+  async deleteStar(themeId: ThemeId, id: string) {
     if (!tcbDb) throw new Error('tcb_unavailable');
     await ensureSignIn();
-    await (tcbDb as any).collection('stars').doc(id).remove();
+    const collectionName = getThemeConfig(themeId).data.starsCollection;
+    await (tcbDb as any).collection(collectionName).doc(id).remove();
     return true;
   }
 };
 
 export const petService = {
-  async getPetStatus() {
+  async getPetStatus(themeId: ThemeId) {
     if (!tcbDb) throw new Error('tcb_unavailable');
     await ensureSignIn();
     try {
-      const doc = await (tcbDb as any).collection('pet_stats').doc('global_cat').get();
+      const collectionName = getThemeConfig(themeId).data.petCollection;
+      const doc = await (tcbDb as any).collection(collectionName).doc('global_cat').get();
       const data = (doc?.data || [])[0] || null;
       if (!data) {
         const init = { _id: 'global_cat', xp: 0, updated_at: new Date().toISOString() };
-        await (tcbDb as any).collection('pet_stats').add(init);
+        await (tcbDb as any).collection(collectionName).add(init);
         return { xp: 0 };
       }
       return { xp: Number(data.xp || 0) };
     } catch {
       try {
-        const list = await (tcbDb as any).collection('pet_stats').where({ _id: 'global_cat' }).get();
+        const collectionName = getThemeConfig(themeId).data.petCollection;
+        const list = await (tcbDb as any).collection(collectionName).where({ _id: 'global_cat' }).get();
         const data = (list?.data || [])[0];
         if (!data) {
           const init = { _id: 'global_cat', xp: 0, updated_at: new Date().toISOString() };
-          await (tcbDb as any).collection('pet_stats').add(init);
+          await (tcbDb as any).collection(collectionName).add(init);
           return { xp: 0 };
         }
         return { xp: Number(data.xp || 0) };
@@ -171,7 +180,7 @@ export const petService = {
       }
     }
   },
-  async interactWithPet(userId?: string) {
+  async interactWithPet(themeId: ThemeId, userId?: string) {
     if (!tcbDb) throw new Error('tcb_unavailable');
     await ensureSignIn();
     const d = new Date();
@@ -179,15 +188,16 @@ export const petService = {
     const m = String(d.getMonth() + 1).padStart(2, '0');
     const dd = String(d.getDate()).padStart(2, '0');
     const tag = `${y}-${m}-${dd}`;
-    const key = `pet_daily_${userId || 'device'}_${tag}`;
+    const key = `pet_daily_${themeId}_${userId || 'device'}_${tag}`;
     try { if (localStorage.getItem(key) === 'done') return { added: false }; } catch {}
-    const statRes = await (tcbDb as any).collection('pet_stats').where({ _id: 'global_cat' }).get();
+    const collectionName = getThemeConfig(themeId).data.petCollection;
+    const statRes = await (tcbDb as any).collection(collectionName).where({ _id: 'global_cat' }).get();
     const cur = (statRes?.data || [])[0];
     const xp = Number(cur?.xp || 0) + 1;
     if (cur && cur._id) {
-      await (tcbDb as any).collection('pet_stats').doc(cur._id).update({ xp, updated_at: new Date().toISOString() });
+      await (tcbDb as any).collection(collectionName).doc(cur._id).update({ xp, updated_at: new Date().toISOString() });
     } else {
-      await (tcbDb as any).collection('pet_stats').add({ _id: 'global_cat', xp, updated_at: new Date().toISOString() });
+      await (tcbDb as any).collection(collectionName).add({ _id: 'global_cat', xp, updated_at: new Date().toISOString() });
     }
     try { localStorage.setItem(key, 'done'); } catch {}
     return { added: true, xp };

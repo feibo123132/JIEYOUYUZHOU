@@ -5,13 +5,14 @@ export const withTimeout = async <T>(p: Promise<T>, ms = 3000): Promise<T> => {
   });
 };
 
-export const isBackendReachable = async (): Promise<boolean> => {
+export const isBackendReachable = async (themeId: ThemeId = 'jieyou'): Promise<boolean> => {
   const base = import.meta.env.VITE_API_BASE as string | undefined;
   if (!base) return false;
   try {
-    const res = await withTimeout(fetch(`${base}/health`, { method: 'GET', cache: 'no-store' }), 2500);
+    const res = await withTimeout(fetch(`${base}${getThemeHealthApiPath(themeId)}`, { method: 'GET', cache: 'no-store' }), 2500);
     return res.ok;
   } catch {
     return false;
   }
 };
+import { getThemeHealthApiPath, type ThemeId } from '../themes/themeConfig';

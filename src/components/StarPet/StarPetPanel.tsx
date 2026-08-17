@@ -1,7 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { Cat, Heart, PawPrint, Shower, Moon, Fish } from 'phosphor-react'
 import { toast } from 'sonner'
-import { petService } from '../../services/tcb'
+import services from '../../services/starService'
+import type { ThemeConfig } from '../../themes/themeConfig'
+
+const { petService } = services
 
 const thresholds = [0, 10, 40, 80, 150, 250, 460, 780, 1210, 1650]
 
@@ -20,11 +23,12 @@ function calcLevel(xp: number) {
 }
 
 interface StarPetPanelProps {
+  theme: ThemeConfig
   onClose: () => void
   userId?: string
 }
 
-const StarPetPanel: React.FC<StarPetPanelProps> = ({ onClose, userId }) => {
+const StarPetPanel: React.FC<StarPetPanelProps> = ({ theme, onClose, userId }) => {
   const [xp, setXp] = useState(0)
   const [loading, setLoading] = useState(true)
   const [animKey, setAnimKey] = useState(0)
@@ -33,16 +37,16 @@ const StarPetPanel: React.FC<StarPetPanelProps> = ({ onClose, userId }) => {
   useEffect(() => {
     (async () => {
       try {
-        const s = await petService.getPetStatus()
+        const s = await petService.getPetStatus(theme.id)
         setXp(Number(s.xp || 0))
       } catch {}
       setLoading(false)
     })()
-  }, [])
+  }, [theme.id])
 
   const interact = async (type: string) => {
     try {
-      const res = await petService.interactWithPet(userId)
+      const res = await petService.interactWithPet(theme.id, userId)
       if (res.added) {
         setXp(res.xp)
         setAnimKey(k => k + 1)
@@ -64,7 +68,7 @@ const StarPetPanel: React.FC<StarPetPanelProps> = ({ onClose, userId }) => {
       <div className="absolute inset-0 bg-black/60" onClick={onClose} />
       <div className="relative w-full max-w-lg rounded-3xl border border-white/10 bg-white/10 backdrop-blur-2xl p-6 text-white">
         <div className="flex items-center justify-between mb-4">
-          <div className="text-xl font-extrabold">星际萌宠 · 公共猫舍</div>
+          <div className="text-xl font-extrabold">{theme.hub.name} · 公共猫舍</div>
           <button onClick={onClose} className="text-white/80 hover:text-white">关闭</button>
         </div>
 
@@ -80,7 +84,7 @@ const StarPetPanel: React.FC<StarPetPanelProps> = ({ onClose, userId }) => {
             <div className="text-sm">{level.curXp}/{level.need}</div>
           </div>
           <div className="h-3 mt-2 rounded-full bg-white/20 overflow-hidden">
-            <div className="h-full bg-purple-600 transition-all" style={{ width: `${Math.round(level.pct * 100)}%` }} />
+            <div className="h-full transition-all" style={{ width: `${Math.round(level.pct * 100)}%`, backgroundColor: theme.visual.defaultStarColor }} />
           </div>
           <div className="text-xs text-white/70 mt-1">下一等级解锁：{level.lvl >= 10 ? '星际神兽' : level.lvl >= 8 ? '专属吉他' : level.lvl >= 5 ? '美味猫罐头' : level.lvl >= 3 ? '太空头盔' : '—'}</div>
         </div>

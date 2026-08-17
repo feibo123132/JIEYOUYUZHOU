@@ -8,7 +8,7 @@ import StarPetPanel from '../StarPet/StarPetPanel';
 import { toast } from 'sonner';
 import CreateStarModal from './CreateStarModal';
 import AssistantSidebar from './AssistantSidebar';
-import { tcbService, isTcbReachable, tcbApp } from '../../services/tcb';
+import type { ThemeConfig } from '../../themes/themeConfig';
 
 // ↓↓↓↓↓↓ [修正] 使用正确的默认导入并解构出 starService ↓↓↓↓↓↓
 import services from '../../services/starService';
@@ -30,12 +30,13 @@ interface StarData {
 }
 
 interface StarrySkyProps {
+  theme: ThemeConfig;
   userNickname: string;
-  onBack: () => void;
+  onSwitchTheme: () => void;
   userId: string;
 }
 
-const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) => {
+const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onSwitchTheme, userId }) => {
   const [stars, setStars] = useState<StarData[]>([]);
   const [selectedStar, setSelectedStar] = useState<StarData | null>(null);
   const [isCreating, setIsCreating] = useState(false);
@@ -50,6 +51,8 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
   const [isAdminDevice, setIsAdminDevice] = useState<boolean>(false);
   const [starPetOpen, setStarPetOpen] = useState<boolean>(false);
   const [welcomeInfo, setWelcomeInfo] = useState<{ nickname: string; count: number } | null>(null);
+  const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   const formatYMD = (d: Date) => {
     const y = d.getFullYear();
@@ -70,9 +73,19 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
   
   // 加载现有星星数据
   useEffect(() => {
+    let active = true;
     const loadStars = async () => {
+      setStars([]);
+      setSelectedStar(null);
+      setIsCreateModalOpen(false);
+      setSidebarOpen(false);
+      setStarPetOpen(false);
+      setWelcomeInfo(null);
+      setSearchName('');
+      setSearchDate('');
+      setLoadState('loading');
       try {
-        const allStars = await starService.getAllStars();
+        const allStars = await starService.getAllStars(theme.id);
         const formattedStars = allStars.map(star => ({
           id: star.id,
           x: star.position_x,
@@ -85,15 +98,20 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
           userId: star.user_id,
           message: star.message
         }));
+        if (!active) return;
         setStars(formattedStars);
+        setLoadState('ready');
       } catch (error) {
+        if (!active) return;
         console.error('加载星星失败:', error);
-        toast.error('加载星星失败，请刷新页面重试');
+        setLoadState('error');
+        toast.error(theme.sky.unavailableMessage);
       }
     };
 
     loadStars();
-  }, []);
+    return () => { active = false; };
+  }, [loadAttempt, theme.id, theme.sky.unavailableMessage]);
 
   useEffect(() => {
     try {
@@ -149,7 +167,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
   };
 
   const readQuota = () => {
-    const raw = localStorage.getItem('device_daily_quota');
+    const raw = localStorage.getItem(theme.data.quotaStorageKey);
     const t = todayStr();
     if (!raw) return { date: t, count: 0 };
     try {
@@ -162,7 +180,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
   };
 
   const writeQuota = (q: { date: string; count: number }) => {
-    localStorage.setItem('device_daily_quota', JSON.stringify(q));
+    localStorage.setItem(theme.data.quotaStorageKey, JSON.stringify(q));
   };
 
   // 点亮新星星
@@ -186,7 +204,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
     setIsCreateModalOpen(false);
     try {
       const position = generateRandomPosition();
-      const newStarData = await starService.createStar(userId, userNickname, position, { ...data, isAdminDevice });
+      const newStarData = await starService.createStar(theme.id, userId, userNickname, position, { ...data, isAdminDevice });
       const newStar: StarData = {
         id: newStarData.id,
         x: newStarData.position_x,
@@ -210,7 +228,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
         const q = readQuota();
         writeQuota({ date: q.date, count: q.count + 1 });
       }
-      toast.success(`✨ ${userNickname} 点亮了一颗新星星！`);
+      toast.success(`✨ ${userNickname} 点亮了一颗${theme.sky.successNoun}！`);
       setTimeout(() => {
         setStars(prev => prev.map(star => 
           star.id === newStar.id ? { ...star, isNew: false } : star
@@ -242,19 +260,17 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
       return false;
     }
     try {
-      if (tcbApp && await isTcbReachable()) {
-        const c = await tcbService.getTodayCountByNickname(userNickname);
-        if (c >= 3) {
-          toast.error('今日点亮次数已达上限 (3 次)');
-          return false;
-        }
+      const count = await starService.getTodayCountByNickname(theme.id, userNickname);
+      if (count >= 3) {
+        toast.error('今日点亮次数已达上限 (3 次)');
+        return false;
       }
     } catch {}
     return true;
   };
 
   const handleDeleteStar = async (starId: string) => {
-    const ok = await starService.deleteStar(starId);
+    const ok = await starService.deleteStar(theme.id, starId);
     if (ok) {
       setStars(prev => prev.filter(s => s.id !== starId));
       setSelectedStar(null);
@@ -306,7 +322,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
         <div className="flex items-center justify-center gap-3">
           <Sparkles className="w-6 h-6 text-yellow-300 animate-pulse" />
           <h1 className="text-2xl md:text-4xl font-extrabold text-white">
-            我们的JIEYOU宇宙
+            {theme.sky.title}
           </h1>
           <Sparkles className="w-6 h-6 text-yellow-300 animate-pulse" />
         </div>
@@ -338,17 +354,34 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
       {/* 顶部导航 */}
       <div className="relative z-10 flex justify-between items-center p-4">
         <button
-          onClick={() => { (window as any).playClickSound?.(); onBack(); }}
+          onClick={() => { (window as any).playClickSound?.(); onSwitchTheme(); }}
           className="bg-white/20 backdrop-blur-sm text-white px-4 py-2 rounded-lg hover:bg-white/30 transition-all duration-200 flex items-center space-x-2"
         >
           <RotateCcw className="w-4 h-4" />
-          <span>返回</span>
+          <span>{theme.sky.switchLabel}</span>
         </button>
       </div>
 
       {/* 星星显示区域 */}
       <div className="relative w-full h-screen">
-        {visibleStars.map((star) => (
+        {loadState === 'loading' && (
+          <div className="absolute inset-0 z-20 flex items-center justify-center text-white/80">
+            <div className="rounded-2xl border border-white/10 bg-black/35 px-6 py-4 backdrop-blur-xl">正在连接这片星空...</div>
+          </div>
+        )}
+        {loadState === 'error' && (
+          <div className="absolute inset-0 z-20 flex items-center justify-center p-6">
+            <div className="max-w-sm rounded-3xl border border-white/15 bg-black/55 p-7 text-center text-white backdrop-blur-xl">
+              <Sparkles className="mx-auto mb-3 h-8 w-8" style={{ color: theme.visual.defaultStarColor }} />
+              <div className="text-lg font-bold">{theme.sky.unavailableMessage}</div>
+              <p className="mt-2 text-sm text-white/65">请稍后再试，另一企划的数据不会受到影响。</p>
+              <button onClick={() => setLoadAttempt((value) => value + 1)} className={`mt-5 rounded-full bg-gradient-to-r ${theme.visual.buttonGradientClass} ${theme.visual.buttonHoverClass} px-5 py-2 font-semibold text-white`}>
+                重新连接
+              </button>
+            </div>
+          </div>
+        )}
+        {loadState === 'ready' && visibleStars.map((star) => (
           <UserStar
             key={star.id}
             x={star.x}
@@ -373,23 +406,23 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
         <div className="flex flex-col items-center space-y-4">
           <button
             onClick={handleOpenCreateModal}
-            disabled={isCreating}
-            className="bg-gradient-to-r from-yellow-400 to-orange-500 hover:from-yellow-500 hover:to-orange-600 disabled:from-gray-400 disabled:to-gray-500 text-white font-bold py-4 px-8 rounded-full text-lg transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-2xl hover:shadow-yellow-500/25 disabled:cursor-not-allowed disabled:scale-100 flex items-center space-x-3"
+            disabled={isCreating || loadState !== 'ready'}
+            className={`bg-gradient-to-r ${theme.visual.buttonGradientClass} ${theme.visual.buttonHoverClass} disabled:from-gray-400 disabled:to-gray-500 text-white font-bold py-4 px-8 rounded-full text-lg transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-2xl ${theme.visual.glowClass} disabled:cursor-not-allowed disabled:scale-100 flex items-center space-x-3`}
           >
             {isCreating ? (
               <>
                 <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                <span>正在点亮...</span>
+                <span>{theme.sky.creatingLabel}</span>
               </>
             ) : (
               <>
                 <Plus className="w-6 h-6" />
-                <span>点亮星星</span>
+                <span>{theme.sky.createLabel}</span>
               </>
             )}
           </button>
           <div className="text-white/70 text-sm text-center">
-            <p>点击按钮，在星空中点亮属于你的星星 ✨</p>
+            <p>{theme.sky.hint}</p>
           </div>
         </div>
       </div>
@@ -457,7 +490,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
                 })()}
               </div>
               <div>
-                <h3 className="text-xl font-bold text-gray-800 mb-2">{selectedStar.nickname} 的星星</h3>
+                <h3 className="text-xl font-bold text-gray-800 mb-2">{selectedStar.nickname} 的{theme.sky.detailNoun}</h3>
                 <p className="text-gray-600 text-sm">点亮时间: {formatTime(selectedStar.createdAt)}</p>
                 {selectedStar.message && (<p className="text-gray-700 text-sm mt-2">{selectedStar.message}</p>)}
               </div>
@@ -478,30 +511,31 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
       )}
 
       {starPetOpen && (
-        <StarPetPanel onClose={() => setStarPetOpen(false)} userId={userId} />
+        <StarPetPanel theme={theme} onClose={() => setStarPetOpen(false)} userId={userId} />
       )}
 
       {welcomeInfo && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white/90 backdrop-blur-xl rounded-2xl p-6 max-w-sm w-full border border-white/20 shadow-2xl">
             <div className="flex items-center justify-center gap-3 mb-2">
-              <Sparkles className="w-6 h-6 text-purple-500" />
+              <Sparkles className="w-6 h-6" style={{ color: theme.visual.defaultStarColor }} />
               <div className="text-xl font-extrabold text-gray-900">欢迎 {welcomeInfo.nickname} 的到来</div>
-              <Sparkles className="w-6 h-6 text-purple-500" />
+              <Sparkles className="w-6 h-6" style={{ color: theme.visual.defaultStarColor }} />
             </div>
-            <div className="text-gray-700 text-sm text-center">已为你点亮 JIEYOU 宇宙的第 <span className="text-purple-600 font-semibold">{welcomeInfo.count}</span> 颗星星</div>
+            <div className="text-gray-700 text-sm text-center">已为你点亮 {theme.hub.name} 的第 <span className="font-semibold" style={{ color: theme.visual.defaultStarColor }}>{welcomeInfo.count}</span> 颗{theme.sky.detailNoun}</div>
             <div className="mt-4 flex justify-center">
-              <button onClick={() => setWelcomeInfo(null)} className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg">好的</button>
+              <button onClick={() => setWelcomeInfo(null)} className={`bg-gradient-to-r ${theme.visual.buttonGradientClass} ${theme.visual.buttonHoverClass} text-white px-4 py-2 rounded-lg`}>好的</button>
             </div>
           </div>
         </div>
       )}
 
       <CreateStarModal
+        theme={theme}
         open={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
         onConfirm={handleConfirmCreate}
-        defaultColor="#FFD700" // 简化了 draft 状态
+        defaultColor={theme.visual.defaultStarColor}
         allowSfx={isAdminDevice || userNickname === 'JIEYOU不解忧' || readQuota().count < 3}
         onPreCheck={preCheckSfx}
         incomingIndex={stars.length + 1}

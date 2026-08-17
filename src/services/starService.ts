@@ -1,12 +1,15 @@
-// src/services/starService.ts (回退前的稳定版本)
-
-import { supabase, mockDatabase } from './supabase';
 import { api } from './api';
 import { isBackendReachable } from './connectivity';
+import { mockDatabase, supabase } from './supabase';
+import {
+  isTcbReachable,
+  petService as tcbPetService,
+  tcbApp,
+  tcbService,
+} from './tcb';
 import { enqueue } from '../utils/syncQueue';
-import { tcbService, isTcbReachable, tcbApp } from './tcb';
+import { getThemeConfig, type ThemeId } from '../themes/themeConfig';
 
-// StarData 接口定义
 export interface StarData {
   id: string;
   user_id: string;
@@ -20,7 +23,6 @@ export interface StarData {
   created_at: string;
 }
 
-// UserData 接口定义
 export interface UserData {
   id: string;
   nickname: string;
@@ -28,15 +30,19 @@ export interface UserData {
   total_stars: number;
 }
 
-// 用户服务
+const themeUnavailable = (cause?: unknown) => {
+  const error = new Error('theme_unavailable');
+  (error as Error & { cause?: unknown }).cause = cause;
+  return error;
+};
+
+const requireReachableTcbTheme = async (themeId: ThemeId) => {
+  if (!(await isTcbReachable(themeId))) throw themeUnavailable();
+};
+
 const userService = {
   async createUser(nickname: string): Promise<UserData> {
-    // ↓↓↓↓↓↓ 追踪日志 #1: 函数入口 ↓↓↓↓↓↓
-    console.log('--- STAR_SERVICE: createUser called. Analyzing backend options...');
-
-    // 检查 Supabase (已知会跳过)
     if (supabase) {
-      console.log('--- STAR_SERVICE: Supabase client exists. Attempting to use Supabase...');
       const { data, error } = await supabase
         .from('users')
         .insert([{ nickname }])
@@ -44,31 +50,16 @@ const userService = {
         .single();
       if (error) throw error;
       return data;
-    } else {
-      // ↓↓↓↓↓↓ 追踪日志 #2: 检查 TCB ↓↓↓↓↓↓
-      console.log('--- STAR_SERVICE: Supabase client not found. Checking TCB backend. `tcbApp` object is:', tcbApp);
-      
-      if (tcbApp) {
-        const reachable = await isTcbReachable();
-        // ↓↓↓↓↓↓ 追踪日志 #3: TCB 可达性结果 ↓↓↓↓↓↓
-        console.log(`--- STAR_SERVICE: isTcbReachable() check returned: ${reachable}`);
-        
-        if (reachable) {
-          console.log('--- STAR_SERVICE: TCB is reachable. Calling tcbService.createUser...');
-          return tcbService.createUser(nickname);
-        }
-      }
     }
 
-    // ↓↓↓↓↓↓ 追踪日志 #4: 检查自定义后端 ↓↓↓↓↓↓
-    console.log('--- STAR_SERVICE: Checking custom REST backend...');
-    if (await isBackendReachable()) {
-      console.log('--- STAR_SERVICE: Custom REST backend is reachable! Using it.');
+    if (tcbApp && await isTcbReachable('jieyou')) {
+      return tcbService.createUser(nickname);
+    }
+
+    if (await isBackendReachable('jieyou')) {
       return api.createUser(nickname);
     }
-    
-    // ↓↓↓↓↓↓ 追踪日志 #5: 最终的兜底方案 ↓↓↓↓↓↓
-    console.log('--- STAR_SERVICE: All remote backends failed. Falling back to mock database.');
+
     return mockDatabase.createUser(nickname);
   },
 
@@ -79,148 +70,174 @@ const userService = {
         .select('*')
         .eq('id', userId)
         .single();
-      if (error) {
-        console.error('获取用户失败:', error);
-        return null;
-      }
+      if (error) return null;
       return data;
-    } else {
-      return mockDatabase.getUser(userId);
     }
+    return mockDatabase.getUser(userId);
   },
 };
 
-// 星星服务
 const starService = {
   async createStar(
+    themeId: ThemeId,
     userId: string,
     nickname: string,
     position: { x: number; y: number },
-    options?: { color?: string; size?: number; shape?: string; message?: string; isAdminDevice?: boolean }
+    options?: { color?: string; size?: number; shape?: string; message?: string; isAdminDevice?: boolean },
   ): Promise<StarData> {
     if (supabase) {
+      const table = getThemeConfig(themeId).data.starsCollection;
       const { data, error } = await supabase
-        .from('stars')
+        .from(table)
         .insert([{
           user_id: userId,
           position_x: position.x,
           position_y: position.y,
           color: options?.color,
+          size: options?.size,
+          shape: options?.shape,
           message: options?.message,
         }])
         .select('*, users!inner(nickname)')
         .single();
-      if (error) throw error;
-      return {
-        ...data,
-        nickname: data.users.nickname
-      };
-    } else {
-      if (tcbApp && await isTcbReachable()) {
-        return tcbService.createStar({
-          user_id: userId,
-          position_x: position.x,
-          position_y: position.y,
-          color: options?.color,
-          size: options?.size,
-          shape: options?.shape,
-          message: options?.message,
-          nickname,
-          isAdminDevice: options?.isAdminDevice,
-        });
-      }
-      if (await isBackendReachable()) {
-        return api.createStar({
-          user_id: userId,
-          position_x: position.x,
-          position_y: position.y,
-          color: options?.color,
-          size: options?.size,
-          shape: options?.shape,
-          message: options?.message,
-        });
-      }
-      const local = await mockDatabase.createStar(userId, nickname, position, options);
-      enqueue({ type: 'createStar', payload: { userId, nickname, position, options } });
-      return local;
+      if (error) throw themeUnavailable(error);
+      return { ...data, nickname: data.users?.nickname || nickname };
     }
+
+    if (tcbApp) {
+      await requireReachableTcbTheme(themeId);
+      return tcbService.createStar(themeId, {
+        user_id: userId,
+        position_x: position.x,
+        position_y: position.y,
+        color: options?.color,
+        size: options?.size,
+        shape: options?.shape,
+        message: options?.message,
+        nickname,
+        isAdminDevice: options?.isAdminDevice,
+      });
+    }
+
+    if (await isBackendReachable(themeId)) {
+      return api.createStar(themeId, {
+        user_id: userId,
+        position_x: position.x,
+        position_y: position.y,
+        color: options?.color,
+        size: options?.size,
+        shape: options?.shape,
+        message: options?.message,
+      });
+    }
+
+    const local = await mockDatabase.createStar(themeId, userId, nickname, position, options);
+    enqueue({ type: 'createStar', themeId, payload: { userId, nickname, position, options } });
+    return local;
   },
 
-  async getAllStars(): Promise<StarData[]> {
+  async getAllStars(themeId: ThemeId): Promise<StarData[]> {
     if (supabase) {
+      const table = getThemeConfig(themeId).data.starsCollection;
       const { data, error } = await supabase
-        .from('stars')
+        .from(table)
         .select('*, users!inner(nickname)')
         .order('created_at', { ascending: false });
-      if (error) {
-        console.error('获取星星失败:', error);
-        return [];
-      }
-      return data.map(star => ({
+      if (error) throw themeUnavailable(error);
+      return (data || []).map((star: any) => ({
         ...star,
-        nickname: star.users.nickname
+        nickname: star.users?.nickname || star.nickname,
       }));
-    } else {
-      if (tcbApp && await isTcbReachable()) {
-        return tcbService.getAllStars();
-      }
-      if (await isBackendReachable()) {
-        return api.getAllStars();
-      }
-      return await mockDatabase.getAllStars() as StarData[];
     }
+
+    if (tcbApp) {
+      await requireReachableTcbTheme(themeId);
+      return tcbService.getAllStars(themeId);
+    }
+
+    if (await isBackendReachable(themeId)) {
+      return api.getAllStars(themeId);
+    }
+
+    return mockDatabase.getAllStars(themeId) as Promise<StarData[]>;
   },
 
-  async getUserStars(userId: string): Promise<StarData[]> {
-    if (supabase) {
-      const { data, error } = await supabase
-        .from('stars')
-        .select('*, users!inner(nickname)')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false });
-      if (error) {
-        console.error('获取用户星星失败:', error);
-        return [];
-      }
-      return data.map(star => ({
-        ...star,
-        nickname: star.users.nickname
-      }));
-    } else {
-      if (tcbApp && await isTcbReachable()) {
-        const stars = await tcbService.getAllStars();
-        return stars.filter((s: any) => s.user_id === userId);
-      }
-      if (await isBackendReachable()) {
-        const stars = await api.getAllStars();
-        return stars.filter((s: any) => s.user_id === userId);
-      }
-      return await mockDatabase.getUserStars(userId) as StarData[];
-    }
+  async getUserStars(themeId: ThemeId, userId: string): Promise<StarData[]> {
+    const stars = await this.getAllStars(themeId);
+    return stars.filter((star) => star.user_id === userId);
   },
 
-  async deleteStar(starId: string): Promise<boolean> {
+  async getTodayCountByNickname(themeId: ThemeId, nickname: string): Promise<number> {
     if (supabase) {
-      const { error } = await supabase.from('stars').delete().eq('id', starId);
-      if (error) {
-        console.error('删除星星失败:', error);
-        return false;
-      }
+      const stars = await this.getAllStars(themeId);
+      const today = new Date().toISOString().slice(0, 10);
+      return stars.filter((star) => star.nickname === nickname && star.created_at.startsWith(today)).length;
+    }
+
+    if (tcbApp) {
+      await requireReachableTcbTheme(themeId);
+      return tcbService.getTodayCountByNickname(themeId, nickname);
+    }
+
+    if (await isBackendReachable(themeId)) {
+      return api.getTodayCountByNickname(themeId, nickname);
+    }
+
+    const stars = await mockDatabase.getAllStars(themeId);
+    const today = new Date().toISOString().slice(0, 10);
+    return stars.filter((star: any) => star.nickname === nickname && star.created_at.startsWith(today)).length;
+  },
+
+  async deleteStar(themeId: ThemeId, starId: string): Promise<boolean> {
+    if (supabase) {
+      const table = getThemeConfig(themeId).data.starsCollection;
+      const { error } = await supabase.from(table).delete().eq('id', starId);
+      if (error) throw themeUnavailable(error);
       return true;
-    } else {
-      if (tcbApp && await isTcbReachable()) {
-        try { await tcbService.deleteStar(starId); return true; } catch { return false; }
-      }
-      if (await isBackendReachable()) {
-        try { await api.deleteStar(starId); return true; } catch { return false; }
-      }
-      enqueue({ type: 'deleteStar', payload: { starId } });
-      return await mockDatabase.deleteStar(starId);
     }
-  }
+
+    if (tcbApp) {
+      await requireReachableTcbTheme(themeId);
+      return tcbService.deleteStar(themeId, starId);
+    }
+
+    if (await isBackendReachable(themeId)) {
+      return api.deleteStar(themeId, starId);
+    }
+
+    enqueue({ type: 'deleteStar', themeId, payload: { starId } });
+    return mockDatabase.deleteStar(themeId, starId);
+  },
+};
+
+const petService = {
+  async getPetStatus(themeId: ThemeId) {
+    if (tcbApp) {
+      await requireReachableTcbTheme(themeId);
+      try {
+        return await tcbPetService.getPetStatus(themeId);
+      } catch (error) {
+        throw themeUnavailable(error);
+      }
+    }
+    return mockDatabase.getPetStatus(themeId);
+  },
+
+  async interactWithPet(themeId: ThemeId, userId?: string) {
+    if (tcbApp) {
+      await requireReachableTcbTheme(themeId);
+      try {
+        return await tcbPetService.interactWithPet(themeId, userId);
+      } catch (error) {
+        throw themeUnavailable(error);
+      }
+    }
+    return mockDatabase.interactWithPet(themeId, userId);
+  },
 };
 
 export default {
   userService,
-  starService
+  starService,
+  petService,
 };

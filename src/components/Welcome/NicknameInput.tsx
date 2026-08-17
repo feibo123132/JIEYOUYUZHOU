@@ -1,123 +1,85 @@
 import React, { useState } from 'react';
-import { User, Sparkles } from 'lucide-react';
+import { Sparkles, User } from 'lucide-react';
+import type { ThemeConfig } from '../../themes/themeConfig';
 
 interface NicknameInputProps {
+  theme: ThemeConfig;
   onSubmit: (nickname: string) => void;
   isLoading?: boolean;
 }
 
-const NicknameInput: React.FC<NicknameInputProps> = ({ onSubmit, isLoading = false }) => {
+const NicknameInput: React.FC<NicknameInputProps> = ({ theme, onSubmit, isLoading = false }) => {
   const [nickname, setNickname] = useState('');
   const [error, setError] = useState('');
+  const isLife = theme.id === 'life';
 
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
     (window as any).playClickSound?.();
-    
-    // 验证昵称
-    if (!nickname.trim()) {
+    const value = nickname.trim();
+    if (!value) {
       setError('请输入星星的别称');
       return;
     }
-    
-    if (nickname.length < 1) {
-      setError('别称至少需要1个字符');
-      return;
-    }
-    
-    if (nickname.length > 30) {
+    if (value.length > 30) {
       setError('别称不能超过30个字符');
       return;
     }
-    
-    // 验证字符（只允许中文、英文、数字）
-    const validPattern = /^[\u4e00-\u9fa5a-zA-Z0-9]+$/;
-    if (!validPattern.test(nickname)) {
+    if (!/^[\u4e00-\u9fa5a-zA-Z0-9]+$/.test(value)) {
       setError('别称只能包含中文、英文和数字');
       return;
     }
-    
     setError('');
-    onSubmit(nickname.trim());
-  };
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    setNickname(value);
-    
-    // 实时清除错误信息
-    if (error && value.trim()) {
-      setError('');
-    }
+    onSubmit(value);
   };
 
   return (
-    <div className="w-full max-w-sm mx-auto">
-      <form onSubmit={handleSubmit} className="space-y-4">
+    <div className="mx-auto w-full max-w-sm rounded-2xl border border-white/10 bg-black/20 p-4 backdrop-blur-xl">
+      <form onSubmit={handleSubmit} className="space-y-3">
         <div className="relative">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <User className="h-5 w-5 text-gray-400" />
-          </div>
+          <User className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
           <input
             type="text"
             value={nickname}
-            onChange={handleInputChange}
-            placeholder="请输入星星的别称（1-30个字符）"
+            onChange={(event) => {
+              setNickname(event.target.value);
+              if (error && event.target.value.trim()) setError('');
+            }}
+            placeholder={theme.nickname.placeholder}
             maxLength={30}
             disabled={isLoading}
-            className={`block w-full pl-10 pr-3 py-3 border rounded-xl shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all duration-200 bg-white/90 backdrop-blur-sm ${
-              error 
-                ? 'border-red-300 text-red-900 focus:ring-red-500 focus:border-red-500' 
-                : 'border-gray-300 text-gray-900 hover:border-purple-400'
-            } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+            className={`block w-full rounded-xl border bg-white/95 py-3 pl-10 pr-10 text-gray-900 shadow-sm outline-none transition placeholder:text-gray-400 focus:ring-2 ${theme.visual.focusRingClass} ${
+              error ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-gray-300'
+            } ${isLoading ? 'cursor-not-allowed opacity-50' : ''}`}
           />
-          <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
-            <Sparkles className={`h-5 w-5 transition-colors duration-200 ${
-              nickname ? 'text-purple-500' : 'text-gray-400'
-            }`} />
-          </div>
+          <Sparkles className={`pointer-events-none absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 transition-colors ${
+            nickname ? theme.visual.counterClass : 'text-gray-400'
+          }`} />
         </div>
 
-        {/* 字符计数 */}
-        <div className="flex justify-between items-center text-sm">
-          <div className={`transition-colors duration-200 ${
-            nickname.length > 0 ? 'text-purple-600' : 'text-gray-500'
-          }`}>
-            {nickname.length > 0 && `${nickname.length}/30`}
-          </div>
-          {error && (
-            <div className="text-red-500 text-sm animate-pulse">
-              {error}
-            </div>
-          )}
+        <div className="flex min-h-5 items-center justify-between text-xs">
+          <span className={nickname ? theme.visual.counterClass : 'text-white/35'}>
+            {nickname ? `${nickname.length}/30` : ''}
+          </span>
+          {error && <span className="text-red-300">{error}</span>}
         </div>
 
-        {/* 提交按钮 */}
         <button
           type="submit"
           disabled={isLoading || !nickname.trim()}
-          className={`w-full py-3 px-4 rounded-xl font-medium transition-all duration-200 transform ${
+          className={`w-full rounded-xl px-4 py-3 font-semibold transition duration-200 ${
             isLoading || !nickname.trim()
-              ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-              : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white hover:scale-105 active:scale-95 shadow-lg hover:shadow-xl'
+              ? 'cursor-not-allowed bg-gray-300 text-gray-500'
+              : `bg-gradient-to-r ${theme.visual.buttonGradientClass} ${theme.visual.buttonHoverClass} text-white shadow-lg hover:scale-[1.02] ${theme.visual.glowClass} active:scale-[.98]`
           }`}
         >
-          {isLoading ? (
-            <div className="flex items-center justify-center">
-              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-              正在进入宇宙...
-            </div>
-          ) : (
-            '点亮我的星星 ✨'
-          )}
+          {isLoading ? theme.nickname.loadingLabel : theme.nickname.submitLabel}
         </button>
       </form>
 
-      {/* 输入提示 */}
-      <div className="mt-4 text-center text-xs text-gray-400 space-y-1">
-        <p>💡 提示：别称将显示在你的星星旁边</p>
-        <p>✨ 支持中文、英文和数字</p>
+      <div className="mt-3 space-y-1 text-center text-xs text-white/45">
+        <p>{isLife ? '☀' : '💡'} {theme.nickname.tip}</p>
+        <p>支持中文、英文和数字</p>
       </div>
     </div>
   );

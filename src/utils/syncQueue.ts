@@ -1,6 +1,8 @@
-const KEY = 'syncQueue';
+import type { ThemeId } from '../themes/themeConfig';
 
-type Op = { type: 'createStar' | 'deleteStar'; payload: any };
+const KEY = 'syncQueue:v2';
+
+type Op = { type: 'createStar' | 'deleteStar'; themeId: ThemeId; payload: any };
 
 export const enqueue = (op: Op) => {
   const arr: Op[] = JSON.parse(localStorage.getItem(KEY) || '[]');

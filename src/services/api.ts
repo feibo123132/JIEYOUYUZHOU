@@ -1,3 +1,9 @@
+import {
+  getThemeStarApiPath,
+  getThemeTodayCountApiPath,
+  type ThemeId,
+} from '../themes/themeConfig';
+
 type StarPayload = {
   user_id: string;
   position_x: number;
@@ -20,13 +26,13 @@ export const api = {
     if (!r.ok) throw new Error('api_error');
     return r.json();
   },
-  async getAllStars() {
-    const r = await fetch(`${base}/stars`, { method: 'GET' });
+  async getAllStars(themeId: ThemeId) {
+    const r = await fetch(`${base}${getThemeStarApiPath(themeId)}`, { method: 'GET' });
     if (!r.ok) throw new Error('api_error');
     return r.json();
   },
-  async createStar(payload: StarPayload) {
-    const r = await fetch(`${base}/stars`, {
+  async createStar(themeId: ThemeId, payload: StarPayload) {
+    const r = await fetch(`${base}${getThemeStarApiPath(themeId)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -34,10 +40,17 @@ export const api = {
     if (!r.ok) throw new Error('api_error');
     return r.json();
   },
-  async deleteStar(id: string) {
-    const r = await fetch(`${base}/stars/${id}`, { method: 'DELETE' });
+  async deleteStar(themeId: ThemeId, id: string) {
+    const r = await fetch(`${base}${getThemeStarApiPath(themeId, id)}`, { method: 'DELETE' });
     if (!r.ok) throw new Error('api_error');
     return true;
+  },
+  async getTodayCountByNickname(themeId: ThemeId, nickname: string) {
+    const params = new URLSearchParams({ nickname });
+    const r = await fetch(`${base}${getThemeTodayCountApiPath(themeId)}?${params.toString()}`, { method: 'GET' });
+    if (!r.ok) throw new Error('api_error');
+    const data = await r.json();
+    return Number(data?.count || 0);
   }
 };
 

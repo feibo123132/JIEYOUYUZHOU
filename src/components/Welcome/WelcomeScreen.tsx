@@ -1,111 +1,124 @@
-// src/components/Welcome/WelcomeScreen.tsx (修正后的完整版)
-
 import React, { useEffect, useState } from 'react';
-// ↓↓↓↓↓↓ [修正] 统一使用 lucide-react 的图标库 ↓↓↓↓↓↓
-import { Star, Sparkles, Music, Music2 } from 'lucide-react';
+import { ArrowLeft, Music, Music2, Sparkles, Star } from 'lucide-react';
 import services from '../../services/starService';
+import type { ThemeConfig } from '../../themes/themeConfig';
+
 const { starService } = services;
 
 interface WelcomeScreenProps {
+  theme: ThemeConfig;
   onEnter: () => void;
-  // ↓↓↓↓↓↓ [修正] 确保 props 类型定义完整 ↓↓↓↓↓↓
+  onSwitchTheme: () => void;
   onToggleMusic?: () => void;
   isPlaying?: boolean;
 }
 
-const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onEnter, onToggleMusic, isPlaying = false }) => {
-  const [starCount, setStarCount] = useState<number | null>(null);
-  useEffect(() => { (async () => { try { const all = await starService.getAllStars(); setStarCount(all.length); } catch {} })(); }, []);
+const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
+  theme,
+  onEnter,
+  onSwitchTheme,
+  onToggleMusic,
+  isPlaying = false,
+}) => {
+  const [starCount, setStarCount] = useState<number | null | undefined>(undefined);
+
+  useEffect(() => {
+    let active = true;
+    setStarCount(undefined);
+    starService.getAllStars(theme.id)
+      .then((stars) => { if (active) setStarCount(stars.length); })
+      .catch(() => { if (active) setStarCount(null); });
+    return () => { active = false; };
+  }, [theme.id]);
+
+  const isLife = theme.id === 'life';
+  const incoming = typeof starCount === 'number' ? starCount + 1 : '—';
+
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center relative z-10 px-4">
-      
-      {/* ↓↓↓↓↓↓ [修正] 将音乐按钮放在这里，并使用 lucide-react 图标 ↓↓↓↓↓↓ */}
+    <div className="relative z-10 flex min-h-screen flex-col items-center justify-center px-4 pb-44 pt-24 text-white md:pb-48 md:pt-20">
       <button
+        type="button"
+        onClick={() => { (window as any).playClickSound?.(); onSwitchTheme(); }}
+        className="absolute left-5 top-5 inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/30 px-4 py-2 text-sm text-white/75 backdrop-blur-xl transition hover:border-white/30 hover:bg-white/10 hover:text-white md:left-7 md:top-7"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        企划入口
+      </button>
+
+      <button
+        type="button"
         onClick={onToggleMusic}
-        className="absolute top-6 right-6 bg-white/10 hover:bg-white/20 text-white rounded-full p-3 backdrop-blur-sm border border-white/20 transition-all duration-200"
-        aria-label={isPlaying ? "暂停音乐" : "播放音乐"}
+        className="absolute right-5 top-5 rounded-full border border-white/20 bg-white/10 p-3 text-white backdrop-blur-sm transition hover:scale-105 hover:bg-white/20 md:right-7 md:top-7"
+        aria-label={isPlaying ? '暂停音乐' : '播放音乐'}
       >
         {isPlaying ? <Music size={20} /> : <Music2 size={20} />}
       </button>
 
-      {/* 标题区域 */}
-      <div className="text-center mb-12">
-        <div className="flex items-center justify-center mb-4">
-          <Sparkles className="w-8 h-8 text-yellow-300 mr-3 animate-pulse" />
-          <h1 className="text-4xl md:text-6xl font-bold text-white bg-gradient-to-r from-yellow-300 via-yellow-400 to-orange-400 bg-clip-text text-transparent">
-            JIEYOU宇宙
+      <header className="mb-9 text-center md:mb-11">
+        <div className="mb-4 flex items-center justify-center">
+          <Sparkles className={`mr-3 h-7 w-7 animate-pulse ${isLife ? 'text-amber-200' : 'text-yellow-300'}`} />
+          <h1 className={`bg-gradient-to-r ${theme.visual.titleGradientClass} bg-clip-text text-4xl font-black tracking-[-0.04em] text-transparent md:text-6xl`}>
+            {theme.welcome.title}
           </h1>
-          <Sparkles className="w-8 h-8 text-yellow-300 ml-3 animate-pulse" />
+          <Sparkles className={`ml-3 h-7 w-7 animate-pulse ${isLife ? 'text-orange-300' : 'text-yellow-300'}`} />
         </div>
-        
-        <p className="text-lg md:text-xl text-gray-300 max-w-2xl mx-auto leading-relaxed">
-          我们在此刻相遇，你抬起手
+        <p className="mx-auto max-w-2xl text-base leading-relaxed text-gray-300 md:text-xl">
+          {theme.welcome.intro[0]}
           <br />
-          在宇宙中点亮了一颗，独属于自己的星星
+          {theme.welcome.intro[1]}
         </p>
-      </div>
+      </header>
 
-      {/* 应用介绍卡片 */}
-      <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-8 mb-12 max-w-md w-full border border-white/20">
-        <div className="text-center space-y-6">
-          <div className="flex items-center justify-center">
-            <Star className="w-12 h-12 text-yellow-400 animate-pulse" />
+      <section className={`mb-9 w-full max-w-md rounded-[1.7rem] border p-7 backdrop-blur-xl md:p-8 ${
+        isLife
+          ? 'border-amber-200/20 bg-amber-950/20 shadow-[0_24px_90px_rgba(245,158,11,.12)]'
+          : 'border-white/20 bg-white/10 shadow-[0_24px_90px_rgba(124,58,237,.12)]'
+      }`}>
+        <div className="space-y-6 text-center">
+          <div className="flex justify-center">
+            <Star className={`h-12 w-12 animate-pulse ${isLife ? 'text-amber-300' : 'text-yellow-400'}`} />
           </div>
-          
+
           <div className="space-y-4">
-            <h2 className="text-2xl font-semibold text-white">欢迎JIEYOU宇宙的<span className="text-purple-600 inline-block mx-1 text-[1.75rem] md:text-[2rem]">第{((starCount ?? 0) + 1)}颗</span>星星</h2>
-            <p className="text-gray-300 text-sm leading-relaxed">
-              在宇宙中点亮一颗独属于你自己的星星
+            <h2 className="text-xl font-semibold text-white md:text-2xl">
+              {theme.welcome.countPrefix}
+              <span className={`${theme.visual.counterClass} mx-1 inline-block text-[1.75rem] font-black md:text-[2rem]`}>
+                第{incoming}颗
+              </span>
+              {theme.welcome.countNoun}
+            </h2>
+            <p className="text-sm leading-relaxed text-gray-300">
+              {theme.welcome.description[0]}
               <br />
-              让每一次相遇都成为永恒的纪念
+              {theme.welcome.description[1]}
             </p>
           </div>
 
-          {/* 功能亮点 */}
-          <div className="grid grid-cols-1 gap-4 text-sm">
-            <div className="flex items-center text-gray-300">
-              <Star className="w-4 h-4 text-yellow-400 mr-2" />
-              <span>在星空下许愿</span>
-            </div>
-            <div className="flex items-center text-gray-300">
-              <Sparkles className="w-4 h-4 text-blue-400 mr-2" />
-              <span>宇宙版烦恼树洞</span>
-            </div>
-            <div className="flex items-center text-gray-300">
-              <Star className="w-4 h-4 text-purple-400 mr-2" />
-              <span>分享生活小美满</span>
-            </div>
+          <div className="grid grid-cols-1 gap-4 text-left text-sm text-gray-300">
+            {theme.welcome.features.map((feature, index) => (
+              <div key={feature} className="flex items-center">
+                {index === 1 ? (
+                  <Sparkles className={`mr-2 h-4 w-4 ${isLife ? 'text-orange-300' : 'text-blue-400'}`} />
+                ) : (
+                  <Star className={`mr-2 h-4 w-4 ${isLife ? (index === 0 ? 'text-amber-300' : 'text-rose-300') : (index === 0 ? 'text-yellow-400' : 'text-purple-400')}`} />
+                )}
+                <span>{feature}</span>
+              </div>
+            ))}
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* 进入按钮 */}
       <button
+        type="button"
         onClick={() => { (window as any).playClickSound?.(); onEnter(); }}
-        className="group relative bg-gradient-to-r from-purple-600 via-purple-700 to-indigo-700 hover:from-purple-500 hover:via-purple-600 hover:to-indigo-600 text-white font-semibold py-4 px-8 rounded-full text-lg transition-all duration-300 transform hover:scale-105 hover:shadow-2xl hover:shadow-purple-500/25 active:scale-95"
+        className={`group relative rounded-full bg-gradient-to-r ${theme.visual.buttonGradientClass} ${theme.visual.buttonHoverClass} px-8 py-4 text-lg font-semibold text-white shadow-2xl transition duration-300 hover:scale-105 ${theme.visual.glowClass} active:scale-95`}
       >
-        <div className="flex items-center justify-center">
-          <span className="mr-3">遨游宇宙</span>
-          <Star className="w-5 h-5 group-hover:animate-spin" />
-        </div>
-        
-        <div className="absolute inset-0 rounded-full bg-gradient-to-r from-purple-400 to-indigo-400 opacity-0 group-hover:opacity-20 transition-opacity duration-300"></div>
-        <div className="absolute -top-2 -right-2 w-4 h-4 bg-yellow-400 rounded-full opacity-0 group-hover:opacity-100 group-hover:animate-ping"></div>
-        <div className="absolute -bottom-2 -left-2 w-3 h-3 bg-blue-400 rounded-full opacity-0 group-hover:opacity-100 group-hover:animate-ping animation-delay-200"></div>
+        <span className="flex items-center justify-center">
+          <span className="mr-3">{theme.welcome.enterLabel}</span>
+          <Star className="h-5 w-5 transition-transform duration-500 group-hover:rotate-180" />
+        </span>
       </button>
-
-      {/* 底部装饰 */}
-      <div className="absolute bottom-8 left-12 transform -translate-x-1/2">
-        <div className="flex space-x-2">
-          {[...Array(5)].map((_, i) => (
-            <Star
-              key={i}
-              className={`w-2 h-2 text-yellow-300 animate-pulse`}
-              style={{ animationDelay: `${i * 0.2}s` }}
-            />
-          ))}
-        </div>
-      </div>
     </div>
   );
 };
