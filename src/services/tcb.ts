@@ -143,4 +143,55 @@ export const tcbService = {
   }
 };
 
+export const petService = {
+  async getPetStatus() {
+    if (!tcbDb) throw new Error('tcb_unavailable');
+    await ensureSignIn();
+    try {
+      const doc = await (tcbDb as any).collection('pet_stats').doc('global_cat').get();
+      const data = (doc?.data || [])[0] || null;
+      if (!data) {
+        const init = { _id: 'global_cat', xp: 0, updated_at: new Date().toISOString() };
+        await (tcbDb as any).collection('pet_stats').add(init);
+        return { xp: 0 };
+      }
+      return { xp: Number(data.xp || 0) };
+    } catch {
+      try {
+        const list = await (tcbDb as any).collection('pet_stats').where({ _id: 'global_cat' }).get();
+        const data = (list?.data || [])[0];
+        if (!data) {
+          const init = { _id: 'global_cat', xp: 0, updated_at: new Date().toISOString() };
+          await (tcbDb as any).collection('pet_stats').add(init);
+          return { xp: 0 };
+        }
+        return { xp: Number(data.xp || 0) };
+      } catch (e) {
+        return { xp: 0 };
+      }
+    }
+  },
+  async interactWithPet(userId?: string) {
+    if (!tcbDb) throw new Error('tcb_unavailable');
+    await ensureSignIn();
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const tag = `${y}-${m}-${dd}`;
+    const key = `pet_daily_${userId || 'device'}_${tag}`;
+    try { if (localStorage.getItem(key) === 'done') return { added: false }; } catch {}
+    const statRes = await (tcbDb as any).collection('pet_stats').where({ _id: 'global_cat' }).get();
+    const cur = (statRes?.data || [])[0];
+    const xp = Number(cur?.xp || 0) + 1;
+    if (cur && cur._id) {
+      await (tcbDb as any).collection('pet_stats').doc(cur._id).update({ xp, updated_at: new Date().toISOString() });
+    } else {
+      await (tcbDb as any).collection('pet_stats').add({ _id: 'global_cat', xp, updated_at: new Date().toISOString() });
+    }
+    try { localStorage.setItem(key, 'done'); } catch {}
+    return { added: true, xp };
+  }
+};
+
 export default tcbService;

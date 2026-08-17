@@ -22,6 +22,7 @@ interface AssistantSidebarProps {
   onChangeDisplayMode: (mode: 'random' | 'full') => void
   isAdminDevice: boolean
   onSetAdminDevice: (v: boolean) => void
+  onOpenStarPet?: () => void
 }
 
 const AssistantSidebar: React.FC<AssistantSidebarProps> = ({
@@ -45,6 +46,7 @@ const AssistantSidebar: React.FC<AssistantSidebarProps> = ({
   onChangeDisplayMode,
   isAdminDevice,
   onSetAdminDevice,
+  onOpenStarPet,
 }) => {
   const [searchFoldOpen, setSearchFoldOpen] = useState(false)
   const [displayFoldOpen, setDisplayFoldOpen] = useState(false)
@@ -188,6 +190,15 @@ const AssistantSidebar: React.FC<AssistantSidebarProps> = ({
           </button>
           {toolsFoldOpen && (
             <div className="p-3 space-y-3">
+              <div className="flex items-center justify-between bg-white/5 rounded-xl px-3 py-2">
+                <span className="text-sm text-white/90">星际萌宠（公共猫舍）</span>
+                <button
+                  className="text-xs bg-white/10 hover:bg-white/20 px-2 py-1 rounded"
+                  onClick={() => { onOpenStarPet && onOpenStarPet() }}
+                >
+                  进入猫舍
+                </button>
+              </div>
               <div className="flex items-center justify-between bg-white/5 rounded-xl px-3 py-2">
                 <span className="text-sm text-white/90">管理员模式</span>
                 {isAdminDevice ? (

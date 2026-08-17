@@ -18,7 +18,7 @@ const StarryCanvas: React.FC<StarryCanvasProps> = ({ className = '' }) => {
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    
+
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setClearColor(0x000000, 1);
     mountRef.current.appendChild(renderer.domElement);
@@ -35,7 +35,7 @@ const StarryCanvas: React.FC<StarryCanvasProps> = ({ className = '' }) => {
 
     const starsVertices = [];
     const starsColors = [];
-    
+
     // 生成随机星星位置
     for (let i = 0; i < 8000; i++) {
       const x = (Math.random() - 0.5) * 2000;
@@ -56,10 +56,10 @@ const StarryCanvas: React.FC<StarryCanvasProps> = ({ className = '' }) => {
 
     starsGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starsVertices, 3));
     starsGeometry.setAttribute('color', new THREE.Float32BufferAttribute(starsColors, 3));
-    
+
     // 启用顶点颜色
     starsMaterial.vertexColors = true;
-    
+
     const starField = new THREE.Points(starsGeometry, starsMaterial);
     scene.add(starField);
 
@@ -69,22 +69,22 @@ const StarryCanvas: React.FC<StarryCanvasProps> = ({ className = '' }) => {
     // 动画循环
     const animate = () => {
       animationIdRef.current = requestAnimationFrame(animate);
-      
+
       // 缓慢旋转星空
       starField.rotation.x += 0.0005;
       starField.rotation.y += 0.0005;
-      
+
       // 星星闪烁效果
       const time = Date.now() * 0.001;
       const positions = starsGeometry.attributes.position.array as Float32Array;
-      
+
       for (let i = 0; i < positions.length; i += 3) {
         const originalY = positions[i + 1];
         positions[i + 1] = originalY + Math.sin(time + i) * 0.5;
       }
-      
+
       starsGeometry.attributes.position.needsUpdate = true;
-      
+
       renderer.render(scene, camera);
     };
 
@@ -97,7 +97,7 @@ const StarryCanvas: React.FC<StarryCanvasProps> = ({ className = '' }) => {
     // 处理窗口大小变化
     const handleResize = () => {
       if (!renderer || !camera) return;
-      
+
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
@@ -108,23 +108,23 @@ const StarryCanvas: React.FC<StarryCanvasProps> = ({ className = '' }) => {
     // 清理函数
     return () => {
       window.removeEventListener('resize', handleResize);
-      
+
       if (animationIdRef.current) {
         cancelAnimationFrame(animationIdRef.current);
       }
-      
+
       if (mountRef.current && renderer.domElement) {
         mountRef.current.removeChild(renderer.domElement);
       }
-      
+
       if (renderer) {
         renderer.dispose();
       }
-      
+
       if (starsGeometry) {
         starsGeometry.dispose();
       }
-      
+
       if (starsMaterial) {
         starsMaterial.dispose();
       }
@@ -132,8 +132,8 @@ const StarryCanvas: React.FC<StarryCanvasProps> = ({ className = '' }) => {
   }, []);
 
   return (
-    <div 
-      ref={mountRef} 
+    <div
+      ref={mountRef}
       className={`fixed inset-0 z-0 ${className}`}
       style={{ background: 'linear-gradient(to bottom, #0F1419, #1a1a2e, #16213e)' }}
     />

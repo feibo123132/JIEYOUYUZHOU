@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Plus, RotateCcw, Trash2, Sparkles } from 'lucide-react';
 import { Star as PStar, Heart, Cloud, Moon, Mountains, Leaf, MusicNotes, Bird, Cat, Dog, Waves, PaperPlane } from 'phosphor-react';
 import UserStar from './UserStar';
+import StarPetPanel from '../StarPet/StarPetPanel';
 import { toast } from 'sonner';
 import CreateStarModal from './CreateStarModal';
 import AssistantSidebar from './AssistantSidebar';
@@ -47,6 +48,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
   const [displayMode, setDisplayMode] = useState<'random' | 'full'>('random');
   const [isAdminDevice, setIsAdminDevice] = useState<boolean>(false);
+  const [starPetOpen, setStarPetOpen] = useState<boolean>(false);
   const [welcomeInfo, setWelcomeInfo] = useState<{ nickname: string; count: number } | null>(null);
 
   const formatYMD = (d: Date) => {
@@ -330,6 +332,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
         onChangeDisplayMode={(mode) => setDisplayMode(mode)}
         isAdminDevice={isAdminDevice}
         onSetAdminDevice={(v) => { try { localStorage.setItem('is_admin_device', v ? 'true' : 'false'); } catch {}; setIsAdminDevice(v); }}
+        onOpenStarPet={() => setStarPetOpen(true)}
       />
 
       {/* 顶部导航 */}
@@ -472,6 +475,10 @@ const StarrySky: React.FC<StarrySkyProps> = ({ userNickname, onBack, userId }) =
             </div>
           </div>
         </div>
+      )}
+
+      {starPetOpen && (
+        <StarPetPanel onClose={() => setStarPetOpen(false)} userId={userId} />
       )}
 
       {welcomeInfo && (
