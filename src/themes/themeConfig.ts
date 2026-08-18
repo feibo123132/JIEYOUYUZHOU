@@ -44,7 +44,6 @@ export interface ThemeConfig {
     hint: string
     successNoun: string
     detailNoun: string
-    switchLabel: string
     modalPrompt: string
     modalPlaceholder: string
     modalConfirmLabel: string
@@ -57,7 +56,6 @@ export interface ThemeConfig {
   }
   data: {
     starsCollection: string
-    petCollection: string
     quotaStorageKey: string
   }
 }
@@ -93,7 +91,6 @@ const THEME_CONFIGS: Record<ThemeId, ThemeConfig> = {
       hint: '点击按钮，在星空中点亮属于你的星星 ✨',
       successNoun: '新星星',
       detailNoun: '星星',
-      switchLabel: '切换企划',
       modalPrompt: '想对这片宇宙说些什么？',
       modalPlaceholder: '写下此刻的心情或愿望（可选）',
       modalConfirmLabel: '点亮',
@@ -127,7 +124,6 @@ const THEME_CONFIGS: Record<ThemeId, ThemeConfig> = {
     },
     data: {
       starsCollection: 'stars',
-      petCollection: 'pet_stats',
       quotaStorageKey: 'device_daily_quota:jieyou',
     },
   },
@@ -143,8 +139,8 @@ const THEME_CONFIGS: Record<ThemeId, ThemeConfig> = {
       title: '生命万岁企划',
       intro: ['愿每一份微小幸福', '都被认真看见，并在星空中长久闪烁'],
       countPrefix: '欢迎生命万岁企划的',
-      countNoun: '幸福星星',
-      description: ['把今天值得庆祝的瞬间', '留在这片属于生命的星空'],
+      countNoun: '星星',
+      description: ['把那些美好的瞬间', '留在这片属于幸福的星空'],
       features: ['记录今天的小确幸', '收藏值得庆祝的瞬间', '让幸福被温柔看见'],
       enterLabel: '进入幸福星空',
     },
@@ -155,16 +151,15 @@ const THEME_CONFIGS: Record<ThemeId, ThemeConfig> = {
       tip: '别称会陪伴你记录每一个幸福时刻',
     },
     sky: {
-      title: '我们的幸福星空',
-      createLabel: '点亮幸福星星',
+      title: '幸福宇宙',
+      createLabel: '点亮星星',
       creatingLabel: '正在珍藏...',
       hint: '把此刻值得幸福的事情，留在这片星空里 ☀',
       successNoun: '幸福星星',
       detailNoun: '幸福星',
-      switchLabel: '切换企划',
-      modalPrompt: '今天有什么值得幸福的事情？',
+      modalPrompt: '生命里有哪些让你感到幸福的事？',
       modalPlaceholder: '写下这个值得庆祝、值得记住的瞬间（可选）',
-      modalConfirmLabel: '珍藏此刻',
+      modalConfirmLabel: '幸福记录',
       unavailableMessage: '幸福星空暂时无法抵达',
     },
     visual: {
@@ -179,7 +174,7 @@ const THEME_CONFIGS: Record<ThemeId, ThemeConfig> = {
       cardGlow: 'rgba(251, 146, 60, 0.4)',
     },
     audio: {
-      background: '祝你有美好的一天.mp3',
+      background: '你终将会找到属于自己的月亮.mp3',
       voices: [
         '你本就是万千色彩.mp3',
         '愿你开心每一天.mp3',
@@ -189,7 +184,6 @@ const THEME_CONFIGS: Record<ThemeId, ThemeConfig> = {
     },
     data: {
       starsCollection: 'life_stars',
-      petCollection: 'life_pet_stats',
       quotaStorageKey: 'device_daily_quota:life',
     },
   },

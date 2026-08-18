@@ -17,8 +17,6 @@ test('the two themes use distinct content storage', () => {
   assert.deepEqual(THEME_IDS, ['jieyou', 'life'])
   assert.equal(jieyou.data.starsCollection, 'stars')
   assert.equal(life.data.starsCollection, 'life_stars')
-  assert.equal(jieyou.data.petCollection, 'pet_stats')
-  assert.equal(life.data.petCollection, 'life_pet_stats')
   assert.notEqual(jieyou.data.quotaStorageKey, life.data.quotaStorageKey)
 })
 

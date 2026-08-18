@@ -26,6 +26,7 @@ function App() {
     currentView,
     enterStarrySky,
     enterTheme,
+    returnToWelcome,
     returnToThemeHub,
     setUser,
     user,
@@ -193,7 +194,7 @@ function App() {
             theme={theme}
             userNickname={user.nickname}
             userId={user.id}
-            onSwitchTheme={returnToThemeHub}
+            onBack={returnToWelcome}
           />
         </div>
       )}

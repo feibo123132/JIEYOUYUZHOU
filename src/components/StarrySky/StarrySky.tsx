@@ -1,13 +1,13 @@
 // src/components/StarrySky/StarrySky.tsx (修正后的完整版)
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Plus, RotateCcw, Trash2, Sparkles } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Plus, RotateCcw, Trash2, Sparkles } from 'lucide-react';
 import { Star as PStar, Heart, Cloud, Moon, Mountains, Leaf, MusicNotes, Bird, Cat, Dog, Waves, PaperPlane } from 'phosphor-react';
 import UserStar from './UserStar';
-import StarPetPanel from '../StarPet/StarPetPanel';
 import { toast } from 'sonner';
 import CreateStarModal from './CreateStarModal';
 import AssistantSidebar from './AssistantSidebar';
+import MessageBarrage, { type BarrageMessage } from './MessageBarrage';
 import type { ThemeConfig } from '../../themes/themeConfig';
 
 // ↓↓↓↓↓↓ [修正] 使用正确的默认导入并解构出 starService ↓↓↓↓↓↓
@@ -32,11 +32,11 @@ interface StarData {
 interface StarrySkyProps {
   theme: ThemeConfig;
   userNickname: string;
-  onSwitchTheme: () => void;
+  onBack: () => void;
   userId: string;
 }
 
-const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onSwitchTheme, userId }) => {
+const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, userId }) => {
   const [stars, setStars] = useState<StarData[]>([]);
   const [selectedStar, setSelectedStar] = useState<StarData | null>(null);
   const [isCreating, setIsCreating] = useState(false);
@@ -49,10 +49,11 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onSwitchThem
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
   const [displayMode, setDisplayMode] = useState<'random' | 'full'>('random');
   const [isAdminDevice, setIsAdminDevice] = useState<boolean>(false);
-  const [starPetOpen, setStarPetOpen] = useState<boolean>(false);
   const [welcomeInfo, setWelcomeInfo] = useState<{ nickname: string; count: number } | null>(null);
   const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [loadAttempt, setLoadAttempt] = useState(0);
+  const [skyView, setSkyView] = useState<'stars' | 'messages'>('stars');
+  const [barrageMode, setBarrageMode] = useState(false);
 
   const formatYMD = (d: Date) => {
     const y = d.getFullYear();
@@ -79,10 +80,11 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onSwitchThem
       setSelectedStar(null);
       setIsCreateModalOpen(false);
       setSidebarOpen(false);
-      setStarPetOpen(false);
       setWelcomeInfo(null);
       setSearchName('');
       setSearchDate('');
+      setSkyView('stars');
+      setBarrageMode(false);
       setLoadState('loading');
       try {
         const allStars = await starService.getAllStars(theme.id);
@@ -293,21 +295,38 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onSwitchThem
     }
   };
 
-  const visibleStars = useMemo(() => {
-    const filtered = stars.filter((s) => {
+  const filteredStars = useMemo(() => {
+    return stars.filter((s) => {
       const nameOk = searchName ? s.nickname.includes(searchName) : true;
       const dateOk = searchDate ? (() => { const d = new Date(s.createdAt); const y = d.getFullYear(); const m = String(d.getMonth()+1).padStart(2,'0'); const dd = String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${dd}` === searchDate; })() : true;
       return nameOk && dateOk;
     });
+  }, [stars, searchName, searchDate]);
+
+  const visibleStars = useMemo(() => {
     const needAll = Boolean(searchName) || Boolean(searchDate) || displayMode === 'full';
-    if (needAll) return filtered;
-    const arr = [...filtered];
+    if (needAll) return filteredStars;
+    const arr = [...filteredStars];
     for (let i = arr.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [arr[i], arr[j]] = [arr[j], arr[i]];
     }
     return arr.slice(0, 30);
-  }, [stars, searchName, searchDate, displayMode]);
+  }, [filteredStars, searchName, searchDate, displayMode]);
+
+  const barrageMessages = useMemo<BarrageMessage[]>(() => {
+    return filteredStars.flatMap((star) => {
+      const message = star.message?.trim();
+      if (!message) return [];
+      return [{
+        id: star.id,
+        message,
+        nickname: star.nickname,
+        createdAt: star.createdAt,
+        color: star.color,
+      }];
+    });
+  }, [filteredStars]);
 
   useEffect(() => {
     if (welcomeInfo) {
@@ -316,17 +335,32 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onSwitchThem
     }
   }, [welcomeInfo]);
 
+  const handleBarrageModeChange = (enabled: boolean) => {
+    if (enabled && loadState !== 'ready') {
+      toast.info('星空加载完成后才能开启弹幕模式');
+      return;
+    }
+    setSelectedStar(null);
+    setWelcomeInfo(null);
+    setIsCreateModalOpen(false);
+    setSkyView('messages');
+    setBarrageMode(enabled);
+    setSidebarOpen(false);
+  };
+
   return (
     <div className="min-h-screen relative overflow-hidden">
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 text-center pointer-events-none">
-        <div className="flex items-center justify-center gap-3">
-          <Sparkles className="w-6 h-6 text-yellow-300 animate-pulse" />
-          <h1 className="text-2xl md:text-4xl font-extrabold text-white">
-            {theme.sky.title}
-          </h1>
-          <Sparkles className="w-6 h-6 text-yellow-300 animate-pulse" />
+      {!barrageMode && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 text-center pointer-events-none">
+          <div className="flex items-center justify-center gap-3">
+            <Sparkles className="w-6 h-6 text-yellow-300 animate-pulse" />
+            <h1 className="text-2xl md:text-4xl font-extrabold text-white">
+              {theme.sky.title}
+            </h1>
+            <Sparkles className="w-6 h-6 text-yellow-300 animate-pulse" />
+          </div>
         </div>
-      </div>
+      )}
       <AssistantSidebar
         searchName={searchName}
         setSearchName={setSearchName}
@@ -346,21 +380,24 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onSwitchThem
         onOpen={() => setSidebarOpen(true)}
         displayMode={displayMode}
         onChangeDisplayMode={(mode) => setDisplayMode(mode)}
+        barrageMode={barrageMode}
+        onChangeBarrageMode={handleBarrageModeChange}
         isAdminDevice={isAdminDevice}
         onSetAdminDevice={(v) => { try { localStorage.setItem('is_admin_device', v ? 'true' : 'false'); } catch {}; setIsAdminDevice(v); }}
-        onOpenStarPet={() => setStarPetOpen(true)}
       />
 
       {/* 顶部导航 */}
-      <div className="relative z-10 flex justify-between items-center p-4">
-        <button
-          onClick={() => { (window as any).playClickSound?.(); onSwitchTheme(); }}
-          className="bg-white/20 backdrop-blur-sm text-white px-4 py-2 rounded-lg hover:bg-white/30 transition-all duration-200 flex items-center space-x-2"
-        >
-          <RotateCcw className="w-4 h-4" />
-          <span>{theme.sky.switchLabel}</span>
-        </button>
-      </div>
+      {!barrageMode && (
+        <div className="relative z-10 flex justify-between items-center p-4">
+          <button
+            onClick={() => { (window as any).playClickSound?.(); onBack(); }}
+            className="bg-white/20 backdrop-blur-sm text-white px-4 py-2 rounded-lg hover:bg-white/30 transition-all duration-200 flex items-center space-x-2"
+          >
+            <RotateCcw className="w-4 h-4" />
+            <span>返回</span>
+          </button>
+        </div>
+      )}
 
       {/* 星星显示区域 */}
       <div className="relative w-full h-screen">
@@ -381,7 +418,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onSwitchThem
             </div>
           </div>
         )}
-        {loadState === 'ready' && visibleStars.map((star) => (
+        {loadState === 'ready' && skyView === 'stars' && visibleStars.map((star) => (
           <UserStar
             key={star.id}
             x={star.x}
@@ -399,10 +436,35 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onSwitchThem
             onDelete={() => handleDeleteStar(star.id)}
           />
         ))}
+        {loadState === 'ready' && skyView === 'messages' && (
+          <MessageBarrage messages={barrageMessages} theme={theme} immersive={barrageMode} />
+        )}
       </div>
 
+      {loadState === 'ready' && skyView === 'stars' && !sidebarOpen && !barrageMode && (
+        <button
+          type="button"
+          aria-label="查看留言弹幕"
+          onClick={() => { (window as any).playClickSound?.(); setSkyView('messages'); }}
+          className="group absolute right-5 top-1/2 z-30 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/45 text-white shadow-2xl backdrop-blur-xl transition duration-300 hover:translate-x-1 hover:border-white/45 hover:bg-white/15 focus:outline-none focus:ring-2 focus:ring-white/60 md:right-7 md:h-14 md:w-14"
+        >
+          <ArrowRight className="h-6 w-6 transition-transform duration-300 group-hover:translate-x-0.5" />
+        </button>
+      )}
+
+      {loadState === 'ready' && skyView === 'messages' && !sidebarOpen && !barrageMode && (
+        <button
+          type="button"
+          aria-label="返回星星版"
+          onClick={() => { (window as any).playClickSound?.(); setSkyView('stars'); }}
+          className="group absolute left-5 top-1/2 z-30 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/45 text-white shadow-2xl backdrop-blur-xl transition duration-300 hover:-translate-x-1 hover:border-white/45 hover:bg-white/15 focus:outline-none focus:ring-2 focus:ring-white/60 md:left-7 md:h-14 md:w-14"
+        >
+          <ArrowLeft className="h-6 w-6 transition-transform duration-300 group-hover:-translate-x-0.5" />
+        </button>
+      )}
+
       {/* 底部操作区域 */}
-      <div className="absolute bottom-16 left-1/2 transform -translate-x-1/2 z-10">
+      {!barrageMode && <div className="absolute bottom-16 left-1/2 transform -translate-x-1/2 z-10">
         <div className="flex flex-col items-center space-y-4">
           <button
             onClick={handleOpenCreateModal}
@@ -425,7 +487,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onSwitchThem
             <p>{theme.sky.hint}</p>
           </div>
         </div>
-      </div>
+      </div>}
 
       {/* 星星详情模态框 */}
       {selectedStar && (
@@ -508,10 +570,6 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onSwitchThem
             </div>
           </div>
         </div>
-      )}
-
-      {starPetOpen && (
-        <StarPetPanel theme={theme} onClose={() => setStarPetOpen(false)} userId={userId} />
       )}
 
       {welcomeInfo && (

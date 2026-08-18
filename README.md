@@ -78,14 +78,14 @@ VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 
 ### 双企划数据集合
 
-两个主题共享昵称身份，但星星、留言、每日次数和星宠进度完全隔离。使用 CloudBase 或 Supabase 时，请预先创建以下集合/表：
+两个主题共享昵称身份，但星星、留言和每日次数完全隔离。使用 CloudBase 或 Supabase 时，请预先创建以下集合/表：
 
-| 企划 | 星星集合/表 | 星宠集合/表 |
-| --- | --- | --- |
-| JIEYOU宇宙 | `stars` | `pet_stats` |
-| 生命万岁企划 | `life_stars` | `life_pet_stats` |
+| 企划 | 星星集合/表 |
+| --- | --- |
+| JIEYOU宇宙 | `stars` |
+| 生命万岁企划 | `life_stars` |
 
-`life_stars` 的字段结构与 `stars` 保持一致，`life_pet_stats` 与 `pet_stats` 保持一致。若生命主题集合尚未创建，该主题会显示“暂时无法抵达”，不会回退读取 JIEYOU 数据。
+`life_stars` 的字段结构与 `stars` 保持一致。若生命主题集合尚未创建，该主题会显示“暂时无法抵达”，不会回退读取 JIEYOU 数据。
 
 ## 🌟 核心功能
 

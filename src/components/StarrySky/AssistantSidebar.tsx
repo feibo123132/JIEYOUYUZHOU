@@ -20,9 +20,10 @@ interface AssistantSidebarProps {
   onOpen: () => void
   displayMode: 'random' | 'full'
   onChangeDisplayMode: (mode: 'random' | 'full') => void
+  barrageMode: boolean
+  onChangeBarrageMode: (enabled: boolean) => void
   isAdminDevice: boolean
   onSetAdminDevice: (v: boolean) => void
-  onOpenStarPet?: () => void
 }
 
 const AssistantSidebar: React.FC<AssistantSidebarProps> = ({
@@ -44,12 +45,14 @@ const AssistantSidebar: React.FC<AssistantSidebarProps> = ({
   onOpen,
   displayMode,
   onChangeDisplayMode,
+  barrageMode,
+  onChangeBarrageMode,
   isAdminDevice,
   onSetAdminDevice,
-  onOpenStarPet,
 }) => {
   const [searchFoldOpen, setSearchFoldOpen] = useState(false)
   const [displayFoldOpen, setDisplayFoldOpen] = useState(false)
+  const [barrageFoldOpen, setBarrageFoldOpen] = useState(false)
   const [toolsFoldOpen, setToolsFoldOpen] = useState(false)
   if (!open) {
     return (
@@ -64,7 +67,7 @@ const AssistantSidebar: React.FC<AssistantSidebarProps> = ({
   }
 
   return (
-    <div className="fixed top-0 right-0 h-full w-80 md:w-96 z-20 px-4 py-6 bg-transparent backdrop-blur-2xl border-l border-white/10 pointer-events-none">
+    <div className="fixed top-0 right-0 h-full w-80 md:w-96 z-20 overflow-y-auto px-4 py-6 bg-transparent backdrop-blur-2xl border-l border-white/10 pointer-events-none">
       <div className="flex items-center justify-between mb-4 pointer-events-auto">
         <div className="text-white text-2xl font-extrabold">💪 助手栏</div>
         <button onClick={onClose} className="text-white/80 hover:text-white">关闭</button>
@@ -182,6 +185,36 @@ const AssistantSidebar: React.FC<AssistantSidebarProps> = ({
 
         <div className="bg-white/5 backdrop-blur-md rounded-2xl border border-white/5 overflow-hidden">
           <button
+            onClick={() => setBarrageFoldOpen(!barrageFoldOpen)}
+            className="w-full flex items-center justify-between px-4 py-3 text-white"
+          >
+            <span className="font-semibold text-lg">💬 弹幕</span>
+            <ChevronDown className={`w-4 h-4 transition-transform ${barrageFoldOpen ? 'rotate-0' : '-rotate-90'}`} />
+          </button>
+          {barrageFoldOpen && (
+            <div className="p-3">
+              <div className="flex items-center justify-between bg-white/5 rounded-xl px-3 py-3">
+                <div>
+                  <div className="text-sm text-white/90">弹幕模式</div>
+                  <div className="mt-1 text-xs text-white/55">只保留星空与留言</div>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={barrageMode}
+                  aria-label="弹幕模式"
+                  onClick={() => onChangeBarrageMode(!barrageMode)}
+                  className={`relative h-7 w-12 rounded-full border transition-colors duration-200 ${barrageMode ? 'border-emerald-300/60 bg-emerald-400/80' : 'border-white/20 bg-white/10'}`}
+                >
+                  <span className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow-md transition-transform duration-200 ${barrageMode ? 'translate-x-6' : 'translate-x-1'}`} />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="bg-white/5 backdrop-blur-md rounded-2xl border border-white/5 overflow-hidden">
+          <button
             onClick={() => setToolsFoldOpen(!toolsFoldOpen)}
             className="w-full flex items-center justify-between px-4 py-3 text-white"
           >
@@ -190,15 +223,6 @@ const AssistantSidebar: React.FC<AssistantSidebarProps> = ({
           </button>
           {toolsFoldOpen && (
             <div className="p-3 space-y-3">
-              <div className="flex items-center justify-between bg-white/5 rounded-xl px-3 py-2">
-                <span className="text-sm text-white/90">星际萌宠（公共猫舍）</span>
-                <button
-                  className="text-xs bg-white/10 hover:bg-white/20 px-2 py-1 rounded"
-                  onClick={() => { onOpenStarPet && onOpenStarPet() }}
-                >
-                  进入猫舍
-                </button>
-              </div>
               <div className="flex items-center justify-between bg-white/5 rounded-xl px-3 py-2">
                 <span className="text-sm text-white/90">管理员模式</span>
                 {isAdminDevice ? (

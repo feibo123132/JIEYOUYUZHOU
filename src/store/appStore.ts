@@ -33,6 +33,7 @@ interface AppActions {
   addStar: (star: Star) => void;
   enterTheme: (theme: ThemeId) => void;
   enterStarrySky: () => void;
+  returnToWelcome: () => void;
   returnToThemeHub: () => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
@@ -62,6 +63,16 @@ const useAppStore = create<AppState & AppActions>((set) => ({
   }),
   enterStarrySky: () => set((state) => state.activeTheme ? {
     currentView: 'starry-sky',
+    stars: [],
+    error: null,
+  } : {
+    activeTheme: null,
+    currentView: 'theme-hub',
+    stars: [],
+    error: null,
+  }),
+  returnToWelcome: () => set((state) => state.activeTheme ? {
+    currentView: 'welcome',
     stars: [],
     error: null,
   } : {

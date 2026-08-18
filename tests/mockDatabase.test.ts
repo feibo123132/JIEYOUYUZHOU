@@ -26,14 +26,3 @@ test('mock stars remain isolated between themes', async () => {
   assert.equal((await mockDatabase.getAllStars('life')).length, 0)
   assert.equal((await mockDatabase.getAllStars('jieyou')).length, 1)
 })
-
-test('mock pet progress remains isolated between themes', async () => {
-  const lifeBefore = await mockDatabase.getPetStatus('life')
-  const jieyouResult = await mockDatabase.interactWithPet('jieyou', 'user-a')
-  const lifeAfter = await mockDatabase.getPetStatus('life')
-
-  assert.equal(jieyouResult.added, true)
-  assert.equal(jieyouResult.xp, 1)
-  assert.equal(lifeBefore.xp, 0)
-  assert.equal(lifeAfter.xp, 0)
-})

@@ -3,7 +3,6 @@ import { isBackendReachable } from './connectivity';
 import { mockDatabase, supabase } from './supabase';
 import {
   isTcbReachable,
-  petService as tcbPetService,
   tcbApp,
   tcbService,
 } from './tcb';
@@ -210,34 +209,7 @@ const starService = {
   },
 };
 
-const petService = {
-  async getPetStatus(themeId: ThemeId) {
-    if (tcbApp) {
-      await requireReachableTcbTheme(themeId);
-      try {
-        return await tcbPetService.getPetStatus(themeId);
-      } catch (error) {
-        throw themeUnavailable(error);
-      }
-    }
-    return mockDatabase.getPetStatus(themeId);
-  },
-
-  async interactWithPet(themeId: ThemeId, userId?: string) {
-    if (tcbApp) {
-      await requireReachableTcbTheme(themeId);
-      try {
-        return await tcbPetService.interactWithPet(themeId, userId);
-      } catch (error) {
-        throw themeUnavailable(error);
-      }
-    }
-    return mockDatabase.interactWithPet(themeId, userId);
-  },
-};
-
 export default {
   userService,
   starService,
-  petService,
 };

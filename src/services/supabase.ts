@@ -23,14 +23,6 @@ export const mockDatabase = {
     jieyou: new Map<string, any>(),
     life: new Map<string, any>(),
   } satisfies Record<ThemeId, Map<string, any>>,
-  petXp: {
-    jieyou: 0,
-    life: 0,
-  } satisfies Record<ThemeId, number>,
-  petDaily: {
-    jieyou: new Set<string>(),
-    life: new Set<string>(),
-  } satisfies Record<ThemeId, Set<string>>,
   nextId: 0,
   async createUser(nickname: string) {
     const user = {
@@ -86,19 +78,6 @@ export const mockDatabase = {
     return Promise.resolve(
       Array.from(this.stars[themeId].values()).filter((star: any) => star.user_id === userId) as any[]
     );
-  },
-  async getPetStatus(themeId: ThemeId) {
-    return { xp: this.petXp[themeId] };
-  },
-  async interactWithPet(themeId: ThemeId, userId?: string) {
-    const day = new Date().toISOString().slice(0, 10);
-    const key = `${userId || 'device'}:${day}`;
-    if (this.petDaily[themeId].has(key)) {
-      return { added: false, xp: this.petXp[themeId] };
-    }
-    this.petDaily[themeId].add(key);
-    this.petXp[themeId] += 1;
-    return { added: true, xp: this.petXp[themeId] };
   }
 };
 

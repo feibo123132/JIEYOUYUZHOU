@@ -47,8 +47,6 @@
 
 复用当前 `StarrySky`、`CreateStarModal`、搜索侧栏和星星详情组件。主题配置决定页头、CTA、提示语、颜色、声音和数据集合。
 
-生命万岁保留与 JIEYOU 相同的星宠入口和互动能力，以满足两套主题基本设定一致的要求；星宠外观和交互组件共用，但成长值与每日互动记录使用独立的 `life_pet_stats` 集合。
-
 “生命万岁企划”建议使用：
 
 - 页头：我们的幸福星空
@@ -106,7 +104,6 @@
 | --- | --- | --- |
 | 用户身份 | `users` | 共享 `users` |
 | 星星与留言 | `stars` | `life_stars` |
-| 星宠进度 | `pet_stats` | `life_pet_stats` |
 
 这样无需迁移或修改现有 JIEYOU 星星。生命万岁从独立空集合开始。
 
@@ -121,9 +118,9 @@
 
 各后端路径的隔离契约如下：
 
-- TCB：JIEYOU 使用 `stars` / `pet_stats`，生命万岁使用 `life_stars` / `life_pet_stats`。
+- TCB：JIEYOU 使用 `stars`，生命万岁使用 `life_stars`。
 - Supabase：使用同名的独立表；目标主题表不存在或无权限时直接报告该主题不可用，不得查询另一张表。
-- 本地 mock：为两个主题分别维护星星 Map、计数和星宠状态。
+- 本地 mock：为两个主题分别维护星星 Map 和计数。
 - 自定义 API：生命万岁只允许使用显式主题路由 `GET /themes/life/stars`、`POST /themes/life/stars`、`DELETE /themes/life/stars/:id` 及对应统计接口。现有 JIEYOU 可以继续兼容通用 `/stars` 路由。若后端健康检查未声明支持主题路由，生命万岁必须跳过通用 API 回退并进入隔离的本地 mock 或显示不可用；绝不能把 `themeId` 仅放在前端而继续调用可能忽略它的通用 `/stars`。
 
 ## 6. 音频与主题表现

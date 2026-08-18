@@ -22,8 +22,7 @@
 - Modify `src/components/Welcome/NicknameInput.tsx`: theme-aware input and submit copy.
 - Modify `src/components/StarrySky/StarrySky.tsx`: required theme prop, isolated service calls, themed labels, reset-on-switch behavior.
 - Modify `src/components/StarrySky/CreateStarModal.tsx`: themed prompt, confirm label, and allowed voice list.
-- Modify `src/components/StarPet/StarPetPanel.tsx`: required theme prop and theme-isolated pet service calls.
-- Modify `src/services/tcb.ts`: choose collections from theme configuration for star and pet operations.
+- Modify `src/services/tcb.ts`: choose collections from theme configuration for star operations.
 - Modify `src/services/starService.ts`: require `ThemeId` for all star operations and keep backend fallbacks isolated.
 - Modify `src/services/supabase.ts`: maintain separate mock maps and choose theme-specific tables.
 - Modify `src/services/api.ts`: retain legacy JIEYOU paths but use `/themes/life/...` for Life.
@@ -53,7 +52,6 @@ test('the two themes use distinct content collections', () => {
   assert.deepEqual(THEME_IDS, ['jieyou', 'life'])
   assert.equal(jieyou.data.starsCollection, 'stars')
   assert.equal(life.data.starsCollection, 'life_stars')
-  assert.notEqual(jieyou.data.petCollection, life.data.petCollection)
 })
 
 test('life REST calls never use the generic stars endpoint', () => {
@@ -65,7 +63,6 @@ test('all theme-scoped storage targets stay distinct', () => {
   const jieyou = getThemeConfig('jieyou').data
   const life = getThemeConfig('life').data
   assert.notEqual(jieyou.starsCollection, life.starsCollection)
-  assert.notEqual(jieyou.petCollection, life.petCollection)
   assert.notEqual(jieyou.quotaStorageKey, life.quotaStorageKey)
 })
 ```
@@ -115,7 +112,7 @@ export interface ThemeConfig {
     glowClass: string
   }
   audio: { background: string; voices: string[] }
-  data: { starsCollection: string; petCollection: string; quotaStorageKey: string }
+  data: { starsCollection: string; quotaStorageKey: string }
 }
 
 export const getThemeConfig = (id: ThemeId): ThemeConfig => THEME_CONFIGS[id]
@@ -231,7 +228,6 @@ git commit -m "feat: add atomic theme navigation state"
 - Modify: `src/App.tsx`
 - Modify: `src/components/Welcome/WelcomeScreen.tsx`
 - Modify: `src/components/StarrySky/StarrySky.tsx`
-- Modify: `src/components/StarPet/StarPetPanel.tsx`
 - Modify: `tests/themeConfig.test.ts`
 
 - [ ] **Step 1: Extend the failing routing tests**
@@ -257,7 +253,7 @@ const { starsCollection } = getThemeConfig(themeId).data
 const stars = () => (tcbDb as any).collection(starsCollection)
 ```
 
-Apply it to `getAllStars`, `getTodayCountByNickname`, `createStar`, and `deleteStar`. Update `petService.getPetStatus(themeId)` and `petService.interactWithPet(themeId, userId)` to use `petCollection`; include `themeId` in the local daily key. If TCB is configured but the selected collection is missing or forbidden, return a typed `theme_unavailable` error instead of probing or reading the other theme.
+Apply it to `getAllStars`, `getTodayCountByNickname`, `createStar`, and `deleteStar`. If TCB is configured but the selected collection is missing or forbidden, return a typed `theme_unavailable` error instead of probing or reading the other theme.
 
 - [ ] **Step 3: Isolate Supabase and local mock storage**
 
@@ -267,14 +263,7 @@ Use `getThemeConfig(themeId).data.starsCollection` as the Supabase table. Supaba
 stars: { jieyou: new Map(), life: new Map() }
 ```
 
-Require `themeId` for mock create/read/delete operations. Add per-theme mock pet XP and daily records:
-
-```ts
-petXp: { jieyou: 0, life: 0 },
-petDaily: { jieyou: new Set<string>(), life: new Set<string>() }
-```
-
-Expose theme-aware mock `getPetStatus` and `interactWithPet` so unavailable remote pet storage cannot reuse the other theme's state.
+Require `themeId` for mock create/read/delete operations.
 
 - [ ] **Step 4: Enforce safe custom API routing**
 
@@ -282,7 +271,7 @@ Keep `/stars` compatibility only for JIEYOU. Life methods use `/themes/life/star
 
 - [ ] **Step 5: Make the service facade require ThemeId**
 
-Update signatures, including a theme-aware pet facade that chooses TCB or isolated mock pet storage:
+Update the star service signatures:
 
 ```ts
 starService.createStar(themeId, userId, nickname, position, options)
@@ -290,13 +279,11 @@ starService.getAllStars(themeId)
 starService.getUserStars(themeId, userId)
 starService.deleteStar(themeId, starId)
 starService.getTodayCountByNickname(themeId, nickname)
-petService.getPetStatus(themeId)
-petService.interactWithPet(themeId, userId)
 ```
 
 Queue payloads include `themeId`, and the queue key becomes `syncQueue:v2` so legacy unscoped operations cannot replay into the wrong theme.
 
-Update all current call sites in this task so the boundary remains TypeScript-clean: resolve the active `ThemeConfig` in `App`, pass it to `WelcomeScreen` and `StarrySky`, pass it onward to `StarPetPanel`, and use `theme.id` for every service call. Do not change visible copy yet.
+Update all current call sites in this task so the boundary remains TypeScript-clean: resolve the active `ThemeConfig` in `App`, pass it to `WelcomeScreen` and `StarrySky`, and use `theme.id` for every service call. Do not change visible copy yet.
 
 - [ ] **Step 6: Run tests and TypeScript**
 
@@ -304,7 +291,7 @@ Run: `pnpm test`
 
 Expected: all tests pass.
 
-The pure routing suite must cover both themes' collection names, Supabase table names, REST read/create/delete paths, health/statistics paths, quota keys, and pet storage names. These assertions are the regression barrier against adding an unscoped fallback later.
+The pure routing suite must cover both themes' collection names, Supabase table names, REST read/create/delete paths, health/statistics paths, and quota keys. These assertions are the regression barrier against adding an unscoped fallback later.
 
 Run: `pnpm run check`
 
@@ -313,7 +300,7 @@ Expected: exit code 0. Do not commit an intentionally broken service/UI boundary
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/themes/themeConfig.ts src/services src/utils/syncQueue.ts src/App.tsx src/components/Welcome/WelcomeScreen.tsx src/components/StarrySky/StarrySky.tsx src/components/StarPet/StarPetPanel.tsx tests/themeConfig.test.ts
+git add src/themes/themeConfig.ts src/services src/utils/syncQueue.ts src/App.tsx src/components/Welcome/WelcomeScreen.tsx src/components/StarrySky/StarrySky.tsx tests/themeConfig.test.ts
 git commit -m "feat: isolate theme data services"
 ```
 
@@ -399,13 +386,12 @@ git add src/App.tsx src/components/Welcome
 git commit -m "feat: theme the shared welcome experience"
 ```
 
-### Task 6: Theme the starry sky, creation modal, and star pet
+### Task 6: Theme the starry sky and creation modal
 
 **Files:**
 - Modify: `src/App.tsx`
 - Modify: `src/components/StarrySky/StarrySky.tsx`
 - Modify: `src/components/StarrySky/CreateStarModal.tsx`
-- Modify: `src/components/StarPet/StarPetPanel.tsx`
 
 - [ ] **Step 1: Require ThemeConfig in the starry sky**
 
@@ -425,11 +411,7 @@ Update `App.tsx` in this task to pass `theme` and `onSwitchTheme` to `StarrySky`
 
 Pass the full `theme` (including prompt, confirm label, visual tokens, count noun, project title, and `theme.audio.voices`) into `CreateStarModal`. Replace the existing incoming-star preview text that hard-codes `JIEYOU宇宙` with values derived from the selected theme. Keep the generic `点亮星星的音效.mp3`, then randomly choose only from the current theme's approved voice list. Life must not display JIEYOU preview copy or play `欢迎你到解忧宇宙遨游.mp3` and other JIEYOU-specific lines.
 
-- [ ] **Step 5: Isolate star-pet progress**
-
-Pass `theme.id` to `StarPetPanel`, then to `petService.getPetStatus(themeId)` and `petService.interactWithPet(themeId, userId)`. Keep the panel layout shared and use separate TCB collection/local daily key.
-
-- [ ] **Step 6: Run the full automated checks**
+- [ ] **Step 5: Run the full automated checks**
 
 Run: `pnpm test`
 
@@ -439,10 +421,10 @@ Run: `pnpm run check`
 
 Expected: exit code 0.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add src/App.tsx src/components/StarrySky src/components/StarPet
+git add src/App.tsx src/components/StarrySky
 git commit -m "feat: theme and isolate the shared starry sky"
 ```
 
@@ -453,7 +435,7 @@ git commit -m "feat: theme and isolate the shared starry sky"
 
 - [ ] **Step 1: Document CloudBase provisioning**
 
-Add a short setup note that `life_stars` and `life_pet_stats` must exist with access rules equivalent to the current `stars` and `pet_stats` collections. Do not include credentials or environment values.
+Add a short setup note that `life_stars` must exist with access rules equivalent to the current `stars` collection. Do not include credentials or environment values.
 
 - [ ] **Step 2: Run all checks from a fresh command**
 
