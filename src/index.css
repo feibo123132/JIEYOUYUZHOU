@@ -12,6 +12,11 @@
   to { transform: translate3d(-100%, -50%, 0); }
 }
 
+@keyframes barrage-fill-travel {
+  from { transform: translate3d(0, -50%, 0); }
+  to { transform: translate3d(-50%, -50%, 0); }
+}
+
 .barrage-stage {
   top: 7%;
   bottom: 17%;
@@ -38,9 +43,38 @@
   display: flex;
   width: max-content;
   align-items: center;
-  gap: clamp(5rem, 12vw, 14rem);
+  gap: var(--barrage-horizontal-gap);
   animation: barrage-travel var(--lane-duration) linear var(--lane-delay) infinite;
   will-change: transform;
+}
+
+.barrage-lane--fill {
+  gap: 0;
+  animation: barrage-fill-travel var(--fill-duration) linear var(--lane-delay) infinite;
+}
+
+.barrage-fill-unit,
+.barrage-fill-sequence,
+.barrage-fill-probe {
+  display: flex;
+  width: max-content;
+  flex: none;
+  align-items: center;
+}
+
+.barrage-fill-sequence,
+.barrage-fill-probe {
+  gap: var(--barrage-horizontal-gap);
+}
+
+.barrage-fill-sequence {
+  padding-right: var(--barrage-horizontal-gap);
+}
+
+.barrage-fill-probe {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .barrage-item {
@@ -137,7 +171,7 @@
     overflow: visible;
     clip: auto;
     flex-direction: column;
-    gap: .75rem;
+    gap: var(--barrage-static-gap);
     white-space: normal;
   }
 

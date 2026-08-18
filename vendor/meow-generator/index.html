@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="application-name" content="Meow Generator" />
+  <meta name="apple-mobile-web-app-title" content="Meow Generator" />
+  <meta name="description" content="A playful procedural 3D kitten generator built with Three.js." />
+  <meta property="og:title" content="Meow Generator" />
+  <meta property="og:description" content="Create, customize, animate, and capture your own procedural 3D kitten." />
+  <title>Meow Generator</title>
+  <link
+    rel="preload"
+    href="/src/assets/loading/cat-can-transparent.png"
+    as="image"
+    fetchpriority="high"
+  />
+  <link
+    rel="preload"
+    href="/src/assets/loading/fish.png"
+    as="image"
+    fetchpriority="high"
+  />
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <a class="host-back-link" href="../" aria-label="返回 JIEYOU 宇宙" data-i18n-ignore>
+    <span aria-hidden="true">←</span>
+    <span>返回 JIEYOU 宇宙</span>
+  </a>
+  <div
+    id="initial-loader"
+    class="initial-loader"
+    role="status"
+    aria-live="polite"
+    aria-label="小猫罐头正在准备画布"
+  >
+    <div class="initial-loader__content">
+      <div class="initial-loader__mascot" aria-hidden="true">
+        <span class="initial-loader__glow"></span>
+        <img
+          class="initial-loader__cat"
+          src="/src/assets/loading/cat-can-transparent.png"
+          alt=""
+          width="400"
+          height="449"
+          decoding="async"
+          fetchpriority="high"
+          draggable="false"
+        />
+      </div>
+      <div class="initial-loader__meter" aria-hidden="true">
+        <div class="initial-loader__track">
+          <span class="initial-loader__fill"></span>
+          <span class="initial-loader__fish-runner">
+            <img
+              class="initial-loader__fish"
+              src="/src/assets/loading/fish.png"
+              alt=""
+              width="280"
+              height="164"
+              decoding="async"
+              fetchpriority="high"
+              draggable="false"
+            />
+          </span>
+          </div>
+        </div>
+        <div class="initial-loader__caption">
+          <span class="initial-loader__label">正在开罐，马上就好…</span>
+          <output id="initial-loader-percent" class="initial-loader__percent">7%</output>
+        </div>
+      </div>
+  </div>
+  <svg class="handdrawn-filters" aria-hidden="true">
+    <defs>
+      <filter id="handdrawn-wobble" x="-8%" y="-12%" width="116%" height="124%">
+        <feTurbulence
+          type="fractalNoise"
+          baseFrequency="0.016 0.045"
+          numOctaves="2"
+          seed="23"
+          result="paperNoise"
+        />
+        <feDisplacementMap
+          in="SourceGraphic"
+          in2="paperNoise"
+          scale="2.6"
+          xChannelSelector="R"
+          yChannelSelector="G"
+        />
+      </filter>
+    </defs>
+  </svg>
+  <div id="app">
+    <main id="viewport">
+      <canvas id="scene"></canvas>
+      <div
+        id="scene-speech-bubble"
+        class="scene-speech-bubble"
+        aria-hidden="true"
+        data-i18n-ignore
+      ></div>
+      <div id="viewport-quick-settings" aria-label="Language">
+        <div class="locale-switcher" role="group" aria-label="Language" data-i18n-ignore>
+          <button type="button" data-locale="zh-CN" aria-pressed="true">中</button>
+          <button type="button" data-locale="ja-JP" aria-pressed="false">日</button>
+          <button type="button" data-locale="en" aria-pressed="false">EN</button>
+        </div>
+      </div>
+      <div id="scene-tools" aria-label="场景控制">
+        <div class="music-tool">
+          <button
+            id="bgm-toggle"
+            class="bgm-toggle"
+            type="button"
+            aria-label="播放背景音乐"
+            aria-pressed="false"
+            title="播放背景音乐"
+          >
+            <span class="record-label" aria-hidden="true"></span>
+            <span class="record-hole" aria-hidden="true"></span>
+          </button>
+          <span class="record-tonearm" aria-hidden="true"></span>
+          <span class="scene-tool-label">音乐</span>
+        </div>
+        <div class="light-tool">
+          <button
+            id="light-orb"
+            type="button"
+            aria-label="拖动光照球调整光照方向"
+            title="拖动小太阳，改变光照方向"
+          >
+            <span id="light-orb-handle" aria-hidden="true"></span>
+          </button>
+          <span class="scene-tool-label">光照</span>
+        </div>
+        <div id="weather-control" class="weather-control" aria-label="天气">
+          <span class="weather-title">天气</span>
+          <div class="weather-options">
+            <button type="button" class="weather-chip active" data-weather="sunny" aria-label="晴天" aria-pressed="true">☀️ 晴天</button>
+            <button type="button" class="weather-chip" data-weather="cloudy" aria-label="阴天" aria-pressed="false">☁️ 阴天</button>
+            <button type="button" class="weather-chip" data-weather="thunder" aria-label="打雷" aria-pressed="false" title="可与阴天或下雨叠加">⚡ 打雷</button>
+            <button type="button" class="weather-chip" data-weather="fishRain" aria-label="下雨" aria-pressed="false" title="雨量和落鱼量可分别调整">🌧️ 下雨</button>
+          </div>
+          <div class="weather-parameters" aria-label="天气参数" hidden>
+            <label class="weather-parameter" for="weather-rain-amount">
+              <span>雨量</span>
+              <input id="weather-rain-amount" type="range" min="0" max="4" step="0.05" value="1">
+              <output id="weather-rain-value" for="weather-rain-amount">1.00</output>
+            </label>
+            <label class="weather-parameter" for="weather-cloud-amount">
+              <span>云量</span>
+              <input id="weather-cloud-amount" type="range" min="0" max="2" step="0.05" value="1">
+              <output id="weather-cloud-value" for="weather-cloud-amount">1.00</output>
+            </label>
+            <label class="weather-parameter" for="weather-fish-amount">
+              <span>鱼量</span>
+              <input id="weather-fish-amount" type="range" min="0" max="4" step="0.05" value="1">
+              <output id="weather-fish-value" for="weather-fish-amount">1.00</output>
+            </label>
+          </div>
+        </div>
+      </div>
+      <div id="lightning-flash" aria-hidden="true"></div>
+      <svg id="lightning-art" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+        <path id="lightning-outline" class="lightning-outline"></path>
+        <path id="lightning-core" class="lightning-core"></path>
+      </svg>
+      <div id="viewport-hint">拖拽旋转 · 滚轮缩放 · 右键平移</div>
+    </main>
+    <aside id="panel" class="mobile-panel-collapsed">
+      <div class="mobile-panel-toolbar">
+        <button
+          id="mobile-panel-toggle"
+          class="mobile-panel-toggle"
+          type="button"
+          aria-expanded="false"
+          aria-controls="controls"
+          aria-label="展开参数面板"
+        >
+          <span class="mobile-panel-toggle__label">展开参数</span>
+          <span class="mobile-panel-toggle__chevron" aria-hidden="true">⌄</span>
+        </button>
+        <div class="panel-actions">
+          <button id="btn-random" class="btn primary">🐾 随机遇见小猫</button>
+          <div class="btn-row">
+            <button id="btn-export-glb" class="btn">带走 GLB</button>
+            <button id="btn-export-png" class="btn">留影 PNG</button>
+          </div>
+          <button
+            id="btn-codex-pet"
+            class="btn codex-pet-entry"
+            type="button"
+            aria-haspopup="dialog"
+          >
+            <span>🐾 导出给 Codex</span>
+            <small>Experimental</small>
+          </button>
+        </div>
+        <nav id="mobile-section-nav" class="mobile-section-nav" aria-label="参数分类"></nav>
+      </div>
+      <div id="controls"></div>
+      <footer class="panel-footer">
+        <div class="panel-brand-footer">
+          <img
+            class="panel-footer-logo"
+            src="/src/assets/brand/meow-generator-logo.webp"
+            alt="Meow Generator · made by Simon_阿文 & Hyacinth"
+            width="1536"
+            height="1024"
+            loading="lazy"
+            decoding="async"
+            draggable="false"
+          />
+        </div>
+      </footer>
+    </aside>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

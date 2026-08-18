@@ -1,0 +1,22 @@
+node_modules/
+dist/
+参考图/
+*.log
+.env
+.env.*
+*.doc
+*.docx
+*.pdf
+Exports/
+.codex/
+References/Mesh2Motion/
+
+*.glb
+scripts/mesh2motion_report.json
+
+# Local project operations and private release planning
+Tasks/
+ReferenceBoard.mouseboard
+Board.cmd
+Board.ps1
+docs/App-Store-Launch-Plan-*.md

@@ -1,6 +1,6 @@
 // src/components/StarrySky/StarrySky.tsx (修正后的完整版)
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { ArrowLeft, ArrowRight, Plus, RotateCcw, Trash2, Sparkles } from 'lucide-react';
 import { Star as PStar, Heart, Cloud, Moon, Mountains, Leaf, MusicNotes, Bird, Cat, Dog, Waves, PaperPlane } from 'phosphor-react';
 import UserStar from './UserStar';
@@ -9,6 +9,8 @@ import CreateStarModal from './CreateStarModal';
 import AssistantSidebar from './AssistantSidebar';
 import MessageBarrage, { type BarrageMessage } from './MessageBarrage';
 import type { ThemeConfig } from '../../themes/themeConfig';
+import { resolveStarLayout, type LayoutRect } from '../../utils/starLayout';
+import { createInitialBarragePreferences, setBarragePreference } from './barragePreferences';
 
 // ↓↓↓↓↓↓ [修正] 使用正确的默认导入并解构出 starService ↓↓↓↓↓↓
 import services from '../../services/starService';
@@ -37,6 +39,8 @@ interface StarrySkyProps {
 }
 
 const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, userId }) => {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const starFieldRef = useRef<HTMLDivElement>(null);
   const [stars, setStars] = useState<StarData[]>([]);
   const [selectedStar, setSelectedStar] = useState<StarData | null>(null);
   const [isCreating, setIsCreating] = useState(false);
@@ -53,7 +57,15 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
   const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [skyView, setSkyView] = useState<'stars' | 'messages'>('stars');
-  const [barrageMode, setBarrageMode] = useState(false);
+  const [barragePreferences, setBarragePreferences] = useState(createInitialBarragePreferences);
+  const barrageMode = barragePreferences.immersive;
+  const intimateMode = barragePreferences.intimate;
+  const fillMode = barragePreferences.fill;
+  const [layoutViewport, setLayoutViewport] = useState<{
+    width: number;
+    height: number;
+    blockedZones: LayoutRect[];
+  }>({ width: 0, height: 0, blockedZones: [] });
 
   const formatYMD = (d: Date) => {
     const y = d.getFullYear();
@@ -84,7 +96,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
       setSearchName('');
       setSearchDate('');
       setSkyView('stars');
-      setBarrageMode(false);
+      setBarragePreferences(createInitialBarragePreferences());
       setLoadState('loading');
       try {
         const allStars = await starService.getAllStars(theme.id);
@@ -314,6 +326,77 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
     return arr.slice(0, 30);
   }, [filteredStars, searchName, searchDate, displayMode]);
 
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    const field = starFieldRef.current;
+    if (!root || !field) return;
+
+    const measureLayout = () => {
+      const fieldRect = field.getBoundingClientRect();
+      const blockedZones = Array.from(root.querySelectorAll<HTMLElement>('[data-star-safe-zone]'))
+        .flatMap((element) => {
+          const rect = element.getBoundingClientRect();
+          if (rect.width <= 0 || rect.height <= 0) return [];
+
+          const left = Math.max(0, rect.left - fieldRect.left);
+          const top = Math.max(0, rect.top - fieldRect.top);
+          const right = Math.min(fieldRect.width, rect.right - fieldRect.left);
+          const bottom = Math.min(fieldRect.height, rect.bottom - fieldRect.top);
+          if (right <= left || bottom <= top) return [];
+          return [{ left, top, right, bottom }];
+        });
+
+      const nextViewport = {
+        width: fieldRect.width,
+        height: fieldRect.height,
+        blockedZones,
+      };
+      setLayoutViewport((current) => {
+        const unchanged = current.width === nextViewport.width
+          && current.height === nextViewport.height
+          && current.blockedZones.length === nextViewport.blockedZones.length
+          && current.blockedZones.every((zone, index) => {
+            const nextZone = nextViewport.blockedZones[index];
+            return zone.left === nextZone.left
+              && zone.top === nextZone.top
+              && zone.right === nextZone.right
+              && zone.bottom === nextZone.bottom;
+          });
+        return unchanged ? current : nextViewport;
+      });
+    };
+
+    measureLayout();
+    let animationFrame: number | null = null;
+    const scheduleMeasurement = () => {
+      if (animationFrame !== null) cancelAnimationFrame(animationFrame);
+      animationFrame = requestAnimationFrame(() => {
+        animationFrame = null;
+        measureLayout();
+      });
+    };
+    const resizeObserver = typeof ResizeObserver === 'undefined'
+      ? null
+      : new ResizeObserver(scheduleMeasurement);
+    resizeObserver?.observe(field);
+    window.addEventListener('resize', scheduleMeasurement);
+
+    return () => {
+      if (animationFrame !== null) cancelAnimationFrame(animationFrame);
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', scheduleMeasurement);
+    };
+  }, [barrageMode, loadState, sidebarOpen, skyView]);
+
+  const layoutPositions = useMemo(() => {
+    if (loadState !== 'ready' || skyView !== 'stars') return new Map<string, { x: number; y: number }>();
+    const positions = resolveStarLayout(
+      visibleStars.map(({ id, x, y, size }) => ({ id, x, y, size })),
+      layoutViewport,
+    );
+    return new Map(positions.map((position) => [position.id, position]));
+  }, [layoutViewport, loadState, skyView, visibleStars]);
+
   const barrageMessages = useMemo<BarrageMessage[]>(() => {
     return filteredStars.flatMap((star) => {
       const message = star.message?.trim();
@@ -344,14 +427,22 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
     setWelcomeInfo(null);
     setIsCreateModalOpen(false);
     setSkyView('messages');
-    setBarrageMode(enabled);
+    setBarragePreferences((current) => setBarragePreference(current, 'immersive', enabled));
     setSidebarOpen(false);
   };
 
+  const handleIntimateModeChange = (enabled: boolean) => {
+    setBarragePreferences((current) => setBarragePreference(current, 'intimate', enabled));
+  };
+
+  const handleFillModeChange = (enabled: boolean) => {
+    setBarragePreferences((current) => setBarragePreference(current, 'fill', enabled));
+  };
+
   return (
-    <div className="min-h-screen relative overflow-hidden">
+    <div ref={rootRef} className="min-h-screen relative overflow-hidden">
       {!barrageMode && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 text-center pointer-events-none">
+        <div data-star-safe-zone className="absolute top-4 left-1/2 -translate-x-1/2 z-20 text-center pointer-events-none">
           <div className="flex items-center justify-center gap-3">
             <Sparkles className="w-6 h-6 text-yellow-300 animate-pulse" />
             <h1 className="text-2xl md:text-4xl font-extrabold text-white">
@@ -382,6 +473,10 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
         onChangeDisplayMode={(mode) => setDisplayMode(mode)}
         barrageMode={barrageMode}
         onChangeBarrageMode={handleBarrageModeChange}
+        intimateMode={intimateMode}
+        onChangeIntimateMode={handleIntimateModeChange}
+        fillMode={fillMode}
+        onChangeFillMode={handleFillModeChange}
         isAdminDevice={isAdminDevice}
         onSetAdminDevice={(v) => { try { localStorage.setItem('is_admin_device', v ? 'true' : 'false'); } catch {}; setIsAdminDevice(v); }}
       />
@@ -390,6 +485,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
       {!barrageMode && (
         <div className="relative z-10 flex justify-between items-center p-4">
           <button
+            data-star-safe-zone
             onClick={() => { (window as any).playClickSound?.(); onBack(); }}
             className="bg-white/20 backdrop-blur-sm text-white px-4 py-2 rounded-lg hover:bg-white/30 transition-all duration-200 flex items-center space-x-2"
           >
@@ -400,7 +496,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
       )}
 
       {/* 星星显示区域 */}
-      <div className="relative w-full h-screen">
+      <div ref={starFieldRef} className="relative w-full h-screen">
         {loadState === 'loading' && (
           <div className="absolute inset-0 z-20 flex items-center justify-center text-white/80">
             <div className="rounded-2xl border border-white/10 bg-black/35 px-6 py-4 backdrop-blur-xl">正在连接这片星空...</div>
@@ -418,11 +514,13 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
             </div>
           </div>
         )}
-        {loadState === 'ready' && skyView === 'stars' && visibleStars.map((star) => (
-          <UserStar
-            key={star.id}
-            x={star.x}
-            y={star.y}
+        {loadState === 'ready' && skyView === 'stars' && visibleStars.map((star) => {
+          const position = layoutPositions.get(star.id) ?? star;
+          return (
+            <UserStar
+              key={star.id}
+              x={position.x}
+              y={position.y}
             nickname={star.nickname}
             createdAt={star.createdAt}
             isNew={star.isNew}
@@ -434,15 +532,17 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
             message={star.message}
             canDelete={star.userId === userId}
             onDelete={() => handleDeleteStar(star.id)}
-          />
-        ))}
+            />
+          );
+        })}
         {loadState === 'ready' && skyView === 'messages' && (
-          <MessageBarrage messages={barrageMessages} theme={theme} immersive={barrageMode} />
+          <MessageBarrage messages={barrageMessages} theme={theme} immersive={barrageMode} intimate={intimateMode} fill={fillMode} />
         )}
       </div>
 
       {loadState === 'ready' && skyView === 'stars' && !sidebarOpen && !barrageMode && (
         <button
+          data-star-safe-zone
           type="button"
           aria-label="查看留言弹幕"
           onClick={() => { (window as any).playClickSound?.(); setSkyView('messages'); }}
@@ -464,7 +564,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
       )}
 
       {/* 底部操作区域 */}
-      {!barrageMode && <div className="absolute bottom-16 left-1/2 transform -translate-x-1/2 z-10">
+      {!barrageMode && <div data-star-safe-zone className="absolute bottom-16 left-1/2 transform -translate-x-1/2 z-10">
         <div className="flex flex-col items-center space-y-4">
           <button
             onClick={handleOpenCreateModal}

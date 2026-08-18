@@ -1,0 +1,34 @@
+{
+  "name": "meow-generator",
+  "version": "0.1.0",
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "private": true,
+  "description": "Meow Generator — a playful procedural 3D kitten creator built with Three.js",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 8791",
+    "build": "vite build",
+    "build:minitool": "vite build --config vite.minitool.config.js",
+    "validate:minitool": "node scripts/validate_minitool.mjs",
+    "package:minitool": "npm run build:minitool && npm run validate:minitool && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package_minitool.ps1",
+    "preview": "vite preview",
+    "test:fish-pick": "node scripts/test_fish_pick_area.mjs",
+    "test:toy-shadow": "node scripts/test_toy_shadows.mjs",
+    "test:motion": "node scripts/test_mesh2motion_rig.mjs",
+    "test:poke": "node scripts/test_soft_poke.mjs",
+    "test:share": "node scripts/test_share_card.mjs"
+  },
+  "dependencies": {
+    "cannon-es": "^0.20.0",
+    "three": "^0.178.0"
+  },
+  "imports": {
+    "#bgm": "./src/bgm.js",
+    "#codex-pet-preview": "./src/codexPetPreview.js",
+    "#glb-export": "./src/glbExport.browser.js",
+    "#platform": "./src/platform.browser.js"
+  },
+  "devDependencies": {
+    "vite": "^7.0.0"
+  }
+}

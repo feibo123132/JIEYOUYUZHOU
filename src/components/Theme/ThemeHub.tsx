@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowUpRight, Orbit, Sparkles, SunMedium } from 'lucide-react';
+import { ArrowUpRight, Orbit, PawPrint, Sparkles, SunMedium } from 'lucide-react';
 import services from '../../services/starService';
 import { getThemeConfig, THEME_IDS, type ThemeId } from '../../themes/themeConfig';
+import { getMeowGeneratorUrl } from '../../utils/meowGenerator';
 
 const { starService } = services;
 
@@ -100,6 +101,33 @@ const ThemeHub: React.FC<ThemeHubProps> = ({ onSelect }) => {
             );
           })}
         </section>
+
+        <a
+          href={getMeowGeneratorUrl()}
+          aria-label="进入猫猫生成器"
+          onClick={() => { (window as any).playClickSound?.(); }}
+          className="group relative mt-5 flex min-h-28 overflow-hidden rounded-[1.7rem] border border-orange-200/20 bg-[#17100c]/85 p-5 text-left backdrop-blur-xl motion-safe:transition motion-safe:duration-500 motion-safe:hover:-translate-y-1 focus:outline-none focus:ring-2 focus:ring-emerald-200/70 md:mt-7 md:items-center md:justify-between md:px-7"
+        >
+          <span className="pointer-events-none absolute -left-16 -top-24 h-52 w-52 rounded-full bg-orange-400/20 blur-3xl motion-safe:transition motion-safe:duration-700 motion-safe:group-hover:bg-orange-300/30" />
+          <span className="pointer-events-none absolute -bottom-24 right-10 h-48 w-48 rounded-full bg-emerald-300/10 blur-3xl motion-safe:transition motion-safe:duration-700 motion-safe:group-hover:bg-emerald-200/20" />
+          <span className="absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-orange-200/70 to-transparent" />
+
+          <span className="relative flex items-center gap-4 md:gap-5">
+            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl border border-orange-200/20 bg-orange-300/10 text-orange-100">
+              <PawPrint className="h-6 w-6" />
+            </span>
+            <span>
+              <span className="block text-[10px] font-bold tracking-[0.28em] text-emerald-200/80">MEOW GENERATOR</span>
+              <span className="mt-1 block font-serif text-xl font-black tracking-tight text-white md:text-2xl">进入猫猫生成器</span>
+              <span className="mt-1 block text-xs leading-6 text-white/50 md:text-sm">捏出独一无二的小猫，换花色、玩玩具，再留下一张收藏卡。</span>
+            </span>
+          </span>
+
+          <span className="relative mt-4 inline-flex items-center gap-2 self-end text-sm font-bold text-orange-100 md:mt-0 md:self-auto">
+            去捏一只猫
+            <ArrowUpRight className="h-4 w-4 motion-safe:transition-transform motion-safe:duration-300 motion-safe:group-hover:translate-x-1 motion-safe:group-hover:-translate-y-1" />
+          </span>
+        </a>
 
         <p className="mt-7 text-center text-xs tracking-[0.12em] text-white/30">
           昵称会与你同行 · 两片星空的记忆彼此独立

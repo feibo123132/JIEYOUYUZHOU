@@ -22,6 +22,10 @@ interface AssistantSidebarProps {
   onChangeDisplayMode: (mode: 'random' | 'full') => void
   barrageMode: boolean
   onChangeBarrageMode: (enabled: boolean) => void
+  intimateMode: boolean
+  onChangeIntimateMode: (enabled: boolean) => void
+  fillMode: boolean
+  onChangeFillMode: (enabled: boolean) => void
   isAdminDevice: boolean
   onSetAdminDevice: (v: boolean) => void
 }
@@ -47,6 +51,10 @@ const AssistantSidebar: React.FC<AssistantSidebarProps> = ({
   onChangeDisplayMode,
   barrageMode,
   onChangeBarrageMode,
+  intimateMode,
+  onChangeIntimateMode,
+  fillMode,
+  onChangeFillMode,
   isAdminDevice,
   onSetAdminDevice,
 }) => {
@@ -57,6 +65,7 @@ const AssistantSidebar: React.FC<AssistantSidebarProps> = ({
   if (!open) {
     return (
       <button
+        data-star-safe-zone
         onClick={() => { (window as any).playClickSound?.(); onOpen(); }}
         className="fixed top-4 right-4 z-20 bg-transparent text-3xl"
         aria-label="打开助手栏"
@@ -192,7 +201,7 @@ const AssistantSidebar: React.FC<AssistantSidebarProps> = ({
             <ChevronDown className={`w-4 h-4 transition-transform ${barrageFoldOpen ? 'rotate-0' : '-rotate-90'}`} />
           </button>
           {barrageFoldOpen && (
-            <div className="p-3">
+            <div className="p-3 space-y-3">
               <div className="flex items-center justify-between bg-white/5 rounded-xl px-3 py-3">
                 <div>
                   <div className="text-sm text-white/90">弹幕模式</div>
@@ -206,7 +215,39 @@ const AssistantSidebar: React.FC<AssistantSidebarProps> = ({
                   onClick={() => onChangeBarrageMode(!barrageMode)}
                   className={`relative h-7 w-12 rounded-full border transition-colors duration-200 ${barrageMode ? 'border-emerald-300/60 bg-emerald-400/80' : 'border-white/20 bg-white/10'}`}
                 >
-                  <span className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow-md transition-transform duration-200 ${barrageMode ? 'translate-x-6' : 'translate-x-1'}`} />
+                  <span className={`absolute left-0 top-1 h-5 w-5 rounded-full bg-white shadow-md transition-transform duration-200 ${barrageMode ? 'translate-x-6' : 'translate-x-1'}`} />
+                </button>
+              </div>
+              <div className="flex items-center justify-between bg-white/5 rounded-xl px-3 py-3">
+                <div>
+                  <div className="text-sm text-white/90">亲密模式</div>
+                  <div className="mt-1 text-xs text-white/55">弹幕横纵间距减半</div>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={intimateMode}
+                  aria-label="亲密模式"
+                  onClick={() => onChangeIntimateMode(!intimateMode)}
+                  className={`relative h-7 w-12 rounded-full border transition-colors duration-200 ${intimateMode ? 'border-emerald-300/60 bg-emerald-400/80' : 'border-white/20 bg-white/10'}`}
+                >
+                  <span className={`absolute left-0 top-1 h-5 w-5 rounded-full bg-white shadow-md transition-transform duration-200 ${intimateMode ? 'translate-x-6' : 'translate-x-1'}`} />
+                </button>
+              </div>
+              <div className="flex items-center justify-between bg-white/5 rounded-xl px-3 py-3">
+                <div>
+                  <div className="text-sm text-white/90">填充模式</div>
+                  <div className="mt-1 text-xs text-white/55">循环补齐弹幕，减少屏幕空白</div>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={fillMode}
+                  aria-label="填充模式"
+                  onClick={() => onChangeFillMode(!fillMode)}
+                  className={`relative h-7 w-12 rounded-full border transition-colors duration-200 ${fillMode ? 'border-emerald-300/60 bg-emerald-400/80' : 'border-white/20 bg-white/10'}`}
+                >
+                  <span className={`absolute left-0 top-1 h-5 w-5 rounded-full bg-white shadow-md transition-transform duration-200 ${fillMode ? 'translate-x-6' : 'translate-x-1'}`} />
                 </button>
               </div>
             </div>

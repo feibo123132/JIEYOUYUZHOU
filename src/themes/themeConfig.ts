@@ -151,7 +151,7 @@ const THEME_CONFIGS: Record<ThemeId, ThemeConfig> = {
       tip: '别称会陪伴你记录每一个幸福时刻',
     },
     sky: {
-      title: '幸福宇宙',
+      title: 'JIEYOU幸福宇宙',
       createLabel: '点亮星星',
       creatingLabel: '正在珍藏...',
       hint: '把此刻值得幸福的事情，留在这片星空里 ☀',
