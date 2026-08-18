@@ -115,3 +115,26 @@ test('keeps every local script and link reference inside the public Meow Generat
     );
   }
 });
+
+test('ships the latest happiness-card copy and dedicated layout in public bundles', () => {
+  const indexPath = path.join(publicRoot, 'index.html');
+  const html = readFileSync(indexPath, 'utf8');
+  const bundleText = extractAssetReferences(html)
+    .map(({ value }) => value)
+    .filter(isLocalReference)
+    .filter((reference) => /\.(?:js|css)(?:[?#]|$)/i.test(reference))
+    .map((reference) => {
+      const resolvedUrl = new URL(reference, 'https://local.invalid/meow-generator/index.html');
+      const relativePath = decodeURIComponent(resolvedUrl.pathname.slice('/meow-generator/'.length));
+      return readFileSync(path.resolve(publicRoot, relativePath), 'utf8');
+    })
+    .join('\n');
+
+  assert.match(bundleText, /JIEYOU×HAPPINESS/);
+  assert.match(bundleText, /谢谢你分享自己的幸福，愿它能一直陪伴着你😊/);
+  assert.match(bundleText, /data-happiness/);
+  assert.match(bundleText, /share-card-live-title/);
+  assert.match(bundleText, /jieyou:happiness-star-context/);
+  assert.match(bundleText, /createdAt/);
+  assert.match(bundleText, /日期未知/);
+});

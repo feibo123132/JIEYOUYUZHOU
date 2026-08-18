@@ -1,7 +1,7 @@
 // src/components/StarrySky/StarrySky.tsx (修正后的完整版)
 
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
-import { ArrowLeft, ArrowRight, Plus, RotateCcw, Trash2, Sparkles } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Plus, RotateCcw, Trash2, Sparkles, X } from 'lucide-react';
 import { Star as PStar, Heart, Cloud, Moon, Mountains, Leaf, MusicNotes, Bird, Cat, Dog, Waves, PaperPlane } from 'phosphor-react';
 import UserStar from './UserStar';
 import { toast } from 'sonner';
@@ -11,6 +11,7 @@ import MessageBarrage, { type BarrageMessage } from './MessageBarrage';
 import type { ThemeConfig } from '../../themes/themeConfig';
 import { resolveStarLayout, type LayoutRect } from '../../utils/starLayout';
 import { createInitialBarragePreferences, setBarragePreference } from './barragePreferences';
+import { openHappinessMeowGenerator } from '../../utils/meowGenerator';
 
 // ↓↓↓↓↓↓ [修正] 使用正确的默认导入并解构出 starService ↓↓↓↓↓↓
 import services from '../../services/starService';
@@ -431,6 +432,15 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
     setSidebarOpen(false);
   };
 
+  const handleFindJiebao = () => {
+    if (!selectedStar || theme.id !== 'life') return;
+    (window as any).playClickSound?.();
+    openHappinessMeowGenerator({
+      message: selectedStar.message,
+      createdAt: selectedStar.createdAt,
+    });
+  };
+
   const handleIntimateModeChange = (enabled: boolean) => {
     setBarragePreferences((current) => setBarragePreference(current, 'intimate', enabled));
   };
@@ -592,7 +602,17 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
       {/* 星星详情模态框 */}
       {selectedStar && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white/95 backdrop-blur-sm rounded-2xl p-6 max-w-sm w-full border border-white/20 shadow-2xl">
+          <div className="relative bg-white/95 backdrop-blur-sm rounded-2xl p-6 max-w-sm w-full border border-white/20 shadow-2xl">
+            {theme.id === 'life' && (
+              <button
+                type="button"
+                aria-label="关闭幸福星详情"
+                onClick={() => { (window as any).playClickSound?.(); setSelectedStar(null); }}
+                className="absolute right-4 top-4 z-10 rounded-full p-1.5 text-gray-500 transition-colors hover:bg-gray-200 hover:text-gray-800"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            )}
             <div className="text-center space-y-4">
               <div className="flex justify-center">
                 {(() => {
@@ -657,9 +677,19 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
                 {selectedStar.message && (<p className="text-gray-700 text-sm mt-2">{selectedStar.message}</p>)}
               </div>
               <div className="flex space-x-3">
-                <button onClick={() => { (window as any).playClickSound?.(); setSelectedStar(null); }} className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 py-2 px-4 rounded-lg transition-colors duration-200">
-                  关闭
-                </button>
+                {theme.id === 'life' ? (
+                  <button
+                    type="button"
+                    onClick={handleFindJiebao}
+                    className={`flex-1 bg-gradient-to-r ${theme.visual.buttonGradientClass} ${theme.visual.buttonHoverClass} text-white font-bold py-2 px-4 rounded-lg transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]`}
+                  >
+                    找杰宝
+                  </button>
+                ) : (
+                  <button onClick={() => { (window as any).playClickSound?.(); setSelectedStar(null); }} className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 py-2 px-4 rounded-lg transition-colors duration-200">
+                    关闭
+                  </button>
+                )}
                 {selectedStar.userId === userId && (
                   <button onClick={() => { (window as any).playClickSound?.(); handleDeleteStar(selectedStar.id); }} className="flex-1 bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center space-x-2">
                     <Trash2 className="w-4 h-4" />

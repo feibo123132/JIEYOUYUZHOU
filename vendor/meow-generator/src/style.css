@@ -369,6 +369,8 @@ select {
   line-height: 1.35;
   text-align: center;
   white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   pointer-events: none;
   user-select: none;
   filter: url("#handdrawn-wobble");
@@ -767,6 +769,23 @@ select {
   text-overflow: ellipsis;
   white-space: nowrap;
   transform: translateX(-50%);
+}
+
+.share-card-live-frame[data-happiness="true"] .share-card-live-subtitle {
+  top: 83.7%;
+  width: 70%;
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: clamp(7px, 0.72vw, 10px);
+  line-height: 1.12;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.share-card-live-frame[data-happiness="true"] .share-card-live-title {
+  top: 79.8%;
+  font-size: clamp(12px, 1.5vw, 22px);
 }
 
 .share-card-rarity {

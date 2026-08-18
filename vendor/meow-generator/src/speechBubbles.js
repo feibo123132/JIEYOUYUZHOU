@@ -221,7 +221,9 @@ export function createSpeechBubbleController({
   getToys,
   getLocale,
   getWeather,
+  pinnedCatText = '',
 }) {
+  const pinnedText = typeof pinnedCatText === 'string' ? pinnedCatText.trim() : '';
   let elapsed = 0;
   let nextAt = randomBetween(3.2, 6.2);
   let active = null;
@@ -258,6 +260,23 @@ export function createSpeechBubbleController({
     return pickRandom(useContext ? contextual : localeCopy[role], lastText);
   }
 
+  function showPinned() {
+    const actor = getCat();
+    if (!actor?.visible || !pinnedText) return false;
+
+    active = { role: 'cat', actor };
+    lastText = pinnedText;
+    element.textContent = pinnedText;
+    element.dataset.speaker = 'cat';
+    element.classList.remove('is-offscreen');
+    bubbleWidth = Math.max(120, element.offsetWidth);
+    positionActive();
+    element.classList.add('is-visible');
+    activeUntil = Number.POSITIVE_INFINITY;
+    setDiagnostics(true, 'cat', pinnedText);
+    return true;
+  }
+
   function positionActive() {
     if (!active) return false;
     const anchor = actorAnchor(active.actor, active.role);
@@ -288,6 +307,7 @@ export function createSpeechBubbleController({
   }
 
   function showNow(preferredRole = '') {
+    if (pinnedText) return showPinned();
     const actors = availableActors();
     if (!actors.size) return false;
     const roles = new Set(actors.keys());
@@ -319,6 +339,11 @@ export function createSpeechBubbleController({
 
   function update(dt) {
     elapsed += dt;
+    if (pinnedText) {
+      if (!active) showPinned();
+      else positionActive();
+      return;
+    }
     if (active) {
       positionActive();
       if (elapsed >= activeUntil) hide();
@@ -330,6 +355,10 @@ export function createSpeechBubbleController({
   }
 
   function refreshLocale() {
+    if (pinnedText) {
+      if (!active) showPinned();
+      return;
+    }
     if (!active) return;
     const text = messageFor(active.role);
     lastText = text;

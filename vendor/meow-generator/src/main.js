@@ -15,6 +15,7 @@ import { createRandomBgm } from '#bgm';
 import { initI18n } from './i18n.js';
 import { createShareCardCapture } from './shareCard.js';
 import { createSpeechBubbleController } from './speechBubbles.js';
+import { readHappinessMessageContext } from './happinessMessage.js';
 import { createCodexPetPreview } from '#codex-pet-preview';
 import { setupGlbExport } from '#glb-export';
 import { saveBlob } from '#platform';
@@ -25,6 +26,11 @@ import {
   createRainField,
   createWeatherAudio,
 } from './weather.js';
+
+const happinessMessageContext = readHappinessMessageContext({
+  search: window.location.search,
+  getStorage: () => window.sessionStorage,
+});
 import {
   MESH2MOTION_ACTIONS,
   getRigCompatibility,
@@ -764,6 +770,7 @@ const speechBubbles = createSpeechBubbleController({
       thunder: viewportEl.dataset.thunder === 'true',
     };
   },
+  pinnedCatText: happinessMessageContext.active ? happinessMessageContext.message : '',
 });
 window.__speechBubbles = speechBubbles;
 window.addEventListener('meow:speech', (event) => {
@@ -2684,6 +2691,8 @@ const shareCardCapture = createShareCardCapture({
     accent: params.eyeColor,
   }),
   getLocale: () => i18n.locale,
+  getHappinessMessage: () => happinessMessageContext.active ? happinessMessageContext.message : '',
+  getHappinessDate: () => happinessMessageContext.active ? happinessMessageContext.dateLabel : '',
   downloadBlob: saveBlob,
 });
 

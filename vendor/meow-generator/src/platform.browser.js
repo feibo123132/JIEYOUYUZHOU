@@ -7,5 +7,5 @@ export async function saveBlob(blob, filename) {
 }
 
 export function getRepositoryMarkup(label) {
-  return `<a class="share-card-repo" href="https://github.com/ringhyacinth/Meow-Generator" target="_blank" rel="noreferrer">↗ ${label}</a>`;
+  return `<a class="share-card-repo" href="https://github.com/ringhyacinth/Meow-Generator" target="_blank" rel="noreferrer">${label}</a>`;
 }

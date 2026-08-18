@@ -8,9 +8,22 @@ const CARD_LAYOUT = Object.freeze({
   windowHeight: 0.65,
 });
 
+export const SHARE_CARD_EDITION = 'JIEYOU×HAPPINESS';
+
 export const SHARE_CARD_REPOSITORY = Object.freeze({
-  label: 'github.com/ringhyacinth/Meow-Generator',
+  label: '谢谢你分享自己的幸福，愿它能一直陪伴着你😊',
 });
+
+export const HAPPINESS_CARD_CANVAS_LAYOUT = Object.freeze({
+  captionYRatio: 0.802,
+  titleSize: 50,
+  subtitleOffset: 56,
+  subtitleSize: 20,
+  subtitleLineHeight: 22,
+  metaYRatio: 0.894,
+});
+
+const DEFAULT_HAPPINESS_DATE = '日期未知';
 
 const CARD_TOTAL = 9999;
 
@@ -157,6 +170,49 @@ const COPY = Object.freeze({
 
 function localeCopy(locale) {
   return COPY[locale] ?? COPY['zh-CN'];
+}
+
+export function getShareCardCopy(copy, happinessMessage = '') {
+  const message = typeof happinessMessage === 'string' ? happinessMessage.trim() : '';
+  return {
+    headline: '幸福时刻',
+    subtitle: message || copy.title,
+  };
+}
+
+export function getHappinessCardLines(text, measure, maxWidth, maxLines = 3) {
+  const normalized = String(text ?? '').replace(/\s+/g, ' ').trim();
+  if (!normalized || maxLines <= 0 || maxWidth <= 0) return [];
+
+  const lines = [];
+  let cursor = 0;
+  while (cursor < normalized.length && lines.length < maxLines) {
+    let line = '';
+    while (cursor < normalized.length) {
+      const candidate = line + normalized[cursor];
+      if (line && measure(candidate) > maxWidth) break;
+      line = candidate;
+      cursor += 1;
+    }
+    if (!line) {
+      line = normalized[cursor];
+      cursor += 1;
+    }
+    lines.push(line);
+  }
+
+  if (cursor < normalized.length && lines.length) {
+    let lastLine = lines.at(-1);
+    while (lastLine && measure(`${lastLine}…`) > maxWidth) lastLine = lastLine.slice(0, -1);
+    lines[lines.length - 1] = `${lastLine}…`;
+  }
+  return lines;
+}
+
+export function getShareCardMeta(copy, serial, happinessMessage = '', happinessDate = '') {
+  return String(happinessMessage).trim()
+    ? (String(happinessDate).trim() || DEFAULT_HAPPINESS_DATE)
+    : copy.cardNumber(serial);
 }
 
 function positiveSeed(seed) {
@@ -468,6 +524,8 @@ function drawCardDecor(ctx, {
   windowHeight,
   descriptor,
   copy,
+  cardCopy,
+  cardMeta,
 }) {
   const { theme, serial, rarity, skinSeed } = descriptor;
   const scale = cardWidth / 1140;
@@ -543,16 +601,16 @@ function drawCardDecor(ctx, {
     ctx,
     cardX + 46 * scale,
     cardY + 32 * scale,
-    310 * scale,
+    450 * scale,
     92 * scale,
     28 * scale
   );
   ctx.fill();
   ctx.stroke();
   ctx.fillStyle = theme.ink;
-  ctx.font = `900 ${40 * scale}px "Arial Rounded MT Bold", "Microsoft YaHei", sans-serif`;
+  ctx.font = `900 ${30 * scale}px "Arial Rounded MT Bold", "Microsoft YaHei", sans-serif`;
   ctx.textBaseline = 'middle';
-  ctx.fillText('MEOW CARD', cardX + 70 * scale, cardY + 80 * scale);
+  ctx.fillText(SHARE_CARD_EDITION, cardX + 70 * scale, cardY + 80 * scale);
 
   ctx.beginPath();
   ctx.arc(cardX + cardWidth - 86 * scale, cardY + 78 * scale, 39 * scale, 0, Math.PI * 2);
@@ -575,16 +633,27 @@ function drawCardDecor(ctx, {
   drawStar(ctx, cardX + cardWidth - 55 * scale, cardY + cardHeight * 0.74, 30 * scale, theme.primary, -0.2);
   drawStar(ctx, cardX + cardWidth - 105 * scale, cardY + cardHeight * 0.19, 19 * scale, theme.secondary, 0.35);
 
-  const captionY = cardY + cardHeight * 0.812;
+  const isHappinessCard = cardCopy.subtitle !== copy.title;
+  const captionYRatio = isHappinessCard ? HAPPINESS_CARD_CANVAS_LAYOUT.captionYRatio : 0.812;
+  const captionY = cardY + cardHeight * captionYRatio;
   ctx.fillStyle = theme.ink;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.font = `900 ${55 * scale}px "Arial Rounded MT Bold", "Microsoft YaHei", sans-serif`;
-  ctx.fillText('MEOW GENERATOR', cardX + cardWidth / 2, captionY);
-  ctx.font = `800 ${29 * scale}px "Arial Rounded MT Bold", "Microsoft YaHei", sans-serif`;
-  ctx.fillText(copy.title, cardX + cardWidth / 2, captionY + 52 * scale);
+  const titleSize = isHappinessCard ? HAPPINESS_CARD_CANVAS_LAYOUT.titleSize : 55;
+  ctx.font = `900 ${titleSize * scale}px "Arial Rounded MT Bold", "Microsoft YaHei", sans-serif`;
+  ctx.fillText(cardCopy.headline, cardX + cardWidth / 2, captionY);
+  const subtitleSize = isHappinessCard ? HAPPINESS_CARD_CANVAS_LAYOUT.subtitleSize : 29;
+  const subtitleLineHeight = isHappinessCard ? HAPPINESS_CARD_CANVAS_LAYOUT.subtitleLineHeight : 29;
+  const subtitleOffset = isHappinessCard ? HAPPINESS_CARD_CANVAS_LAYOUT.subtitleOffset : 43;
+  ctx.font = `800 ${subtitleSize * scale}px "Arial Rounded MT Bold", "Microsoft YaHei", sans-serif`;
+  const subtitleLines = isHappinessCard
+    ? getHappinessCardLines(cardCopy.subtitle, (line) => ctx.measureText(line).width, 820 * scale, 3)
+    : [cardCopy.subtitle];
+  subtitleLines.forEach((line, index) => {
+    ctx.fillText(line, cardX + cardWidth / 2, captionY + (subtitleOffset + index * subtitleLineHeight) * scale);
+  });
 
-  const metaY = cardY + cardHeight * 0.894;
+  const metaY = cardY + cardHeight * HAPPINESS_CARD_CANVAS_LAYOUT.metaYRatio;
   const metaHeight = 66 * scale;
   ctx.fillStyle = 'rgba(255, 250, 240, 0.86)';
   ctx.strokeStyle = theme.ink;
@@ -602,7 +671,7 @@ function drawCardDecor(ctx, {
   ctx.fillStyle = theme.ink;
   ctx.textAlign = 'left';
   ctx.font = `900 ${29 * scale}px "Arial Rounded MT Bold", "Microsoft YaHei", sans-serif`;
-  ctx.fillText(copy.cardNumber(serial), cardX + 92 * scale, metaY + metaHeight / 2);
+  ctx.fillText(cardMeta, cardX + 92 * scale, metaY + metaHeight / 2);
 
   const rarityX = cardX + cardWidth - 214 * scale;
   const rarityWidth = 148 * scale;
@@ -637,7 +706,7 @@ function drawCardDecor(ctx, {
   ctx.textAlign = 'center';
   ctx.font = `800 ${21 * scale}px "Arial Rounded MT Bold", "Microsoft YaHei", sans-serif`;
   ctx.fillText(
-    `↗ ${SHARE_CARD_REPOSITORY.label}`,
+    SHARE_CARD_REPOSITORY.label,
     cardX + cardWidth / 2,
     repositoryY + 24 * scale
   );
@@ -679,6 +748,8 @@ export function createShareCardCapture({
   getSeed,
   getPalette,
   getLocale,
+  getHappinessMessage = () => '',
+  getHappinessDate = () => '',
   downloadBlob,
 }) {
   const overlay = document.createElement('div');
@@ -694,11 +765,11 @@ export function createShareCardCapture({
         <span class="share-card-paper share-card-paper--bottom"></span>
         <span class="share-card-paper share-card-paper--left"></span>
         <span class="share-card-window"></span>
-        <span class="share-card-edition">MEOW CARD</span>
+        <span class="share-card-edition">${SHARE_CARD_EDITION}</span>
         <span class="share-card-gem">✦</span>
         <span class="share-card-star share-card-star--one">✦</span>
         <span class="share-card-star share-card-star--two">★</span>
-        <span class="share-card-live-title">MEOW GENERATOR</span>
+        <span class="share-card-live-title">幸福时刻</span>
         <span class="share-card-live-subtitle"></span>
         <span class="share-card-serial"></span>
         <span class="share-card-rarity"></span>
@@ -717,6 +788,7 @@ export function createShareCardCapture({
 
   const shell = overlay.querySelector('.share-card-shell');
   const frame = overlay.querySelector('.share-card-live-frame');
+  const titleEl = overlay.querySelector('.share-card-live-title');
   const windowEl = overlay.querySelector('.share-card-window');
   const serialEl = overlay.querySelector('.share-card-serial');
   const rarityEl = overlay.querySelector('.share-card-rarity');
@@ -762,13 +834,19 @@ export function createShareCardCapture({
 
   function syncCopy() {
     const copy = localeCopy(getLocale());
+    const happinessMessage = getHappinessMessage() ?? '';
+    const happinessDate = getHappinessDate() ?? '';
+    const cardCopy = getShareCardCopy(copy, happinessMessage);
+    const isHappinessCard = Boolean(String(happinessMessage).trim());
     hintEl.textContent = copy.hint;
     skinButton.textContent = `🎨 ${copy.skin}`;
     captureButton.textContent = `📸 ${copy.camera}`;
     closeButton.textContent = `× ${copy.close}`;
-    subtitleEl.textContent = copy.title;
-    serialEl.textContent = copy.cardNumber(descriptor.serial);
-    shell.setAttribute('aria-label', copy.title);
+    titleEl.textContent = cardCopy.headline;
+    subtitleEl.textContent = cardCopy.subtitle;
+    frame.dataset.happiness = String(isHappinessCard);
+    serialEl.textContent = getShareCardMeta(copy, descriptor.serial, happinessMessage, happinessDate);
+    shell.setAttribute('aria-label', `${cardCopy.headline}：${cardCopy.subtitle}`);
   }
 
   function applyDescriptor() {
@@ -782,7 +860,6 @@ export function createShareCardCapture({
     frame.style.setProperty('--share-secondary', theme.secondary);
     frame.style.setProperty('--share-accent', theme.accent);
     frame.style.setProperty('--share-ink', theme.ink);
-    serialEl.textContent = localeCopy(getLocale()).cardNumber(descriptor.serial);
     rarityEl.textContent = `${rarity} ✦`;
     viewport.dataset.shareCardSkin = theme.name;
     viewport.dataset.shareCardRarity = rarity;
@@ -795,6 +872,7 @@ export function createShareCardCapture({
     skinVariant = randomBuffer[0] || ((Date.now() ^ positiveSeed(getSeed())) >>> 0);
     if (skinVariant === 0 || skinVariant === previousVariant) skinVariant = previousVariant + 1;
     applyDescriptor();
+    syncCopy();
     statusEl.textContent = '';
   }
 
@@ -859,6 +937,11 @@ export function createShareCardCapture({
         canvasWidth: canvasRect.width,
         canvasHeight: canvasRect.height,
       };
+      const copy = localeCopy(getLocale());
+      const happinessMessage = getHappinessMessage() ?? '';
+      const happinessDate = getHappinessDate() ?? '';
+      const cardCopy = getShareCardCopy(copy, happinessMessage);
+      const cardMeta = getShareCardMeta(copy, descriptor.serial, happinessMessage, happinessDate);
 
       ctx.save();
       roundedRect(
@@ -883,7 +966,9 @@ export function createShareCardCapture({
         windowWidth: targetWindow.width,
         windowHeight: targetWindow.height,
         descriptor,
-        copy: localeCopy(getLocale()),
+        copy,
+        cardCopy,
+        cardMeta,
       });
 
       const blob = await new Promise((resolve) => output.toBlob(resolve, 'image/png'));
