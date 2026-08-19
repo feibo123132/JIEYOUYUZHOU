@@ -4,7 +4,9 @@ import {
   getBarrageFillDuration,
   getBarrageFillRepeatCount,
   getBarrageLayout,
+  getBarrageLaneDuration,
   getSafeBarrageLaneCount,
+  formatBarrageMessage,
 } from './barrageLayout'
 
 export interface BarrageMessage {
@@ -21,6 +23,7 @@ interface MessageBarrageProps {
   immersive?: boolean
   intimate?: boolean
   fill?: boolean
+  onSelectMessage?: (starId: string) => void
 }
 
 type LaneStyle = CSSProperties & {
@@ -52,18 +55,33 @@ const groupIntoLanes = (messages: BarrageMessage[], laneCount: number) => {
   return lanes
 }
 
-const BarragePill = ({ item, theme }: { item: BarrageMessage; theme: ThemeConfig }) => {
+const BarragePill = ({ item, theme, onSelectMessage }: {
+  item: BarrageMessage
+  theme: ThemeConfig
+  onSelectMessage?: (starId: string) => void
+}) => {
   const color = item.color || theme.visual.defaultStarColor
-  return (
-    <div
-      className="barrage-item"
-      style={{ borderColor: `${color}66`, boxShadow: `0 0 22px ${color}24` }}
-    >
-      <span className="barrage-message-text">{item.message}</span>
+  const content = (
+    <>
+      <span className="barrage-message-text">{formatBarrageMessage(item.message)}</span>
       <span className="barrage-message-meta" style={{ color }}>
         {item.nickname} · {formatDate(item.createdAt)}
       </span>
-    </div>
+    </>
+  )
+  if (!onSelectMessage) {
+    return <div className="barrage-item" style={{ borderColor: `${color}66`, boxShadow: `0 0 22px ${color}24` }}>{content}</div>
+  }
+  return (
+    <button
+      type="button"
+      className="barrage-item"
+      style={{ borderColor: `${color}66`, boxShadow: `0 0 22px ${color}24` }}
+      onClick={() => onSelectMessage?.(item.id)}
+      aria-label={`查看${item.nickname}的幸福之星`}
+    >
+      {content}
+    </button>
   )
 }
 
@@ -74,6 +92,7 @@ interface FilledBarrageLaneProps {
   laneCount: number
   stageWidth: number
   horizontalGap: string
+  onSelectMessage?: (starId: string) => void
 }
 
 const FilledBarrageLane = ({
@@ -83,6 +102,7 @@ const FilledBarrageLane = ({
   laneCount,
   stageWidth,
   horizontalGap,
+  onSelectMessage,
 }: FilledBarrageLaneProps) => {
   const probeRef = useRef<HTMLDivElement>(null)
   const [laneMeasurement, setLaneMeasurement] = useState({ baseWidth: 0, gap: 0 })
@@ -153,6 +173,7 @@ const FilledBarrageLane = ({
                   key={`${unitIndex}-${repeatIndex}-${item.id}-${messageIndex}`}
                   item={item}
                   theme={theme}
+                  onSelectMessage={onSelectMessage}
                 />
               ))}
             </div>
@@ -171,6 +192,7 @@ const BarrageLanes = ({
   fill,
   stageWidth,
   horizontalGap,
+  onSelectMessage,
 }: MessageBarrageProps & {
   laneCount: number
   className: string
@@ -180,7 +202,7 @@ const BarrageLanes = ({
   const lanes = groupIntoLanes(messages, laneCount)
 
   return (
-    <div className={`barrage-lanes ${className}`} aria-hidden="true">
+    <div className={`barrage-lanes ${className}`}>
       {lanes.map((lane, laneIndex) => {
         if (lane.length === 0) return null
         if (fill) {
@@ -193,11 +215,11 @@ const BarrageLanes = ({
               laneCount={laneCount}
               stageWidth={stageWidth}
               horizontalGap={horizontalGap}
+              onSelectMessage={onSelectMessage}
             />
           )
         }
-        const contentLength = lane.reduce((total, item) => total + item.message.length, 0)
-        const duration = Math.min(90, Math.max(24, 18 + contentLength * 0.26 + lane.length * 6))
+        const duration = getBarrageLaneDuration(lane.map((item) => item.message))
         const style: LaneStyle = {
           '--lane-top': `${((laneIndex + 0.5) / laneCount) * 100}%`,
           '--lane-duration': `${duration}s`,
@@ -206,7 +228,7 @@ const BarrageLanes = ({
 
         return (
           <div key={laneIndex} className="barrage-lane" style={style}>
-            {lane.map((item) => <BarragePill key={item.id} item={item} theme={theme} />)}
+            {lane.map((item) => <BarragePill key={item.id} item={item} theme={theme} onSelectMessage={onSelectMessage} />)}
           </div>
         )
       })}
@@ -220,6 +242,7 @@ const MessageBarrage = ({
   immersive = false,
   intimate = false,
   fill = false,
+  onSelectMessage,
 }: MessageBarrageProps) => {
   const stageRef = useRef<HTMLElement>(null)
   const [measurement, setMeasurement] = useState({
@@ -340,6 +363,7 @@ const MessageBarrage = ({
         fill={fill}
         stageWidth={measurement.stageWidth}
         horizontalGap={layout.horizontalGap}
+        onSelectMessage={onSelectMessage}
       />
       <BarrageLanes
         messages={messages}
@@ -349,12 +373,13 @@ const MessageBarrage = ({
         fill={fill}
         stageWidth={measurement.stageWidth}
         horizontalGap={layout.horizontalGap}
+        onSelectMessage={onSelectMessage}
       />
 
       <div className="barrage-static-list" aria-label={`${theme.hub.name}留言列表`}>
         {messages.map((item) => (
           <div key={item.id} className="barrage-static-item">
-            <span>{item.message}</span>
+            <span>{formatBarrageMessage(item.message)}</span>
             <small style={{ color: item.color || theme.visual.defaultStarColor }}>
               {item.nickname} · {formatDate(item.createdAt)}
             </small>

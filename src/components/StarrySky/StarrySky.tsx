@@ -438,7 +438,15 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
     openHappinessMeowGenerator({
       message: selectedStar.message,
       createdAt: selectedStar.createdAt,
+      nickname: selectedStar.nickname,
     });
+  };
+
+  const handleBarrageSelect = (starId: string) => {
+    const star = stars.find((star) => star.id === starId);
+    if (!star) return;
+    (window as any).playClickSound?.();
+    setSelectedStar(star);
   };
 
   const handleIntimateModeChange = (enabled: boolean) => {
@@ -546,7 +554,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
           );
         })}
         {loadState === 'ready' && skyView === 'messages' && (
-          <MessageBarrage messages={barrageMessages} theme={theme} immersive={barrageMode} intimate={intimateMode} fill={fillMode} />
+          <MessageBarrage messages={barrageMessages} theme={theme} immersive={barrageMode} intimate={intimateMode} fill={fillMode} onSelectMessage={handleBarrageSelect} />
         )}
       </div>
 

@@ -88,7 +88,7 @@ test('intimate barrage measures visible pills and safely rebinds responsive obse
     /\[messages, intimate, fill, immersive, desktopLaneCount, mobileLaneCount\]/,
   )
 
-  assert.match(component, /className={`barrage-lanes \$\{className\}`} aria-hidden="true"/)
+  assert.match(component, /className={`barrage-lanes \$\{className\}`}/)
   assert.match(component, /className="barrage-static-list" aria-label=/)
   assert.match(component, /tabIndex=\{0\}/)
 })
@@ -116,7 +116,7 @@ test('fill barrage renders measured duplicate loop units without changing the re
   assert.match(component, /\[stageWidth, lane, horizontalGap\]/)
   assert.match(component, /if \(fill\)[\s\S]*<FilledBarrageLane/)
 
-  assert.match(component, /const contentLength = lane\.reduce/)
+  assert.match(component, /getBarrageLaneDuration\(lane\.map/)
   assert.match(component, /className="barrage-lane" style=\{style\}/)
   assert.match(component, /observer\?\.disconnect\(\)/)
 })
@@ -215,4 +215,13 @@ test('barrage switch thumbs stay inside the track and follow each checked state'
   assert.ok(on.left >= 0 && on.right <= trackWidth)
   assert.ok(off.center < trackWidth / 2)
   assert.ok(on.center > trackWidth / 2)
+})
+
+test('clicking a barrage item opens the original star detail modal', () => {
+  const component = readSource('src/components/StarrySky/MessageBarrage.tsx')
+  const starrySky = readSource('src/components/StarrySky/StarrySky.tsx')
+  assert.match(component, /onSelectMessage\?: \(starId: string\) => void/)
+  assert.match(component, /<button[\s\S]*?className="barrage-item"[\s\S]*?onClick=\{\(\) => onSelectMessage\?\.\(item\.id\)\}/)
+  assert.match(starrySky, /const handleBarrageSelect = \(starId: string\) => \{[\s\S]*?stars\.find\(\(star\) => star\.id === starId\)[\s\S]*?setSelectedStar\(star\)/)
+  assert.match(starrySky, /<MessageBarrage[\s\S]*?onSelectMessage=\{handleBarrageSelect\}/)
 })

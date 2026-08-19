@@ -2,11 +2,25 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  formatBarrageMessage,
+  getBarrageLaneDuration,
   getBarrageFillDuration,
   getBarrageFillRepeatCount,
   getBarrageLayout,
   getSafeBarrageLaneCount,
 } from '../src/components/StarrySky/barrageLayout.ts'
+
+test('barrage messages longer than 25 characters are truncated with an ellipsis', () => {
+  assert.equal(formatBarrageMessage('幸福'.repeat(12) + '好'), '幸福'.repeat(12) + '好')
+  assert.equal(formatBarrageMessage('幸'.repeat(26)), `${'幸'.repeat(25)}……`)
+  assert.equal(formatBarrageMessage(`${'幸'.repeat(24)}😊好`), `${'幸'.repeat(24)}😊……`)
+})
+
+test('barrage duration uses displayed text instead of the untruncated source', () => {
+  const longSource = '幸'.repeat(200)
+  const displayed = `${'幸'.repeat(25)}……`
+  assert.equal(getBarrageLaneDuration([longSource]), getBarrageLaneDuration([displayed]))
+})
 
 const parseClamp = (value: string) => {
   const match = value.match(/^clamp\(([\d.]+)rem, ([\d.]+)vw, ([\d.]+)rem\)$/)

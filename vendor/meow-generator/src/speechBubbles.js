@@ -213,6 +213,16 @@ function actorAnchor(actor, role) {
   return anchorWorld;
 }
 
+export function shouldUseWideSpeechBubble({
+  scrollHeight,
+  lineHeight,
+  paddingTop = 0,
+  paddingBottom = 0,
+}, maxLines = 10) {
+  const contentHeight = Math.max(0, Number(scrollHeight) - Number(paddingTop) - Number(paddingBottom));
+  return Number(lineHeight) > 0 && contentHeight > Number(lineHeight) * maxLines;
+}
+
 export function createSpeechBubbleController({
   element,
   viewport,
@@ -268,7 +278,16 @@ export function createSpeechBubbleController({
     lastText = pinnedText;
     element.textContent = pinnedText;
     element.dataset.speaker = 'cat';
-    element.classList.remove('is-offscreen');
+    element.classList.remove('is-offscreen', 'is-wide');
+    const computedStyle = globalThis.getComputedStyle?.(element);
+    if (computedStyle) {
+      element.classList.toggle('is-wide', shouldUseWideSpeechBubble({
+        scrollHeight: element.scrollHeight,
+        lineHeight: Number.parseFloat(computedStyle.lineHeight),
+        paddingTop: Number.parseFloat(computedStyle.paddingTop),
+        paddingBottom: Number.parseFloat(computedStyle.paddingBottom),
+      }));
+    }
     bubbleWidth = Math.max(120, element.offsetWidth);
     positionActive();
     element.classList.add('is-visible');

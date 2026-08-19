@@ -8,13 +8,14 @@ import {
   HAPPINESS_CONTEXT_STORAGE_KEY,
   readHappinessMessageContext,
 } from '../src/happinessMessage.js';
+import { shouldUseWideSpeechBubble } from '../src/speechBubbles.js';
 
 assert.deepEqual(
   readHappinessMessageContext({
     search: '',
     getStorage: () => ({ getItem: () => '不应读取' }),
   }),
-  { active: false, message: '', dateLabel: '' },
+  { active: false, message: '', dateLabel: '', nickname: '' },
 );
 
 assert.deepEqual(
@@ -22,11 +23,11 @@ assert.deepEqual(
     search: '?source=happiness-star',
     getStorage: () => ({
       getItem: (key) => key === HAPPINESS_CONTEXT_STORAGE_KEY
-        ? JSON.stringify({ message: '  我喜欢晚上边跑步边听歌  ', createdAt: '2026-08-18T13:39:00+08:00' })
+        ? JSON.stringify({ message: '  我喜欢晚上边跑步边听歌  ', createdAt: '2026-08-18T13:39:00+08:00', nickname: ' 小王 ' })
         : null,
     }),
   }),
-  { active: true, message: '我喜欢晚上边跑步边听歌', dateLabel: '2026年8月18日' },
+  { active: true, message: '我喜欢晚上边跑步边听歌', dateLabel: '2026年8月18日', nickname: '小王' },
 );
 
 assert.equal(formatHappinessDate('2026-08-18T13:39:00+08:00'), '2026年8月18日');
@@ -49,12 +50,16 @@ for (const getStorage of [
 ]) {
   assert.deepEqual(
     readHappinessMessageContext({ search: '?source=happiness-star', getStorage }),
-    { active: true, message: DEFAULT_HAPPINESS_MESSAGE, dateLabel: DEFAULT_HAPPINESS_DATE },
+    { active: true, message: DEFAULT_HAPPINESS_MESSAGE, dateLabel: DEFAULT_HAPPINESS_DATE, nickname: '' },
   );
 }
 
 const styles = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
 const speechBubbleRule = styles.match(/\.scene-speech-bubble\s*\{([\s\S]*?)\}/)?.[1] ?? '';
 assert.match(speechBubbleRule, /overflow-wrap:\s*anywhere/);
+const wideSpeechBubbleRule = styles.match(/\.scene-speech-bubble\.is-wide\s*\{([\s\S]*?)\}/)?.[1] ?? '';
+assert.match(wideSpeechBubbleRule, /max-width:\s*min\(405px,\s*63vw\)/);
+assert.equal(shouldUseWideSpeechBubble({ scrollHeight: 229, lineHeight: 20, paddingTop: 14, paddingBottom: 15 }), false);
+assert.equal(shouldUseWideSpeechBubble({ scrollHeight: 230, lineHeight: 20, paddingTop: 14, paddingBottom: 15 }), true);
 
 console.log('happiness message context checks passed');

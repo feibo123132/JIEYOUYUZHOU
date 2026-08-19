@@ -6,6 +6,21 @@ export interface BarrageLayout {
   readonly minimumVerticalGap: number
 }
 
+export const formatBarrageMessage = (message: string, maxLength = 25) => {
+  const characters = Array.from(message)
+  return characters.length > maxLength
+    ? `${characters.slice(0, maxLength).join('')}……`
+    : message
+}
+
+export const getBarrageLaneDuration = (messages: readonly string[]) => {
+  const contentLength = messages.reduce(
+    (total, message) => total + Array.from(formatBarrageMessage(message)).length,
+    0,
+  )
+  return Math.min(90, Math.max(24, 18 + contentLength * 0.26 + messages.length * 6))
+}
+
 export interface SafeBarrageLaneCountOptions {
   readonly maxLaneCount: number
   readonly messageCount: number

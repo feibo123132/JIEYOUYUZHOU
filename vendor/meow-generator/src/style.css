@@ -675,9 +675,15 @@ select {
   pointer-events: none;
 }
 
+.scene-speech-bubble.is-wide {
+  max-width: min(405px, 63vw);
+}
+
 .share-card-edition {
   top: 2.35%;
   left: 5%;
+  width: max-content;
+  max-width: 50%;
   padding: 3px 8px 2px;
   border: 2px solid var(--share-ink);
   border-radius: 12px 9px 13px 10px;
@@ -685,6 +691,7 @@ select {
   font-size: clamp(9px, 1vw, 14px);
   font-weight: 900;
   letter-spacing: 0.04em;
+  white-space: nowrap;
 }
 
 .share-card-serial {
@@ -773,19 +780,31 @@ select {
 
 .share-card-live-frame[data-happiness="true"] .share-card-live-subtitle {
   top: 83.7%;
-  width: 70%;
+  width: 86%;
   display: -webkit-box;
   overflow: hidden;
-  font-size: clamp(7px, 0.72vw, 10px);
-  line-height: 1.12;
+  font-size: clamp(10px, 1.18vw, 16px);
+  line-height: 1.24;
   white-space: normal;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 4;
 }
 
 .share-card-live-frame[data-happiness="true"] .share-card-live-title {
   top: 79.8%;
   font-size: clamp(12px, 1.5vw, 22px);
+}
+
+.share-card-live-frame[data-happiness="true"] .share-card-serial {
+  top: 2.35%;
+  right: 5%;
+  left: auto;
+  max-width: 40%;
+}
+
+.share-card-live-frame[data-happiness="true"] .share-card-gem,
+.share-card-live-frame[data-happiness="true"] .share-card-rarity {
+  display: none;
 }
 
 .share-card-rarity {
@@ -2163,6 +2182,10 @@ select {
     padding: 9px 13px 10px;
     border-width: 2px;
     font-size: 12px;
+  }
+
+  .scene-speech-bubble.is-wide {
+    max-width: min(330px, 87vw);
   }
 
   #scene-tools {

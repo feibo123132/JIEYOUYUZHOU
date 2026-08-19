@@ -2693,6 +2693,7 @@ const shareCardCapture = createShareCardCapture({
   getLocale: () => i18n.locale,
   getHappinessMessage: () => happinessMessageContext.active ? happinessMessageContext.message : '',
   getHappinessDate: () => happinessMessageContext.active ? happinessMessageContext.dateLabel : '',
+  getHappinessNickname: () => happinessMessageContext.active ? happinessMessageContext.nickname : '',
   downloadBlob: saveBlob,
 });
 

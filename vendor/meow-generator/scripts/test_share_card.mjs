@@ -7,7 +7,10 @@ import {
   getHappinessCardLines,
   getShareCardCopy,
   getShareCardMeta,
+  getHappinessCardMetaLabel,
   getShareCardSubjectPanOffset,
+  shouldCaptureShareCardShortcut,
+  HAPPINESS_CARD_MARK,
   HAPPINESS_CARD_CANVAS_LAYOUT,
   SHARE_CARD_EDITION,
   SHARE_CARD_REPOSITORY,
@@ -42,38 +45,63 @@ assert.ok(['R', 'SR', 'AR'].includes(catSignature.rarity));
 assert.match(alternate.theme.name, /^cat-remix-/);
 assert.notDeepEqual(alternate.theme, catSignature.theme, 'alternate skin should visibly remix the cat palette');
 assert.deepEqual(alternate, alternateRepeat, 'the same skin variant should be reproducible');
-assert.equal(SHARE_CARD_EDITION, 'JIEYOU×HAPPINESS');
-assert.equal(SHARE_CARD_REPOSITORY.label, '谢谢你分享自己的幸福，愿它能一直陪伴着你😊');
+assert.equal(SHARE_CARD_EDITION, 'JIEYOU×生命万岁企划');
+assert.equal(HAPPINESS_CARD_MARK, 'GXMU');
+assert.equal(getHappinessCardMetaLabel('2026年8月18日'), '2026年8月18日  GXMU');
+assert.equal(shouldCaptureShareCardShortcut({ key: 'p', active: true }), true);
+assert.equal(shouldCaptureShareCardShortcut({ key: 'P', active: true }), true);
+assert.equal(shouldCaptureShareCardShortcut({ key: 'p', active: false }), false);
+assert.equal(shouldCaptureShareCardShortcut({ key: 'p', active: true, repeat: true }), false);
+assert.equal(shouldCaptureShareCardShortcut({ key: 'p', active: true, disabled: true }), false);
+assert.equal(shouldCaptureShareCardShortcut({ key: 'p', active: true, editable: true }), false);
+assert.equal(SHARE_CARD_REPOSITORY.label, '欲买桂花同载酒，终不似，少年游。希望你的幸福能一直陪着你😊');
 assert.equal(getShareCardFilename(42), 'meow_card_42.png');
 assert.equal(getShareCardFilename(-42), 'meow_card_42.png');
 
 const cardHeight = 1540;
 const canvasLayout = HAPPINESS_CARD_CANVAS_LAYOUT;
-assert.ok(canvasLayout.captionYRatio < 0.812, 'happiness title should move upward');
+assert.equal(canvasLayout.captionYRatio, 0.802, 'happiness title should return to its original position');
+assert.ok(canvasLayout.subtitleSize >= 32, 'happiness message should be larger');
+assert.ok(canvasLayout.subtitleLineHeight >= 40, 'happiness message should have more line spacing');
+assert.equal(canvasLayout.subtitleMaxLines, 4);
+assert.equal(canvasLayout.dateBadgeTop, 32);
+assert.ok(canvasLayout.dateBadgeWidth >= 300);
 const canvasTitleBottom = cardHeight * canvasLayout.captionYRatio + canvasLayout.titleSize / 2;
 const canvasFirstSubtitleTop = cardHeight * canvasLayout.captionYRatio
   + canvasLayout.subtitleOffset
   - canvasLayout.subtitleSize / 2;
 const canvasLastSubtitleBottom = cardHeight * canvasLayout.captionYRatio
   + canvasLayout.subtitleOffset
-  + canvasLayout.subtitleLineHeight * 2
+  + canvasLayout.subtitleLineHeight * (canvasLayout.subtitleMaxLines - 1)
   + canvasLayout.subtitleSize / 2;
 assert.ok(canvasFirstSubtitleTop > canvasTitleBottom, 'canvas title and message must not overlap');
-assert.ok(canvasLastSubtitleBottom < cardHeight * canvasLayout.metaYRatio, 'three message lines must stay above meta');
+assert.ok(canvasLastSubtitleBottom < cardHeight * 0.953, 'four message lines should use the space above footer');
 
 const styles = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
 const liveTitleRule = styles.match(/\.share-card-live-frame\[data-happiness="true"\] \.share-card-live-title\s*\{([\s\S]*?)\}/)?.[1] ?? '';
 const liveSubtitleRule = styles.match(/\.share-card-live-frame\[data-happiness="true"\] \.share-card-live-subtitle\s*\{([\s\S]*?)\}/)?.[1] ?? '';
+const liveSerialRule = styles.match(/\.share-card-live-frame\[data-happiness="true"\] \.share-card-serial\s*\{([\s\S]*?)\}/)?.[1] ?? '';
+const editionRule = styles.match(/\.share-card-edition\s*\{([\s\S]*?)\}/)?.[1] ?? '';
+assert.match(editionRule, /width:\s*max-content/);
+assert.match(editionRule, /white-space:\s*nowrap/);
 assert.match(liveTitleRule, /top:\s*79\.8%/);
 assert.match(liveTitleRule, /font-size:\s*clamp\([^;]*22px\)/);
 assert.match(liveSubtitleRule, /top:\s*83\.7%/);
-assert.match(liveSubtitleRule, /font-size:\s*clamp\([^;]*10px\)/);
+assert.match(liveSubtitleRule, /width:\s*86%/);
+assert.match(liveSubtitleRule, /font-size:\s*clamp\([^;]*16px\)/);
+assert.match(liveSubtitleRule, /line-height:\s*1\.24/);
+assert.match(liveSubtitleRule, /-webkit-line-clamp:\s*4/);
+assert.match(liveSerialRule, /top:\s*2\.35%/);
+assert.match(liveSerialRule, /right:\s*5%/);
+assert.match(liveSerialRule, /left:\s*auto/);
+assert.match(styles, /data-happiness="true"[^\{]*\.share-card-gem[^\{]*\{\s*display:\s*none/);
+assert.match(styles, /data-happiness="true"[^\{]*\.share-card-rarity[^\{]*\{\s*display:\s*none/);
 const liveHeight = 740;
 const liveTitleBottom = liveHeight * 0.798 + 22 * 1.1;
 const liveSubtitleTop = liveHeight * 0.837;
-const liveSubtitleBottom = liveSubtitleTop + 3 * 10 * 1.12;
+const liveSubtitleBottom = liveSubtitleTop + 4 * 16 * 1.24;
 assert.ok(liveTitleBottom < liveSubtitleTop, 'live title and message must have a positive gap');
-assert.ok(liveSubtitleBottom < liveHeight * 0.8885, 'live three-line message must stay above meta');
+assert.ok(liveSubtitleBottom < liveHeight * 0.9445, 'live four-line message must stay above footer');
 
 const measureCharacters = (text) => text.length;
 assert.deepEqual(getHappinessCardLines('跑步听歌', measureCharacters, 8, 3), ['跑步听歌']);
@@ -83,8 +111,8 @@ assert.ok(longMessageLines[2].endsWith('…'));
 assert.ok(longMessageLines.every((line) => measureCharacters(line) <= 5));
 
 const localeCopy = { title: '猫猫纪念卡', cardNumber: (serial) => `第 ${serial} 张 / 9999` };
-assert.deepEqual(getShareCardCopy(localeCopy, '我喜欢晚上边跑步边听歌'), {
-  headline: '幸福时刻',
+assert.deepEqual(getShareCardCopy(localeCopy, '我喜欢晚上边跑步边听歌', '小王'), {
+  headline: '小王的幸福时刻',
   subtitle: '我喜欢晚上边跑步边听歌',
 });
 assert.deepEqual(getShareCardCopy(localeCopy, ''), {

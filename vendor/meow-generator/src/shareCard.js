@@ -8,18 +8,22 @@ const CARD_LAYOUT = Object.freeze({
   windowHeight: 0.65,
 });
 
-export const SHARE_CARD_EDITION = 'JIEYOU×HAPPINESS';
+export const SHARE_CARD_EDITION = 'JIEYOU×生命万岁企划';
+export const HAPPINESS_CARD_MARK = 'GXMU';
 
 export const SHARE_CARD_REPOSITORY = Object.freeze({
-  label: '谢谢你分享自己的幸福，愿它能一直陪伴着你😊',
+  label: '欲买桂花同载酒，终不似，少年游。希望你的幸福能一直陪着你😊',
 });
 
 export const HAPPINESS_CARD_CANVAS_LAYOUT = Object.freeze({
   captionYRatio: 0.802,
   titleSize: 50,
-  subtitleOffset: 56,
-  subtitleSize: 20,
-  subtitleLineHeight: 22,
+  subtitleOffset: 60,
+  subtitleSize: 32,
+  subtitleLineHeight: 40,
+  subtitleMaxLines: 4,
+  dateBadgeTop: 32,
+  dateBadgeWidth: 320,
   metaYRatio: 0.894,
 });
 
@@ -172,10 +176,11 @@ function localeCopy(locale) {
   return COPY[locale] ?? COPY['zh-CN'];
 }
 
-export function getShareCardCopy(copy, happinessMessage = '') {
+export function getShareCardCopy(copy, happinessMessage = '', happinessNickname = '') {
   const message = typeof happinessMessage === 'string' ? happinessMessage.trim() : '';
+  const nickname = typeof happinessNickname === 'string' ? happinessNickname.trim() : '';
   return {
-    headline: '幸福时刻',
+    headline: nickname ? `${nickname}的幸福时刻` : '幸福时刻',
     subtitle: message || copy.title,
   };
 }
@@ -213,6 +218,24 @@ export function getShareCardMeta(copy, serial, happinessMessage = '', happinessD
   return String(happinessMessage).trim()
     ? (String(happinessDate).trim() || DEFAULT_HAPPINESS_DATE)
     : copy.cardNumber(serial);
+}
+
+export function getHappinessCardMetaLabel(cardMeta) {
+  return `${cardMeta}  ${HAPPINESS_CARD_MARK}`;
+}
+
+export function shouldCaptureShareCardShortcut({
+  key = '',
+  active = false,
+  repeat = false,
+  disabled = false,
+  editable = false,
+} = {}) {
+  return String(key).toLowerCase() === 'p'
+    && active
+    && !repeat
+    && !disabled
+    && !editable;
 }
 
 function positiveSeed(seed) {
@@ -528,6 +551,7 @@ function drawCardDecor(ctx, {
   cardMeta,
 }) {
   const { theme, serial, rarity, skinSeed } = descriptor;
+  const isHappinessCard = cardCopy.subtitle !== copy.title;
   const scale = cardWidth / 1140;
   const outerRadius = 72 * scale;
   const innerRadius = 40 * scale;
@@ -594,46 +618,70 @@ function drawCardDecor(ctx, {
   ctx.lineWidth = 5 * scale;
   ctx.stroke();
 
+  const editionBadgeX = cardX + 46 * scale;
+  const editionPaddingX = 24 * scale;
+  ctx.font = `900 ${30 * scale}px "Arial Rounded MT Bold", "Microsoft YaHei", sans-serif`;
+  const editionBadgeWidth = ctx.measureText(SHARE_CARD_EDITION).width + editionPaddingX * 2;
   ctx.fillStyle = '#fffaf0';
   ctx.strokeStyle = theme.ink;
   ctx.lineWidth = 8 * scale;
   roundedRect(
     ctx,
-    cardX + 46 * scale,
+    editionBadgeX,
     cardY + 32 * scale,
-    450 * scale,
+    editionBadgeWidth,
     92 * scale,
     28 * scale
   );
   ctx.fill();
   ctx.stroke();
   ctx.fillStyle = theme.ink;
-  ctx.font = `900 ${30 * scale}px "Arial Rounded MT Bold", "Microsoft YaHei", sans-serif`;
+  ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
-  ctx.fillText(SHARE_CARD_EDITION, cardX + 70 * scale, cardY + 80 * scale);
+  ctx.fillText(SHARE_CARD_EDITION, editionBadgeX + editionPaddingX, cardY + 80 * scale);
 
-  ctx.beginPath();
-  ctx.arc(cardX + cardWidth - 86 * scale, cardY + 78 * scale, 39 * scale, 0, Math.PI * 2);
-  ctx.fillStyle = theme.ink;
-  ctx.fill();
-  ctx.beginPath();
-  ctx.arc(cardX + cardWidth - 86 * scale, cardY + 78 * scale, 25 * scale, 0, Math.PI * 2);
-  ctx.fillStyle = theme.accent;
-  ctx.fill();
-  drawStar(
-    ctx,
-    cardX + cardWidth - 86 * scale,
-    cardY + 78 * scale,
-    15 * scale,
-    '#fffaf0',
-    Math.PI / 8
-  );
+  if (isHappinessCard) {
+    const dateLabel = getHappinessCardMetaLabel(cardMeta);
+    ctx.font = `900 ${29 * scale}px "Arial Rounded MT Bold", "Microsoft YaHei", sans-serif`;
+    const dateBadgeWidth = Math.max(
+      HAPPINESS_CARD_CANVAS_LAYOUT.dateBadgeWidth * scale,
+      ctx.measureText(dateLabel).width + 48 * scale
+    );
+    const dateBadgeHeight = 92 * scale;
+    const dateBadgeX = cardX + cardWidth - 46 * scale - dateBadgeWidth;
+    const dateBadgeY = cardY + HAPPINESS_CARD_CANVAS_LAYOUT.dateBadgeTop * scale;
+    roundedRect(ctx, dateBadgeX, dateBadgeY, dateBadgeWidth, dateBadgeHeight, 28 * scale);
+    ctx.fillStyle = '#fffaf0';
+    ctx.fill();
+    ctx.strokeStyle = theme.ink;
+    ctx.lineWidth = 8 * scale;
+    ctx.stroke();
+    ctx.fillStyle = theme.ink;
+    ctx.textAlign = 'center';
+    ctx.fillText(dateLabel, dateBadgeX + dateBadgeWidth / 2, dateBadgeY + dateBadgeHeight / 2);
+  } else {
+    ctx.beginPath();
+    ctx.arc(cardX + cardWidth - 86 * scale, cardY + 78 * scale, 39 * scale, 0, Math.PI * 2);
+    ctx.fillStyle = theme.ink;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cardX + cardWidth - 86 * scale, cardY + 78 * scale, 25 * scale, 0, Math.PI * 2);
+    ctx.fillStyle = theme.accent;
+    ctx.fill();
+    drawStar(
+      ctx,
+      cardX + cardWidth - 86 * scale,
+      cardY + 78 * scale,
+      15 * scale,
+      '#fffaf0',
+      Math.PI / 8
+    );
+  }
 
   drawStar(ctx, cardX + 52 * scale, cardY + cardHeight * 0.735, 24 * scale, theme.accent, 0.1);
   drawStar(ctx, cardX + cardWidth - 55 * scale, cardY + cardHeight * 0.74, 30 * scale, theme.primary, -0.2);
   drawStar(ctx, cardX + cardWidth - 105 * scale, cardY + cardHeight * 0.19, 19 * scale, theme.secondary, 0.35);
 
-  const isHappinessCard = cardCopy.subtitle !== copy.title;
   const captionYRatio = isHappinessCard ? HAPPINESS_CARD_CANVAS_LAYOUT.captionYRatio : 0.812;
   const captionY = cardY + cardHeight * captionYRatio;
   ctx.fillStyle = theme.ink;
@@ -647,46 +695,53 @@ function drawCardDecor(ctx, {
   const subtitleOffset = isHappinessCard ? HAPPINESS_CARD_CANVAS_LAYOUT.subtitleOffset : 43;
   ctx.font = `800 ${subtitleSize * scale}px "Arial Rounded MT Bold", "Microsoft YaHei", sans-serif`;
   const subtitleLines = isHappinessCard
-    ? getHappinessCardLines(cardCopy.subtitle, (line) => ctx.measureText(line).width, 820 * scale, 3)
+    ? getHappinessCardLines(
+      cardCopy.subtitle,
+      (line) => ctx.measureText(line).width,
+      960 * scale,
+      HAPPINESS_CARD_CANVAS_LAYOUT.subtitleMaxLines,
+    )
     : [cardCopy.subtitle];
   subtitleLines.forEach((line, index) => {
     ctx.fillText(line, cardX + cardWidth / 2, captionY + (subtitleOffset + index * subtitleLineHeight) * scale);
   });
 
-  const metaY = cardY + cardHeight * HAPPINESS_CARD_CANVAS_LAYOUT.metaYRatio;
-  const metaHeight = 66 * scale;
-  ctx.fillStyle = 'rgba(255, 250, 240, 0.86)';
-  ctx.strokeStyle = theme.ink;
-  ctx.lineWidth = 5 * scale;
-  roundedRect(
-    ctx,
-    cardX + 66 * scale,
-    metaY,
-    450 * scale,
-    metaHeight,
-    22 * scale
-  );
-  ctx.fill();
-  ctx.stroke();
-  ctx.fillStyle = theme.ink;
-  ctx.textAlign = 'left';
-  ctx.font = `900 ${29 * scale}px "Arial Rounded MT Bold", "Microsoft YaHei", sans-serif`;
-  ctx.fillText(cardMeta, cardX + 92 * scale, metaY + metaHeight / 2);
+  if (!isHappinessCard) {
+    const metaY = cardY + cardHeight * HAPPINESS_CARD_CANVAS_LAYOUT.metaYRatio;
+    const metaHeight = 66 * scale;
+    ctx.fillStyle = 'rgba(255, 250, 240, 0.86)';
+    ctx.strokeStyle = theme.ink;
+    ctx.lineWidth = 5 * scale;
+    roundedRect(
+      ctx,
+      cardX + 66 * scale,
+      metaY,
+      450 * scale,
+      metaHeight,
+      22 * scale
+    );
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = theme.ink;
+    ctx.textAlign = 'left';
+    ctx.font = `900 ${29 * scale}px "Arial Rounded MT Bold", "Microsoft YaHei", sans-serif`;
+    ctx.fillText(cardMeta, cardX + 92 * scale, metaY + metaHeight / 2);
 
-  const rarityX = cardX + cardWidth - 214 * scale;
-  const rarityWidth = 148 * scale;
-  const rarityGradient = ctx.createLinearGradient(rarityX, metaY, rarityX + rarityWidth, metaY + metaHeight);
-  rarityGradient.addColorStop(0, rarity === 'R' ? '#fffaf0' : theme.primary);
-  rarityGradient.addColorStop(1, rarity === 'AR' ? theme.accent : rarity === 'SR' ? theme.secondary : theme.paper);
-  roundedRect(ctx, rarityX, metaY, rarityWidth, metaHeight, 24 * scale);
-  ctx.fillStyle = rarityGradient;
-  ctx.fill();
-  ctx.strokeStyle = theme.ink;
-  ctx.stroke();
-  ctx.fillStyle = theme.ink;
-  ctx.textAlign = 'center';
-  ctx.font = `900 ${36 * scale}px "Arial Rounded MT Bold", "Microsoft YaHei", sans-serif`;
-  ctx.fillText(`${rarity} ✦`, rarityX + rarityWidth / 2, metaY + metaHeight / 2);
+    const rarityX = cardX + cardWidth - 214 * scale;
+    const rarityWidth = 148 * scale;
+    const rarityGradient = ctx.createLinearGradient(rarityX, metaY, rarityX + rarityWidth, metaY + metaHeight);
+    rarityGradient.addColorStop(0, rarity === 'R' ? '#fffaf0' : theme.primary);
+    rarityGradient.addColorStop(1, rarity === 'AR' ? theme.accent : rarity === 'SR' ? theme.secondary : theme.paper);
+    roundedRect(ctx, rarityX, metaY, rarityWidth, metaHeight, 24 * scale);
+    ctx.fillStyle = rarityGradient;
+    ctx.fill();
+    ctx.strokeStyle = theme.ink;
+    ctx.stroke();
+    ctx.fillStyle = theme.ink;
+    ctx.textAlign = 'center';
+    ctx.font = `900 ${36 * scale}px "Arial Rounded MT Bold", "Microsoft YaHei", sans-serif`;
+    ctx.fillText(`${rarity} ✦`, rarityX + rarityWidth / 2, metaY + metaHeight / 2);
+  }
 
   const repositoryY = cardY + cardHeight * 0.953;
   roundedRect(
@@ -750,6 +805,7 @@ export function createShareCardCapture({
   getLocale,
   getHappinessMessage = () => '',
   getHappinessDate = () => '',
+  getHappinessNickname = () => '',
   downloadBlob,
 }) {
   const overlay = document.createElement('div');
@@ -836,16 +892,18 @@ export function createShareCardCapture({
     const copy = localeCopy(getLocale());
     const happinessMessage = getHappinessMessage() ?? '';
     const happinessDate = getHappinessDate() ?? '';
-    const cardCopy = getShareCardCopy(copy, happinessMessage);
+    const happinessNickname = getHappinessNickname() ?? '';
+    const cardCopy = getShareCardCopy(copy, happinessMessage, happinessNickname);
     const isHappinessCard = Boolean(String(happinessMessage).trim());
     hintEl.textContent = copy.hint;
     skinButton.textContent = `🎨 ${copy.skin}`;
-    captureButton.textContent = `📸 ${copy.camera}`;
+    captureButton.textContent = `📸 ${copy.camera}（P）`;
     closeButton.textContent = `× ${copy.close}`;
     titleEl.textContent = cardCopy.headline;
     subtitleEl.textContent = cardCopy.subtitle;
     frame.dataset.happiness = String(isHappinessCard);
-    serialEl.textContent = getShareCardMeta(copy, descriptor.serial, happinessMessage, happinessDate);
+    const cardMeta = getShareCardMeta(copy, descriptor.serial, happinessMessage, happinessDate);
+    serialEl.textContent = isHappinessCard ? getHappinessCardMetaLabel(cardMeta) : cardMeta;
     shell.setAttribute('aria-label', `${cardCopy.headline}：${cardCopy.subtitle}`);
   }
 
@@ -940,7 +998,8 @@ export function createShareCardCapture({
       const copy = localeCopy(getLocale());
       const happinessMessage = getHappinessMessage() ?? '';
       const happinessDate = getHappinessDate() ?? '';
-      const cardCopy = getShareCardCopy(copy, happinessMessage);
+      const happinessNickname = getHappinessNickname() ?? '';
+      const cardCopy = getShareCardCopy(copy, happinessMessage, happinessNickname);
       const cardMeta = getShareCardMeta(copy, descriptor.serial, happinessMessage, happinessDate);
 
       ctx.save();
@@ -994,6 +1053,21 @@ export function createShareCardCapture({
   closeButton.addEventListener('click', close);
   window.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && active) close();
+    const target = event.target;
+    const editable = Boolean(
+      target?.isContentEditable
+      || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName)
+    );
+    if (shouldCaptureShareCardShortcut({
+      key: event.key,
+      active,
+      repeat: event.repeat,
+      disabled: captureButton.disabled,
+      editable,
+    })) {
+      event.preventDefault();
+      void capture();
+    }
   });
   window.addEventListener('meow:localechange', syncCopy);
 

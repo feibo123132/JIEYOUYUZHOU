@@ -19,16 +19,19 @@ export function normalizeHappinessMessage(message?: string): string {
 export interface HappinessStoredContext {
   message: string;
   createdAt: string;
+  nickname: string;
 }
 
 export function storeHappinessContext(
   storage: WritableStorage,
   message?: string,
   createdAt?: string,
+  nickname?: string,
 ): HappinessStoredContext {
   const context = {
     message: normalizeHappinessMessage(message),
     createdAt: typeof createdAt === 'string' ? createdAt.trim().slice(0, 100) : '',
+    nickname: typeof nickname === 'string' ? nickname.trim().slice(0, 30) : '',
   };
   storage.setItem(HAPPINESS_CONTEXT_STORAGE_KEY, JSON.stringify(context));
   return context;
@@ -43,6 +46,7 @@ export function getHappinessMeowGeneratorUrl(
 interface OpenHappinessMeowGeneratorOptions {
   message?: string;
   createdAt?: string;
+  nickname?: string;
   base?: string;
   getStorage?: () => WritableStorage | undefined;
   navigate?: (url: string) => void;
@@ -51,6 +55,7 @@ interface OpenHappinessMeowGeneratorOptions {
 export function openHappinessMeowGenerator({
   message,
   createdAt,
+  nickname,
   base,
   getStorage = () => window.sessionStorage,
   navigate = (url) => window.location.assign(url),
@@ -58,7 +63,7 @@ export function openHappinessMeowGenerator({
   const normalized = normalizeHappinessMessage(message);
   try {
     const storage = getStorage();
-    if (storage) storeHappinessContext(storage, normalized, createdAt);
+    if (storage) storeHappinessContext(storage, normalized, createdAt, nickname);
   } catch {
     // Navigation must still work when temporary browser storage is unavailable.
   }

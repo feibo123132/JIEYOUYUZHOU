@@ -8,7 +8,7 @@ test('life-theme star details open Meow Generator with the selected message', as
   const source = await readFile(sourceUrl, 'utf8');
 
   assert.match(source, /theme\.id === 'life'/);
-  assert.match(source, /openHappinessMeowGenerator\(\{\s*message: selectedStar\.message,\s*createdAt: selectedStar\.createdAt/);
+  assert.match(source, /openHappinessMeowGenerator\(\{\s*message: selectedStar\.message,\s*createdAt: selectedStar\.createdAt,\s*nickname: selectedStar\.nickname/);
   assert.match(source, />\s*找杰宝\s*</);
   assert.match(source, /aria-label="关闭幸福星详情"/);
 });

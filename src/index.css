@@ -78,6 +78,7 @@
 }
 
 .barrage-item {
+  appearance: none;
   display: inline-flex;
   flex: none;
   align-items: baseline;
@@ -91,6 +92,13 @@
   line-height: 1.45;
   white-space: nowrap;
   backdrop-filter: blur(12px);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.barrage-item:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, .9);
+  outline-offset: 3px;
 }
 
 .barrage-lane:hover,

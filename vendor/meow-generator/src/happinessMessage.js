@@ -29,7 +29,7 @@ export function formatHappinessDate(createdAt) {
 
 export function readHappinessMessageContext({ search = '', getStorage = () => undefined } = {}) {
   const source = new URLSearchParams(search).get('source');
-  if (source !== HAPPINESS_MEOW_SOURCE) return { active: false, message: '', dateLabel: '' };
+  if (source !== HAPPINESS_MEOW_SOURCE) return { active: false, message: '', dateLabel: '', nickname: '' };
 
   let storedContext = {};
   try {
@@ -42,5 +42,6 @@ export function readHappinessMessageContext({ search = '', getStorage = () => un
     active: true,
     message: normalizeHappinessMessage(storedContext?.message),
     dateLabel: formatHappinessDate(storedContext?.createdAt),
+    nickname: typeof storedContext?.nickname === 'string' ? storedContext.nickname.trim().slice(0, 30) : '',
   };
 }
