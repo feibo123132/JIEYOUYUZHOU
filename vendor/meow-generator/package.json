@@ -21,6 +21,7 @@
     "test:presets": "node scripts/test_cat_presets.mjs"
   },
   "dependencies": {
+    "@cloudbase/js-sdk": "^2.22.5",
     "cannon-es": "^0.20.0",
     "three": "^0.178.0"
   },

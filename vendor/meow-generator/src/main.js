@@ -30,6 +30,7 @@ import {
   updateCatPresetParameters,
   upsertCatPreset,
 } from './catPresets.js';
+import { createPresetCloudSync } from './catPresetCloudSync.js';
 import {
   WEATHER_AMOUNT_LIMITS,
   createCloudField,
@@ -1741,11 +1742,40 @@ presetStatus.className = 'preset-status';
 presetStatus.setAttribute('aria-live', 'polite');
 presetSec.appendChild(presetStatus);
 
+const presetSyncTitle = document.createElement('p');
+presetSyncTitle.className = 'preset-sync-title';
+presetSyncTitle.textContent = '跨端同步';
+presetSec.appendChild(presetSyncTitle);
+const presetSyncRow = document.createElement('div');
+presetSyncRow.className = 'preset-sync-row';
+const presetSyncCodeInput = document.createElement('input');
+presetSyncCodeInput.className = 'preset-name-input preset-sync-code';
+presetSyncCodeInput.placeholder = '20 位同步码';
+presetSyncCodeInput.setAttribute('aria-label', '同步码');
+presetSyncRow.appendChild(presetSyncCodeInput);
+const presetSyncConnectButton = actionButton(presetSyncRow, '连接同步', () => connectPresetSync());
+const presetSyncGenerateButton = actionButton(presetSyncRow, '生成同步码', () => generatePresetSync());
+presetSec.appendChild(presetSyncRow);
+const presetSyncActions = document.createElement('div');
+presetSyncActions.className = 'preset-sync-actions';
+const presetSyncCopyButton = actionButton(presetSyncActions, '复制', () => copyPresetSyncCode());
+const presetSyncNowButton = actionButton(presetSyncActions, '立即同步', () => presetSync?.sync());
+const presetSyncDisconnectButton = actionButton(presetSyncActions, '断开', () => {
+  presetSync?.disconnect();
+  renderPresetSync();
+});
+presetSec.appendChild(presetSyncActions);
+const presetSyncStatus = document.createElement('p');
+presetSyncStatus.className = 'preset-status';
+presetSyncStatus.setAttribute('aria-live', 'polite');
+presetSec.appendChild(presetSyncStatus);
+
 const presetList = document.createElement('div');
 presetList.className = 'preset-list';
 presetSec.appendChild(presetList);
 
 let catPresets = [];
+let presetSync = null;
 try {
   catPresets = parseCatPresets(localStorage.getItem(CAT_PRESET_STORAGE_KEY));
 } catch {
@@ -1761,6 +1791,46 @@ function persistCatPresets(nextPresets) {
     presetStatus.textContent = '浏览器无法保存预设';
     return false;
   }
+}
+
+const PRESET_SYNC_STATUS = {
+  local: '仅保存在本机',
+  syncing: '正在同步',
+  synced: '已同步',
+  error: '同步失败，本地数据已保留',
+  failed: '同步失败，本地数据已保留',
+};
+
+function renderPresetSync() {
+  const state = presetSync?.getState() ?? { code: null };
+  const connected = Boolean(state.code);
+  presetSyncCodeInput.readOnly = connected;
+  presetSyncCodeInput.value = connected ? presetSync.maskCode(state.code) : '';
+  presetSyncConnectButton.hidden = connected;
+  presetSyncGenerateButton.hidden = connected;
+  presetSyncActions.hidden = !connected;
+  if (!connected) presetSyncStatus.textContent = PRESET_SYNC_STATUS.local;
+}
+
+async function connectPresetSync() {
+  try {
+    await presetSync.connect(presetSyncCodeInput.value);
+    renderPresetSync();
+  } catch {
+    presetSyncStatus.textContent = '同步码无效';
+  }
+}
+
+async function generatePresetSync() {
+  presetSyncCodeInput.value = presetSync.formatCode(presetSync.generateCode());
+  await connectPresetSync();
+  copyPresetSyncCode();
+}
+
+async function copyPresetSyncCode() {
+  const code = presetSync?.getState().code;
+  if (!code) return;
+  try { await navigator.clipboard.writeText(presetSync.formatCode(code)); } catch {}
 }
 
 function applyCatPreset(preset) {
@@ -1816,6 +1886,7 @@ function renderCatPresets() {
         preset = nextPresets.find((item) => item.name === name.value.trim()) ?? preset;
         name.value = preset.name;
         presetStatus.textContent = '预设名称已更新';
+        presetSync.localChanged();
       } catch (error) {
         name.value = preset.name;
         presetStatus.textContent = error?.code === 'DUPLICATE_PRESET_NAME'
@@ -1853,6 +1924,7 @@ function renderCatPresets() {
       if (!persistCatPresets(nextPresets)) return;
       renderCatPresets();
       presetStatus.textContent = '预设参数已更新';
+      presetSync.localChanged();
     });
     const deleteButton = document.createElement('button');
     deleteButton.type = 'button';
@@ -1863,6 +1935,7 @@ function renderCatPresets() {
       if (!persistCatPresets(nextPresets)) return;
       renderCatPresets();
       presetStatus.textContent = '预设已删除';
+      presetSync.localChanged();
     });
     actions.append(applyButton, updateButton, deleteButton);
     row.append(name, actions);
@@ -1887,6 +1960,7 @@ function saveCurrentCatPreset() {
   presetNameInput.value = '';
   renderCatPresets();
   presetStatus.textContent = overwriting ? '同名预设已覆盖' : '预设已保存';
+  presetSync.localChanged();
 }
 
 presetNameInput.addEventListener('keydown', (event) => {
@@ -1894,6 +1968,19 @@ presetNameInput.addEventListener('keydown', (event) => {
   event.preventDefault();
   saveCurrentCatPreset();
 });
+presetSync = createPresetCloudSync({
+  readPresets: () => catPresets,
+  replacePresets: (nextPresets) => {
+    if (!persistCatPresets(nextPresets)) throw new Error('LOCAL_PRESET_WRITE_FAILED');
+    renderCatPresets();
+  },
+  onStatus: (value) => {
+    presetSyncStatus.textContent = PRESET_SYNC_STATUS[value] ?? PRESET_SYNC_STATUS.failed;
+    renderPresetSync();
+  },
+});
+renderPresetSync();
+presetSync.start();
 renderCatPresets();
 
 const poseControls = controlGroup(bodySec, '姿势', { open: true });

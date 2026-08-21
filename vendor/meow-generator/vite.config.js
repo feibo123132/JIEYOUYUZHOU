@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 const sourcePath = (relativePath) => fileURLToPath(new URL(relativePath, import.meta.url));
 
 export default defineConfig({
+  envDir: fileURLToPath(new URL('../..', import.meta.url)),
   base: process.env.VITE_PUBLIC_BASE || '/',
   resolve: {
     alias: {

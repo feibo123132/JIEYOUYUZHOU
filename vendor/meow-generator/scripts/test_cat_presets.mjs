@@ -146,10 +146,20 @@ assert.match(mainSource, /lightElevation:\s*lightAngles\.elevation/);
 assert.match(mainSource, /applyCatPresetSnapshot/);
 assert.match(mainSource, /floorPaletteSeed = params\.seed/);
 assert.match(mainSource, /name\.dataset\.i18nIgnore/);
+assert.match(mainSource, /跨端同步/);
+assert.match(mainSource, /生成同步码/);
+assert.match(mainSource, /连接同步/);
+assert.match(mainSource, /立即同步/);
+assert.match(mainSource, /断开/);
+assert.match(mainSource, /createPresetCloudSync/);
+assert.match(mainSource, /presetSync\.maskCode\(state\.code\)/);
+assert.match(mainSource, /if \(!persistCatPresets\(nextPresets\)\) throw new Error\('LOCAL_PRESET_WRITE_FAILED'\)/);
+assert.ok((mainSource.match(/presetSync\.localChanged\(\)/g) ?? []).length >= 4);
 
 const styles = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
 assert.match(styles, /\.preset-save-row/);
 assert.match(styles, /\.preset-list/);
+assert.match(styles, /\.preset-sync-row/);
 
 const i18nSource = await readFile(new URL('../src/i18n.js', import.meta.url), 'utf8');
 assert.match(i18nSource, /'预设保存'/);
