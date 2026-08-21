@@ -20,6 +20,17 @@ import { createCodexPetPreview } from '#codex-pet-preview';
 import { setupGlbExport } from '#glb-export';
 import { saveBlob } from '#platform';
 import {
+  CAT_PRESET_STORAGE_KEY,
+  applyCatPresetSnapshot,
+  createCatPreset,
+  parseCatPresets,
+  renameCatPreset,
+  removeCatPreset,
+  serializeCatPresets,
+  updateCatPresetParameters,
+  upsertCatPreset,
+} from './catPresets.js';
+import {
   WEATHER_AMOUNT_LIMITS,
   createCloudField,
   createFishRain,
@@ -162,6 +173,19 @@ const EYE_SLIDERS = [
   { key: 'wateryEyeShape',  name: '泪眼形变', min: 0,   max: 2,   step: 0.01 },
 ];
 
+const EXPRESSIONS = [
+  { id: 'normal', name: '默认' },
+  { id: 'sad', name: '委屈' },
+  { id: 'angry', name: '生气' },
+  { id: 'smug', name: '坏笑' },
+];
+
+const PART_OFFSET_SLIDERS = [
+  { key: 'eyeOffsetY', name: '眼睛上下', min: -0.45, max: 0.45, step: 0.01 },
+  { key: 'noseOffsetY', name: '鼻子上下', min: -0.45, max: 0.45, step: 0.01 },
+  { key: 'mouthOffsetY', name: '嘴巴上下', min: -0.45, max: 0.45, step: 0.01 },
+];
+
 const FUR_SLIDERS = [
   { key: 'furFluff', name: '炸毛程度', min: 0.15, max: 3.0, step: 0.01 },
 ];
@@ -202,6 +226,10 @@ const params = {
   irisHighlightScale: 1,
   wateryEyes: false,
   wateryEyeShape: 1.1,
+  expression: 'normal',
+  eyeOffsetY: 0,
+  noseOffsetY: 0,
+  mouthOffsetY: 0,
   tailLength: 0.95,
   tailCurl: 0.35,
   fluffy: false,
@@ -1684,15 +1712,189 @@ function colorRow(parent, name, { get, set }) {
 const refreshers = [];
 const sliderSyncs = [];
 
-// 顶层保留四个常用分类；体型与花纹默认展开，细项按需要再展开。
+// 顶层保留常用分类；体型与花纹默认展开，细项按需要再展开。
 const bodySec = section('体型', { collapsible: true, collapsed: false });
 const coatSec = section('花纹与眼睛', { collapsible: true, collapsed: false });
 const sceneSec = section('场景与渲染', { collapsible: true, collapsed: true });
+const presetSec = section('预设保存', { collapsible: true, collapsed: true });
 const motionSec = section('Motion', {
   collapsible: true,
   collapsed: true,
   badge: 'Experimental',
 });
+
+const presetSaveRow = document.createElement('div');
+presetSaveRow.className = 'preset-save-row';
+const presetNameInput = document.createElement('input');
+presetNameInput.className = 'preset-name-input';
+presetNameInput.type = 'text';
+presetNameInput.maxLength = 40;
+presetNameInput.placeholder = '预设名称';
+presetNameInput.setAttribute('aria-label', '预设名称');
+presetSaveRow.appendChild(presetNameInput);
+const presetSaveButton = actionButton(presetSaveRow, '保存当前猫咪', () => saveCurrentCatPreset());
+presetSaveButton.classList.add('preset-save-button');
+presetSec.appendChild(presetSaveRow);
+
+const presetStatus = document.createElement('p');
+presetStatus.className = 'preset-status';
+presetStatus.setAttribute('aria-live', 'polite');
+presetSec.appendChild(presetStatus);
+
+const presetList = document.createElement('div');
+presetList.className = 'preset-list';
+presetSec.appendChild(presetList);
+
+let catPresets = [];
+try {
+  catPresets = parseCatPresets(localStorage.getItem(CAT_PRESET_STORAGE_KEY));
+} catch {
+  presetStatus.textContent = '浏览器无法读取预设';
+}
+
+function persistCatPresets(nextPresets) {
+  try {
+    localStorage.setItem(CAT_PRESET_STORAGE_KEY, serializeCatPresets(nextPresets));
+    catPresets = nextPresets;
+    return true;
+  } catch {
+    presetStatus.textContent = '浏览器无法保存预设';
+    return false;
+  }
+}
+
+function applyCatPreset(preset) {
+  const appliedSnapshot = applyCatPresetSnapshot(params, lightAngles, preset.parameters);
+  Object.assign(params, appliedSnapshot.parameters);
+  // The seed is required to recreate the same procedural kitten, but presets
+  // must not recolor the current scene floor as a side effect.
+  floorPaletteSeed = params.seed;
+  if (params.motionDebug) {
+    staticPoseBeforeMotion = preset.parameters.pose ?? staticPoseBeforeMotion;
+    params.pose = 'standing';
+  } else {
+    staticPoseBeforeMotion = params.pose;
+  }
+  lightAngles.azimuth = appliedSnapshot.lightAngles.azimuth;
+  lightAngles.elevation = appliedSnapshot.lightAngles.elevation;
+  if (appliedSnapshot.lightChanged) {
+    updateKeyLight();
+    syncLightOrb();
+  }
+  refreshers.forEach((refresh) => refresh());
+  sliderSyncs.forEach((control) => control.sync());
+  rebuild('full');
+  presetStatus.textContent = '预设已应用';
+}
+
+function renderCatPresets() {
+  presetList.replaceChildren();
+  if (!catPresets.length) {
+    const empty = document.createElement('p');
+    empty.className = 'preset-empty';
+    empty.textContent = '还没有保存的猫咪';
+    presetList.appendChild(empty);
+    return;
+  }
+  for (let preset of catPresets) {
+    const row = document.createElement('div');
+    row.className = 'preset-item';
+    const name = document.createElement('input');
+    name.type = 'text';
+    name.className = 'preset-item-name-input';
+    name.maxLength = 40;
+    name.value = preset.name;
+    name.dataset.i18nIgnore = '';
+    name.setAttribute('aria-label', '预设名称');
+    const saveRenamedPreset = () => {
+      try {
+        const nextPresets = renameCatPreset(catPresets, preset.name, name.value);
+        if (!persistCatPresets(nextPresets)) {
+          name.value = preset.name;
+          return;
+        }
+        preset = nextPresets.find((item) => item.name === name.value.trim()) ?? preset;
+        name.value = preset.name;
+        presetStatus.textContent = '预设名称已更新';
+      } catch (error) {
+        name.value = preset.name;
+        presetStatus.textContent = error?.code === 'DUPLICATE_PRESET_NAME'
+          ? '已存在同名预设'
+          : '请输入预设名称';
+      }
+    };
+    name.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        name.blur();
+      } else if (event.key === 'Escape') {
+        name.value = preset.name;
+        name.blur();
+      }
+    });
+    name.addEventListener('blur', saveRenamedPreset);
+    const actions = document.createElement('div');
+    actions.className = 'preset-item-actions';
+    const applyButton = document.createElement('button');
+    applyButton.type = 'button';
+    applyButton.className = 'preset-mini-action';
+    applyButton.textContent = '应用';
+    applyButton.addEventListener('click', () => applyCatPreset(preset));
+    const updateButton = document.createElement('button');
+    updateButton.type = 'button';
+    updateButton.className = 'preset-mini-action';
+    updateButton.textContent = '更新';
+    updateButton.addEventListener('click', () => {
+      const nextPresets = updateCatPresetParameters(catPresets, preset.name, {
+        ...params,
+        lightAzimuth: lightAngles.azimuth,
+        lightElevation: lightAngles.elevation,
+      });
+      if (!persistCatPresets(nextPresets)) return;
+      renderCatPresets();
+      presetStatus.textContent = '预设参数已更新';
+    });
+    const deleteButton = document.createElement('button');
+    deleteButton.type = 'button';
+    deleteButton.className = 'preset-mini-action preset-delete-action';
+    deleteButton.textContent = '删除';
+    deleteButton.addEventListener('click', () => {
+      const nextPresets = removeCatPreset(catPresets, preset.name);
+      if (!persistCatPresets(nextPresets)) return;
+      renderCatPresets();
+      presetStatus.textContent = '预设已删除';
+    });
+    actions.append(applyButton, updateButton, deleteButton);
+    row.append(name, actions);
+    presetList.appendChild(row);
+  }
+}
+
+function saveCurrentCatPreset() {
+  const name = presetNameInput.value.trim();
+  if (!name) {
+    presetStatus.textContent = '请输入预设名称';
+    presetNameInput.focus();
+    return;
+  }
+  const overwriting = catPresets.some((preset) => preset.name === name);
+  const nextPresets = upsertCatPreset(catPresets, createCatPreset(name, {
+    ...params,
+    lightAzimuth: lightAngles.azimuth,
+    lightElevation: lightAngles.elevation,
+  }));
+  if (!persistCatPresets(nextPresets)) return;
+  presetNameInput.value = '';
+  renderCatPresets();
+  presetStatus.textContent = overwriting ? '同名预设已覆盖' : '预设已保存';
+}
+
+presetNameInput.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  saveCurrentCatPreset();
+});
+renderCatPresets();
 
 const poseControls = controlGroup(bodySec, '姿势', { open: true });
 const staticPoseControls = document.createElement('div');
@@ -2019,6 +2221,14 @@ refreshers.push(() => {
   syncDynamicCoatParameterLayout();
 });
 const eyeSec = controlGroup(coatSec, '眼睛');
+const expressionControl = selectRow(eyeSec, '表情', EXPRESSIONS, {
+  get: () => params.expression,
+  set: (value) => {
+    params.expression = value;
+    rebuild('full');
+  },
+});
+refreshers.push(() => expressionControl.sync());
 const leftEyeColorControl = colorRow(eyeSec, '眼睛颜色', {
   get: () => params.eyeColor,
   set: (value) => { params.eyeColor = value; rebuild('full'); },
@@ -2080,6 +2290,20 @@ refreshers.push(() => {
   wateryShapeControl.sync();
   wateryShapeControl.row.hidden = !params.wateryEyes;
 });
+
+const partMoveSec = controlGroup(coatSec, '部位移动');
+for (const item of PART_OFFSET_SLIDERS) {
+  sliderSyncs.push(sliderRow(partMoveSec, item.name, {
+    min: item.min,
+    max: item.max,
+    step: item.step,
+    get: () => params[item.key] ?? 0,
+    set: (value) => {
+      params[item.key] = value;
+      rebuildDraftThenFull();
+    },
+  }));
+}
 
 // —— 体型 ——
 for (const s of BODY_SLIDERS) {

@@ -17,7 +17,8 @@
     "test:motion": "node scripts/test_mesh2motion_rig.mjs",
     "test:poke": "node scripts/test_soft_poke.mjs",
     "test:share": "node scripts/test_share_card.mjs",
-    "test:happiness": "node scripts/test_happiness_message.mjs"
+    "test:happiness": "node scripts/test_happiness_message.mjs",
+    "test:presets": "node scripts/test_cat_presets.mjs"
   },
   "dependencies": {
     "cannon-es": "^0.20.0",

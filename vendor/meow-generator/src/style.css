@@ -1863,6 +1863,112 @@ select {
   transform: rotate(-0.18deg) translateY(2px);
 }
 
+.preset-save-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.preset-name-input {
+  min-width: 0;
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 2px solid rgba(125, 81, 57, 0.55);
+  border-radius: 11px 8px 12px 9px;
+  color: var(--ink);
+  background: rgba(255, 253, 233, 0.92);
+  outline: none;
+}
+
+.preset-name-input:focus-visible {
+  border-color: var(--grass-dark);
+  box-shadow: 0 0 0 2px rgba(79, 140, 87, 0.18);
+}
+
+.preset-save-button.section-action {
+  width: auto;
+  min-width: 94px;
+  margin-top: 0;
+  padding: 5px 10px;
+}
+
+.preset-status,
+.preset-empty {
+  min-height: 17px;
+  margin: 7px 2px 0;
+  color: var(--ink-soft);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.preset-list {
+  display: grid;
+  gap: 7px;
+  margin-top: 8px;
+}
+
+.preset-item {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px 6px 10px;
+  border: 1px dashed rgba(167, 148, 104, 0.75);
+  border-radius: 11px 9px 12px 8px;
+  background: rgba(255, 253, 233, 0.55);
+}
+
+.preset-item-name-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 28px;
+  padding: 3px 7px;
+  border: 1px solid transparent;
+  border-radius: 8px 6px 9px 7px;
+  color: var(--ink);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+}
+
+.preset-item-name-input:hover,
+.preset-item-name-input:focus {
+  border-color: rgba(125, 81, 57, 0.52);
+  background: rgba(255, 255, 255, 0.62);
+  outline: none;
+}
+
+.preset-item-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 5px;
+}
+
+.preset-mini-action {
+  appearance: none;
+  min-height: 27px;
+  padding: 3px 6px;
+  border: 1px solid rgba(125, 81, 57, 0.52);
+  border-radius: 9px 7px 10px 8px;
+  color: #6d4936;
+  background: #ffe3a0;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.preset-mini-action:hover {
+  background: #fff0bf;
+}
+
+.preset-delete-action {
+  color: #8f4d3d;
+  background: #ffe2d2;
+}
+
 .swatch {
   width: 13px;
   height: 13px;

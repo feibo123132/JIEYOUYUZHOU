@@ -16,6 +16,7 @@ import {
   injectStaticIdle,
   updateStaticIdle,
 } from './staticIdle.js';
+import { getStandingTailX } from './tailLayout.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const BUTT_DECAL_POSES = new Set(['standing', 'stretch']);
@@ -779,7 +780,8 @@ function createEyeTexture(
   irisRatio,
   wateryAmount,
   innerSide,
-  irisHighlightScale = 1
+  irisHighlightScale = 1,
+  expression = 'normal'
 ) {
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = 512;
@@ -819,13 +821,38 @@ function createEyeTexture(
     ctx.translate(128 + shakeX, 128 + shakeY);
 
     // 外眼也参与泪眼形变，但振幅低于虹膜，保持眼眶的整体稳定感。
-    const eyeContour = wateryContour(104, a * 0.42, innerSide, phase * 0.55);
-    traceContour(ctx, eyeContour, 0, 1.07);
+    const eyeRadius = 104;
+    if (expression === 'normal') {
+      const eyeContour = wateryContour(eyeRadius, a * 0.42, innerSide, phase * 0.55);
+      traceContour(ctx, eyeContour, 0, 1.07);
+    } else {
+      const lid = {
+        sad: { inner: -0.62, outer: -0.24, bend: -0.18 },
+        angry: { inner: -0.08, outer: -0.68, bend: -0.02 },
+        smug: { inner: -0.04, outer: -0.42, bend: 0.08 },
+      }[expression] ?? { inner: -0.5, outer: -0.5, bend: 0 };
+      const leftY = eyeRadius * (innerSide < 0 ? lid.inner : lid.outer);
+      const rightY = eyeRadius * (innerSide > 0 ? lid.inner : lid.outer);
+      const midY = (leftY + rightY) * 0.5 + eyeRadius * lid.bend;
+      ctx.beginPath();
+      ctx.moveTo(-eyeRadius, leftY);
+      ctx.bezierCurveTo(-eyeRadius * 0.42, midY, eyeRadius * 0.42, midY, eyeRadius, rightY);
+      ctx.bezierCurveTo(eyeRadius * 1.04, eyeRadius * 0.42, eyeRadius * 0.72, eyeRadius, 0, eyeRadius * 1.04);
+      ctx.bezierCurveTo(-eyeRadius * 0.72, eyeRadius, -eyeRadius * 1.04, eyeRadius * 0.42, -eyeRadius, leftY);
+      ctx.closePath();
+    }
     ctx.fillStyle = '#fffdf8';
     ctx.fill();
     ctx.lineWidth = 12;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
     ctx.strokeStyle = '#4a3428';
     ctx.stroke();
+
+    // Clip the iris to the expression-shaped eyelids. The transparent part of
+    // the decal reveals the real procedural coat underneath.
+    ctx.save();
+    ctx.clip();
 
     const irisRadius = 104 * irisRatio;
     const gazeRoom = Math.max(7, (104 - irisRadius) * 0.72);
@@ -854,6 +881,7 @@ function createEyeTexture(
     ctx.beginPath();
     ctx.arc(-18, 24, 7 * highlightScale, 0, Math.PI * 2);
     ctx.fill();
+    ctx.restore();
     ctx.restore();
     ctx.restore();
     texture.needsUpdate = true;
@@ -918,7 +946,8 @@ function makeEyeDecal(
   irisRatio,
   wateryAmount,
   innerSide,
-  irisHighlightScale
+  irisHighlightScale,
+  expression
 ) {
   const center = surfaceAlong(prims, headC, centerDir, eyeR, eyeR * 8);
   const painter = createEyeTexture(
@@ -926,7 +955,8 @@ function makeEyeDecal(
     irisRatio,
     wateryAmount,
     innerSide,
-    irisHighlightScale
+    irisHighlightScale,
+    expression
   );
   const geometry = makeSurfacePatch(
     prims,
@@ -1371,11 +1401,15 @@ export function buildCat(params, quality = 'full') {
       rigAnchorHints[`${prefix}Foot`] = V(sx * 0.16 * wid, 0.08, sz + 0.07);
     }
     const upY = bodyY + 0.08 + (0.5 + 0.4 * tl) * (1 - curl * 0.25);
+    // Keep only the root embedded. The old centered path stayed inside wide
+    // torsos and the smooth SDF union painted a broad tail-shaped body patch.
+    const tailSide = (Math.trunc(params.seed ?? 0) & 1) === 0 ? -1 : 1;
+    const tailX = getStandingTailX(wid, tailSide, curl);
     addTail([
-      V(0, bodyY + 0.1, -0.5),
-      V(0, bodyY + 0.26 + 0.18 * tl, -0.58 - 0.16 * tl),
-      V(0, upY, -0.52 - 0.18 * tl + curl * 0.26),
-      V(0, upY + 0.09 - curl * 0.2, -0.4 - 0.13 * tl + curl * 0.46),
+      V(tailX.root, bodyY + 0.1, -0.5),
+      V(tailX.shoulder, bodyY + 0.26 + 0.18 * tl, -0.58 - 0.16 * tl),
+      V(tailX.mid, upY, -0.52 - 0.18 * tl + curl * 0.26),
+      V(tailX.tip, upY + 0.09 - curl * 0.2, -0.4 - 0.13 * tl + curl * 0.46),
     ], 0.09, 0.055);
     Object.assign(rigAnchorHints, tailRigHints);
     buttHint = V(0, bodyY + 0.02, -0.2);
@@ -2255,10 +2289,14 @@ export function buildCat(params, quality = 'full') {
   face.name = 'face';
   cat.add(face);
 
+  const eyeOffsetY = THREE.MathUtils.clamp(params.eyeOffsetY ?? 0, -0.45, 0.45);
+  const noseOffsetY = THREE.MathUtils.clamp(params.noseOffsetY ?? 0, -0.45, 0.45);
+  const mouthOffsetY = THREE.MathUtils.clamp(params.mouthOffsetY ?? 0, -0.45, 0.45);
+
   // 眼睛：纹理投射到头部真实曲面，侧视不会再露出独立白色圆片。
   const eyeR = hr * 0.26 * params.eyeSize;
   const ex = resolveEyeHorizontalOffset(hr, params.eyeSpacing);
-  const ey = headC.y - hr * 0.06;
+  const ey = headC.y + hr * (-0.06 + eyeOffsetY);
   const effectiveIrisScale = THREE.MathUtils.clamp(params.irisScale ?? 0.65, 0.1, 1.3);
   const irisRatio = THREE.MathUtils.clamp(0.8 * effectiveIrisScale, 0.12, 0.92);
   const eyeAnimators = [];
@@ -2275,7 +2313,8 @@ export function buildCat(params, quality = 'full') {
       irisRatio,
       params.wateryEyes ? (params.wateryEyeShape ?? 1.1) : 0,
       -s,
-      params.irisHighlightScale ?? 1
+      params.irisHighlightScale ?? 1,
+      params.expression ?? 'normal'
     );
     eyeAnimators.push(eye.userData.eyeAnimator);
     face.add(eye);
@@ -2288,16 +2327,43 @@ export function buildCat(params, quality = 'full') {
   const noseMat = new THREE.MeshToonMaterial({ color: '#dd8b92', gradientMap: toonGradientMap() });
   const nose = new THREE.Mesh(new THREE.SphereGeometry(hr * 0.085, 14, 10), noseMat);
   nose.geometry.scale(1.3, 0.75, 0.6);
-  nose.position.set(muzzle.x, muzzle.y + hr * 0.12, muzzle.z + hr * 0.19);
+  nose.position.set(muzzle.x, muzzle.y + hr * (0.12 + noseOffsetY), muzzle.z + hr * 0.19);
   face.add(nose);
 
-  // ω 嘴
+  // 表情嘴：默认/坏笑沿用 ω 嘴；委屈/生气使用轻量曲线，不增加模型资产。
   const mouthMat = new THREE.MeshBasicMaterial({ color: '#8a5f58' });
-  for (const s of [-1, 1]) {
-    const arc = new THREE.Mesh(new THREE.TorusGeometry(hr * 0.07, hr * 0.012, 6, 16, Math.PI * (2 / 3)), mouthMat);
-    arc.position.set(muzzle.x + s * hr * 0.065, muzzle.y + hr * 0.04, muzzle.z + hr * 0.24);
-    arc.rotation.z = Math.PI * (7 / 6);
-    face.add(arc);
+  const expression = params.expression ?? 'normal';
+  if (expression === 'sad' || expression === 'angry') {
+    const width = hr * (expression === 'angry' ? 0.13 : 0.11);
+    const lift = hr * (expression === 'angry' ? 0.075 : 0.06);
+    const frownCurve = new THREE.QuadraticBezierCurve3(
+      V(-width, 0, 0),
+      V(0, lift, 0),
+      V(width, 0, 0)
+    );
+    const frown = new THREE.Mesh(new THREE.TubeGeometry(frownCurve, 18, hr * 0.012, 6, false), mouthMat);
+    frown.position.set(muzzle.x, muzzle.y + hr * (0.005 + mouthOffsetY), muzzle.z + hr * 0.245);
+    face.add(frown);
+    if (expression === 'angry') {
+      const noseBottomY = hr * (0.075 + noseOffsetY);
+      const mouthPeakY = hr * (0.005 + mouthOffsetY) + lift;
+      const noseLineCurve = new THREE.QuadraticBezierCurve3(
+        V(0, noseBottomY, 0),
+        V(0, (noseBottomY + mouthPeakY) * 0.5, 0),
+        V(0, mouthPeakY, 0)
+      );
+      const noseLine = new THREE.Mesh(new THREE.TubeGeometry(noseLineCurve, 8, hr * 0.01, 6, false), mouthMat);
+      noseLine.position.set(muzzle.x, muzzle.y, muzzle.z + hr * 0.245);
+      face.add(noseLine);
+    }
+  } else {
+    const mouthScale = expression === 'smug' ? 1.12 : 1;
+    for (const s of [-1, 1]) {
+      const arc = new THREE.Mesh(new THREE.TorusGeometry(hr * 0.07 * mouthScale, hr * 0.012, 6, 16, Math.PI * (2 / 3)), mouthMat);
+      arc.position.set(muzzle.x + s * hr * 0.065 * mouthScale, muzzle.y + hr * (0.04 + mouthOffsetY), muzzle.z + hr * 0.24);
+      arc.rotation.z = Math.PI * (7 / 6);
+      face.add(arc);
+    }
   }
 
   // 胡须：深色墨线，与描边同一语言
