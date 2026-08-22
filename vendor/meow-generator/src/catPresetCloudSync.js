@@ -9,6 +9,14 @@ import {
 
 export const CAT_PRESET_SYNC_STORAGE_KEY = 'meow-generator-cat-preset-sync-v1';
 
+export function formatPresetSyncError(error) {
+  const clean = (value) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, 160);
+  const code = clean(error?.code ?? error?.error?.code ?? error?.status);
+  const message = clean(error?.message ?? error?.error?.message ?? error?.msg);
+  if (code && message && !message.includes(code)) return `${code} · ${message}`;
+  return code || message || 'UNKNOWN_ERROR';
+}
+
 export function createCloudPresetRemote({
   env,
   loadSdk = () => import('@cloudbase/js-sdk'),

@@ -89,8 +89,8 @@ export function createPresetSyncCoordinator({ remote, readPresets, replacePreset
       return false;
     }
   };
-  const status = (value, expectedGeneration = generation, expectedCode = state.code) => {
-    if (generation === expectedGeneration && state.code === expectedCode) onStatus(value);
+  const status = (value, expectedGeneration = generation, expectedCode = state.code, detail) => {
+    if (generation === expectedGeneration && state.code === expectedCode) onStatus(value, detail);
   };
 
   const runWrites = async () => {
@@ -101,12 +101,12 @@ export function createPresetSyncCoordinator({ remote, readPresets, replacePreset
       status('syncing', attempt.generation, attempt.code);
       try {
         await remote.push(attempt.code, snapshot);
-      } catch {
+      } catch (error) {
         const current = generation === attempt.generation && state.code === attempt.code;
         if (current) {
           state.dirty = true;
           persistState();
-          status('error', attempt.generation, attempt.code);
+          status('error', attempt.generation, attempt.code, error);
           return;
         }
         continue;
@@ -160,8 +160,10 @@ export function createPresetSyncCoordinator({ remote, readPresets, replacePreset
       state.dirty = false;
       persistState();
       status('synced', attempt.generation, attempt.code);
-    } catch {
-      if (generation === attempt.generation && state.code === attempt.code) status('error', attempt.generation, attempt.code);
+    } catch (error) {
+      if (generation === attempt.generation && state.code === attempt.code) {
+        status('error', attempt.generation, attempt.code, error);
+      }
     }
   };
 

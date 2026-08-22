@@ -30,7 +30,11 @@ import {
   updateCatPresetParameters,
   upsertCatPreset,
 } from './catPresets.js';
-import { createPresetCloudSync } from './catPresetCloudSync.js';
+import { createPresetCloudSync, formatPresetSyncError } from './catPresetCloudSync.js';
+import {
+  setExclusiveSectionCollapsed,
+  setParameterPanelHidden,
+} from './panelUiState.js';
 import {
   WEATHER_AMOUNT_LIMITS,
   createCloudField,
@@ -1525,6 +1529,7 @@ renderer.setAnimationLoop(() => {
 
 // ---------------------------------------------------------------- 控制面板
 const controlsEl = document.getElementById('controls');
+const topLevelSections = [];
 
 function section(title, { collapsible = false, collapsed = false, badge = '' } = {}) {
   const div = document.createElement('div');
@@ -1551,9 +1556,10 @@ function section(title, { collapsible = false, collapsed = false, badge = '' } =
     chevron.setAttribute('aria-hidden', 'true');
     h.appendChild(chevron);
 
+    const entry = { root: div, heading: h };
+    topLevelSections.push(entry);
     const setCollapsed = (nextCollapsed) => {
-      div.classList.toggle('collapsed', nextCollapsed);
-      h.setAttribute('aria-expanded', String(!nextCollapsed));
+      setExclusiveSectionCollapsed(topLevelSections, entry, nextCollapsed);
     };
     const toggle = () => setCollapsed(!div.classList.contains('collapsed'));
     h.addEventListener('click', toggle);
@@ -1713,9 +1719,9 @@ function colorRow(parent, name, { get, set }) {
 const refreshers = [];
 const sliderSyncs = [];
 
-// 顶层保留常用分类；体型与花纹默认展开，细项按需要再展开。
+// 顶层分类保持手风琴互斥；默认只展开体型，细项按需要再展开。
 const bodySec = section('体型', { collapsible: true, collapsed: false });
-const coatSec = section('花纹与眼睛', { collapsible: true, collapsed: false });
+const coatSec = section('花纹与眼睛', { collapsible: true, collapsed: true });
 const sceneSec = section('场景与渲染', { collapsible: true, collapsed: true });
 const presetSec = section('预设保存', { collapsible: true, collapsed: true });
 const motionSec = section('Motion', {
@@ -1974,8 +1980,11 @@ presetSync = createPresetCloudSync({
     if (!persistCatPresets(nextPresets)) throw new Error('LOCAL_PRESET_WRITE_FAILED');
     renderCatPresets();
   },
-  onStatus: (value) => {
-    presetSyncStatus.textContent = PRESET_SYNC_STATUS[value] ?? PRESET_SYNC_STATUS.failed;
+  onStatus: (value, detail) => {
+    const message = PRESET_SYNC_STATUS[value] ?? PRESET_SYNC_STATUS.failed;
+    presetSyncStatus.textContent = value === 'error' || value === 'failed'
+      ? `${message}（${formatPresetSyncError(detail)}）`
+      : message;
     renderPresetSync();
   },
 });
@@ -3039,6 +3048,9 @@ const mobileSectionNav = document.getElementById('mobile-section-nav');
 const mobilePanel = document.getElementById('panel');
 const mobilePanelToggle = document.getElementById('mobile-panel-toggle');
 const mobilePanelToggleLabel = mobilePanelToggle?.querySelector('.mobile-panel-toggle__label');
+const parameterPanelToggle = document.getElementById('parameter-panel-toggle');
+const parameterPanelToggleLabel = parameterPanelToggle?.querySelector('.parameter-panel-toggle__label');
+const appShell = document.getElementById('app');
 const mobileSections = [...controlsEl.querySelectorAll(':scope > .section')];
 const mobilePanelMedia = window.matchMedia(
   '(max-width: 768px), (max-height: 560px) and (orientation: landscape)'
@@ -3046,6 +3058,7 @@ const mobilePanelMedia = window.matchMedia(
 const mobilePanelResizeMedia = window.matchMedia('(max-width: 768px)');
 let activeMobileSection = 0;
 let mobilePanelCollapsed = mobilePanelMedia.matches;
+let parameterPanelHidden = false;
 let suppressMobilePanelToggle = false;
 const mobilePanelResize = {
   pointerId: -1,
@@ -3087,6 +3100,27 @@ function updateMobilePanelToggle() {
   mobilePanelToggle?.setAttribute('aria-label', ariaLabel);
   mobilePanelToggle?.setAttribute('aria-expanded', String(!mobilePanelCollapsed));
 }
+
+function updateParameterPanelVisibility() {
+  const copy = MOBILE_PANEL_COPY[activeInterfaceLocale()] ?? MOBILE_PANEL_COPY['zh-CN'];
+  setParameterPanelHidden({
+    app: appShell,
+    panel: mobilePanel,
+    button: parameterPanelToggle,
+    label: parameterPanelToggleLabel,
+  }, parameterPanelHidden, {
+    hide: copy.expanded,
+    hideAria: copy.expandedAria,
+    show: copy.collapsed,
+    showAria: copy.collapsedAria,
+  });
+}
+
+parameterPanelToggle?.addEventListener('click', () => {
+  parameterPanelHidden = !parameterPanelHidden;
+  updateParameterPanelVisibility();
+  requestAnimationFrame(resize);
+});
 
 function setMobilePanelCollapsed(collapsed) {
   mobilePanelCollapsed = mobilePanelMedia.matches && collapsed;
@@ -3201,9 +3235,11 @@ window.addEventListener('meow:localechange', () => {
     button.textContent = mobileSectionTitle(mobileSections[index]);
   });
   updateMobilePanelToggle();
+  updateParameterPanelVisibility();
   speechBubbles.refreshLocale();
 });
 setMobilePanelCollapsed(mobilePanelMedia.matches);
+updateParameterPanelVisibility();
 
 // ---------------------------------------------------------------- 启动
 resize();

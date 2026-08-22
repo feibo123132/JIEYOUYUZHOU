@@ -12,6 +12,7 @@ import {
 import {
   createCloudPresetRemote,
   createPresetCloudSync,
+  formatPresetSyncError,
 } from '../src/catPresetCloudSync.js';
 
 const CODE_A = 'ABCDEFGHJKLMNPQRSTUV';
@@ -42,11 +43,15 @@ assert.equal(parsePresetSyncState('{broken'), null);
 assert.deepEqual(validateCloudPresetSnapshot([preset()]), [preset()]);
 assert.throws(() => validateCloudPresetSnapshot([{ ...preset(), extra: true }]), /INVALID_CLOUD_SNAPSHOT/);
 assert.throws(() => validateCloudPresetSnapshot([{ ...preset(), parameters: { headSize: 1.2, unknown: 1 } }]), /INVALID_CLOUD_SNAPSHOT/);
+assert.equal(formatPresetSyncError({ code: 'PERMISSION_DENIED', message: 'request rejected' }), 'PERMISSION_DENIED · request rejected');
+assert.equal(formatPresetSyncError(new Error('network unavailable')), 'network unavailable');
+assert.equal(formatPresetSyncError(null), 'UNKNOWN_ERROR');
 
 function harness({ state = null, presets = [preset()], pull = async () => null, push = async () => ({ ok: true }) } = {}) {
   let localState = state;
   let localPresets = presets;
   const statuses = [];
+  const statusDetails = [];
   const pushes = [];
   const coordinator = createPresetSyncCoordinator({
     remote: {
@@ -60,13 +65,17 @@ function harness({ state = null, presets = [preset()], pull = async () => null, 
     replacePresets: (next) => { localPresets = next; },
     readState: () => localState,
     writeState: (next) => { localState = next; },
-    onStatus: (status) => statuses.push(status),
+    onStatus: (status, detail) => {
+      statuses.push(status);
+      statusDetails.push({ status, detail });
+    },
   });
   return {
     coordinator,
     getState: () => localState,
     getPresets: () => localPresets,
     statuses,
+    statusDetails,
     pushes,
   };
 }
@@ -99,6 +108,7 @@ function harness({ state = null, presets = [preset()], pull = async () => null, 
   await h.coordinator.start();
   assert.equal(h.getState().dirty, true, 'failed upload keeps dirty state');
   assert.equal(h.statuses.at(-1), 'error');
+  assert.match(h.statusDetails.at(-1).detail.message, /offline/, 'failed upload exposes its real error');
 }
 
 {
