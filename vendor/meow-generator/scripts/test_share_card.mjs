@@ -54,7 +54,7 @@ assert.equal(shouldCaptureShareCardShortcut({ key: 'p', active: false }), false)
 assert.equal(shouldCaptureShareCardShortcut({ key: 'p', active: true, repeat: true }), false);
 assert.equal(shouldCaptureShareCardShortcut({ key: 'p', active: true, disabled: true }), false);
 assert.equal(shouldCaptureShareCardShortcut({ key: 'p', active: true, editable: true }), false);
-assert.equal(SHARE_CARD_REPOSITORY.label, '欲买桂花同载酒，终不似，少年游。希望你的幸福能一直陪着你😊');
+assert.equal(SHARE_CARD_REPOSITORY.label, '欲买桂花同载酒，终不似，少年游。希望年少时的幸福能一直伴你左右😊');
 assert.equal(getShareCardFilename(42), 'meow_card_42.png');
 assert.equal(getShareCardFilename(-42), 'meow_card_42.png');
 

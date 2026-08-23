@@ -50,8 +50,8 @@ function validatePresets(presets) {
 
 function validateRequest(event) {
   if (!event || !['pull','push'].includes(event.action)) throw new Error('INVALID_ACTION');
-  const expectedKeys = event.action === 'push' ? ['action','code','presets'] : ['action','code'];
-  if (Object.keys(event).some((key) => !expectedKeys.includes(key))) throw new Error('INVALID_REQUEST');
+  // CloudBase appends authentication metadata to Web SDK events. Validate and
+  // return only business fields instead of rejecting platform-managed keys.
   if (Buffer.byteLength(JSON.stringify(event), 'utf8') > 128 * 1024) throw new Error('PAYLOAD_TOO_LARGE');
   const code = normalizeCode(event.code);
   return { action: event.action, code, presets: event.action === 'push' ? validatePresets(event.presets) : undefined };

@@ -12,7 +12,7 @@ export const SHARE_CARD_EDITION = 'JIEYOU×生命万岁企划';
 export const HAPPINESS_CARD_MARK = 'GXMU';
 
 export const SHARE_CARD_REPOSITORY = Object.freeze({
-  label: '欲买桂花同载酒，终不似，少年游。希望你的幸福能一直陪着你😊',
+  label: '欲买桂花同载酒，终不似，少年游。希望年少时的幸福能一直伴你左右😊',
 });
 
 export const HAPPINESS_CARD_CANVAS_LAYOUT = Object.freeze({

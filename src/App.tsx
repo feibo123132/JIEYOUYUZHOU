@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Toaster, toast } from 'sonner';
 import ThemeHub from './components/Theme/ThemeHub';
+import KeepsakeStudio from './components/Keepsake/KeepsakeStudio';
 import WelcomeScreen from './components/Welcome/WelcomeScreen';
 import NicknameInput from './components/Welcome/NicknameInput';
 import StarrySky from './components/StarrySky/StarrySky';
@@ -24,6 +25,7 @@ function App() {
   const {
     activeTheme,
     currentView,
+    enterKeepsakeStudio,
     enterStarrySky,
     enterTheme,
     returnToWelcome,
@@ -169,7 +171,11 @@ function App() {
         }}
       />
 
-      {currentView === 'theme-hub' && <ThemeHub onSelect={handleSelectTheme} />}
+      {currentView === 'theme-hub' && (
+        <ThemeHub onSelect={handleSelectTheme} onOpenKeepsake={enterKeepsakeStudio} />
+      )}
+
+      {currentView === 'keepsake-studio' && <KeepsakeStudio onBack={returnToThemeHub} />}
 
       {currentView === 'welcome' && theme && (
         <div className="relative z-10 min-h-screen">

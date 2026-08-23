@@ -21,7 +21,6 @@ test('rejects invalid requests', async () => {
   const { handler } = setup();
   for (const event of [
     { action: 'delete', code },
-    { action: 'pull', code, unknown: true },
     { action: 'pull', code: 'short' },
     { action: 'push', code, presets: Array(21).fill(preset) },
     { action: 'push', code, presets: [{ ...preset, parameters: { unknown: 1 } }] },
@@ -29,6 +28,16 @@ test('rejects invalid requests', async () => {
     { action: 'push', code, presets: [{ ...preset, parameters: { coatId: 'unknown' } }] },
     { action: 'push', code, presets: [{ ...preset, name: 'x'.repeat(140000) }] },
   ]) assert.equal((await handler(event)).ok, false);
+});
+
+test('accepts platform metadata injected into Web SDK events', async () => {
+  const { handler } = setup();
+  assert.deepEqual(await handler({
+    action: 'pull',
+    code,
+    userInfo: { uid: 'anonymous-user' },
+    $cloudbaseAccessToken: 'platform-managed-token',
+  }), { ok: true, presets: null });
 });
 
 test('stores and retrieves one complete snapshot', async () => {

@@ -133,7 +133,7 @@ test('ships the latest happiness-card copy and dedicated layout in public bundle
   assert.match(bundleText, /JIEYOU×生命万岁企划/);
   assert.match(bundleText, /GXMU/);
   assert.match(bundleText, /（P）/);
-  assert.match(bundleText, /欲买桂花同载酒，终不似，少年游。希望你的幸福能一直陪着你😊/);
+  assert.match(bundleText, /欲买桂花同载酒，终不似，少年游。希望年少时的幸福能一直伴你左右😊/);
   assert.match(bundleText, /data-happiness/);
   assert.match(bundleText, /share-card-live-title/);
   assert.match(bundleText, /jieyou:happiness-star-context/);

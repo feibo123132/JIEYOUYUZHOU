@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { ThemeId } from '../themes/themeConfig';
 
-export type AppView = 'theme-hub' | 'welcome' | 'starry-sky';
+export type AppView = 'theme-hub' | 'welcome' | 'starry-sky' | 'keepsake-studio';
 
 interface User {
   id: string;
@@ -32,6 +32,7 @@ interface AppActions {
   setStars: (stars: Star[]) => void;
   addStar: (star: Star) => void;
   enterTheme: (theme: ThemeId) => void;
+  enterKeepsakeStudio: () => void;
   enterStarrySky: () => void;
   returnToWelcome: () => void;
   returnToThemeHub: () => void;
@@ -61,6 +62,7 @@ const useAppStore = create<AppState & AppActions>((set) => ({
     stars: [],
     error: null,
   }),
+  enterKeepsakeStudio: () => set({ currentView: 'keepsake-studio' }),
   enterStarrySky: () => set((state) => state.activeTheme ? {
     currentView: 'starry-sky',
     stars: [],

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowUpRight, Orbit, PawPrint, Sparkles, SunMedium } from 'lucide-react';
+import { ArrowUpRight, Camera, Orbit, PawPrint, Sparkles, SunMedium } from 'lucide-react';
 import services from '../../services/starService';
 import { getThemeConfig, THEME_IDS, type ThemeId } from '../../themes/themeConfig';
 import { getMeowGeneratorUrl } from '../../utils/meowGenerator';
@@ -8,11 +8,12 @@ const { starService } = services;
 
 interface ThemeHubProps {
   onSelect: (themeId: ThemeId) => void;
+  onOpenKeepsake: () => void;
 }
 
 type CountState = Record<ThemeId, number | null | undefined>;
 
-const ThemeHub: React.FC<ThemeHubProps> = ({ onSelect }) => {
+const ThemeHub: React.FC<ThemeHubProps> = ({ onSelect, onOpenKeepsake }) => {
   const [counts, setCounts] = useState<CountState>({ jieyou: undefined, life: undefined });
 
   useEffect(() => {
@@ -102,11 +103,12 @@ const ThemeHub: React.FC<ThemeHubProps> = ({ onSelect }) => {
           })}
         </section>
 
+        <section className="mt-5 grid grid-cols-1 gap-5 md:mt-7 md:grid-cols-2 md:gap-7" aria-label="创作工具">
         <a
           href={getMeowGeneratorUrl()}
           aria-label="进入猫猫生成器"
           onClick={() => { (window as any).playClickSound?.(); }}
-          className="group relative mt-5 flex min-h-28 overflow-hidden rounded-[1.7rem] border border-orange-200/20 bg-[#17100c]/85 p-5 text-left backdrop-blur-xl motion-safe:transition motion-safe:duration-500 motion-safe:hover:-translate-y-1 focus:outline-none focus:ring-2 focus:ring-emerald-200/70 md:mt-7 md:items-center md:justify-between md:px-7"
+          className="group relative flex min-h-36 overflow-hidden rounded-[1.7rem] border border-orange-200/20 bg-[#17100c]/85 p-5 text-left backdrop-blur-xl motion-safe:transition motion-safe:duration-500 motion-safe:hover:-translate-y-1 focus:outline-none focus:ring-2 focus:ring-emerald-200/70 md:items-center md:px-7"
         >
           <span className="pointer-events-none absolute -left-16 -top-24 h-52 w-52 rounded-full bg-orange-400/20 blur-3xl motion-safe:transition motion-safe:duration-700 motion-safe:group-hover:bg-orange-300/30" />
           <span className="pointer-events-none absolute -bottom-24 right-10 h-48 w-48 rounded-full bg-emerald-300/10 blur-3xl motion-safe:transition motion-safe:duration-700 motion-safe:group-hover:bg-emerald-200/20" />
@@ -128,6 +130,31 @@ const ThemeHub: React.FC<ThemeHubProps> = ({ onSelect }) => {
             <ArrowUpRight className="h-4 w-4 motion-safe:transition-transform motion-safe:duration-300 motion-safe:group-hover:translate-x-1 motion-safe:group-hover:-translate-y-1" />
           </span>
         </a>
+
+        <button
+          type="button"
+          onClick={() => { (window as any).playClickSound?.(); onOpenKeepsake(); }}
+          aria-label="进入留影工坊"
+          className="group relative flex min-h-36 overflow-hidden rounded-[1.7rem] border border-sky-200/20 bg-[#0b151b]/85 p-5 text-left backdrop-blur-xl motion-safe:transition motion-safe:duration-500 motion-safe:hover:-translate-y-1 focus:outline-none focus:ring-2 focus:ring-sky-200/70 md:items-center md:px-7"
+        >
+          <span className="pointer-events-none absolute -right-14 -top-20 h-48 w-48 rounded-full bg-sky-300/15 blur-3xl motion-safe:transition motion-safe:duration-700 motion-safe:group-hover:bg-sky-200/25" />
+          <span className="absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-sky-200/70 to-transparent" />
+          <span className="relative flex items-center gap-4 md:gap-5">
+            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl border border-sky-200/20 bg-sky-300/10 text-sky-100">
+              <Camera className="h-6 w-6" />
+            </span>
+            <span>
+              <span className="block text-[10px] font-bold tracking-[0.28em] text-sky-200/80">MEMORY STUDIO</span>
+              <span className="mt-1 block font-serif text-xl font-black tracking-tight text-white md:text-2xl">留影</span>
+              <span className="mt-1 block text-xs leading-6 text-white/50 md:text-sm">放进一张照片，写下此刻，再为它挑一副纪念外框。</span>
+              <span className="mt-3 inline-flex items-center gap-2 text-sm font-bold text-sky-100">
+                制作一张留影
+                <ArrowUpRight className="h-4 w-4 motion-safe:transition-transform motion-safe:duration-300 motion-safe:group-hover:translate-x-1 motion-safe:group-hover:-translate-y-1" />
+              </span>
+            </span>
+          </span>
+        </button>
+        </section>
 
         <p className="mt-7 text-center text-xs tracking-[0.12em] text-white/30">
           昵称会与你同行 · 两片星空的记忆彼此独立

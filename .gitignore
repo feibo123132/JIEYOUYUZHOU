@@ -25,3 +25,9 @@ dist-ssr
 
 # Local visual brainstorming artifacts
 .superpowers/
+
+# Local Codex browser/runtime artifacts
+.codex-temp/
+
+# Generated cloud-function deployment bundles
+artifacts/*-deploy-*.zip

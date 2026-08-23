@@ -1426,8 +1426,10 @@ select {
   top: 50%;
   right: 8px;
   display: inline-flex;
-  min-height: 34px;
-  padding: 6px 8px 6px 11px;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  justify-content: center;
   align-items: center;
   gap: 5px;
   border: 2px solid rgba(93, 73, 58, 0.6);
@@ -1440,6 +1442,10 @@ select {
   cursor: pointer;
   transform: translateY(-50%);
   backdrop-filter: blur(7px);
+}
+
+.parameter-panel-toggle__label {
+  display: none;
 }
 
 .parameter-panel-toggle:hover {
