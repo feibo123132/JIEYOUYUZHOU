@@ -3,11 +3,14 @@ import { ArrowLeft, Camera, Check, Download, ImagePlus, RefreshCw, RotateCcw, Vi
 import {
   KEEPSAKE_FRAMES,
   KEEPSAKE_HEIGHT,
+  KEEPSAKE_SENTENCES,
   KEEPSAKE_WIDTH,
   clampPhotoTransform,
   normalizeKeepsakeText,
   renderKeepsake,
   type KeepsakeFrameId,
+  type KeepsakeLocation,
+  type KeepsakeSentence,
   type Point,
 } from './keepsakeCanvas'
 import {
@@ -63,7 +66,10 @@ export default function KeepsakeStudio({ onBack }: KeepsakeStudioProps) {
   const [title, setTitle] = useState('今日留影')
   const [body, setBody] = useState('')
   const [date, setDate] = useState(() => getLocalDateInputValue())
-  const [signature, setSignature] = useState('')
+  const [location, setLocation] = useState<KeepsakeLocation>('医大')
+  const [sentence, setSentence] = useState<KeepsakeSentence>(() => (
+    KEEPSAKE_SENTENCES[Math.floor(Math.random() * KEEPSAKE_SENTENCES.length)] ?? KEEPSAKE_SENTENCES[0]
+  ))
   const [error, setError] = useState('')
   const [isExporting, setIsExporting] = useState(false)
   const [cameraSnapshot, setCameraSnapshot] = useState<CameraSnapshot>({
@@ -89,9 +95,10 @@ export default function KeepsakeStudio({ onBack }: KeepsakeStudioProps) {
       title,
       body,
       date,
-      signature,
+      location,
+      sentence,
     })
-  }, [body, date, frameId, image, imageSize, photoView, signature, title])
+  }, [body, date, frameId, image, imageSize, location, photoView, sentence, title])
 
   const loadPhotoFile = useCallback(async (file: File, signal?: AbortSignal) => {
     if (!isSupportedImage(file)) {
@@ -235,7 +242,7 @@ export default function KeepsakeStudio({ onBack }: KeepsakeStudioProps) {
             className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/35 px-4 py-2 text-sm text-white/70 backdrop-blur-xl transition hover:border-white/25 hover:text-white focus:outline-none focus:ring-2 focus:ring-sky-200/70"
           >
             <ArrowLeft className="h-4 w-4" />
-            返回星空入口
+            返回
           </button>
           <span className="hidden text-[10px] font-bold tracking-[0.3em] text-sky-200/55 sm:block">JIEYOU · MEMORY STUDIO</span>
         </header>
@@ -328,7 +335,7 @@ export default function KeepsakeStudio({ onBack }: KeepsakeStudioProps) {
                 />
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-4 sm:grid-cols-3">
                 <label className="text-xs font-bold tracking-[0.12em] text-white/55">
                   标题
                   <input
@@ -348,7 +355,31 @@ export default function KeepsakeStudio({ onBack }: KeepsakeStudioProps) {
                     className="mt-2 w-full rounded-xl border border-white/10 bg-black/25 px-4 py-3 text-sm font-normal tracking-normal text-white outline-none transition focus:border-sky-200/50 [color-scheme:dark]"
                   />
                 </label>
+                <label className="text-xs font-bold tracking-[0.12em] text-white/55">
+                  地点
+                  <select
+                    value={location}
+                    onChange={(event) => setLocation(event.target.value as KeepsakeLocation)}
+                    className="mt-2 w-full rounded-xl border border-white/10 bg-black/25 px-4 py-3 text-sm font-normal tracking-normal text-white outline-none transition focus:border-sky-200/50 [color-scheme:dark]"
+                  >
+                    <option value="医大">医大</option>
+                    <option value="南湖">南湖</option>
+                  </select>
+                </label>
               </div>
+
+              <label className="block text-xs font-bold tracking-[0.12em] text-white/55">
+                底部句子
+                <select
+                  value={sentence}
+                  onChange={(event) => setSentence(event.target.value as KeepsakeSentence)}
+                  className="mt-2 w-full rounded-xl border border-white/10 bg-black/25 px-4 py-3 text-sm font-normal tracking-normal text-white outline-none transition focus:border-sky-200/50 [color-scheme:dark]"
+                >
+                  {KEEPSAKE_SENTENCES.map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
+              </label>
 
               <label className="block text-xs font-bold tracking-[0.12em] text-white/55">
                 想留下的话
@@ -361,17 +392,6 @@ export default function KeepsakeStudio({ onBack }: KeepsakeStudioProps) {
                   placeholder="这一刻，发生了什么？"
                 />
                 <span className="mt-1.5 block text-right text-[10px] font-normal tracking-normal text-white/30">{Array.from(body).length}/80</span>
-              </label>
-
-              <label className="block text-xs font-bold tracking-[0.12em] text-white/55">
-                署名
-                <input
-                  value={signature}
-                  maxLength={16}
-                  onChange={(event) => setSignature(normalizeKeepsakeText('signature', event.target.value))}
-                  className="mt-2 w-full rounded-xl border border-white/10 bg-black/25 px-4 py-3 text-sm font-normal tracking-normal text-white outline-none transition placeholder:text-white/25 focus:border-sky-200/50"
-                  placeholder="可留空"
-                />
               </label>
 
               <output aria-live="polite" className={`block min-h-5 text-sm ${error ? 'text-rose-300' : 'text-white/35'}`}>

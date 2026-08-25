@@ -139,4 +139,24 @@ test('ships the latest happiness-card copy and dedicated layout in public bundle
   assert.match(bundleText, /jieyou:happiness-star-context/);
   assert.match(bundleText, /createdAt/);
   assert.match(bundleText, /日期未知/);
+  assert.match(bundleText, /JIEYOU留影/);
+  assert.match(bundleText, /keepsake/);
+});
+
+test('places the JIEYOU keepsake link directly below preset saving', () => {
+  const source = readFileSync(path.join(projectRoot, 'vendor/meow-generator/src/main.js'), 'utf8');
+  const styles = readFileSync(path.join(projectRoot, 'vendor/meow-generator/src/style.css'), 'utf8');
+  const presetIndex = source.indexOf("section('预设保存'");
+  const keepsakeIndex = source.indexOf("navigationSection('JIEYOU留影'");
+  const motionIndex = source.indexOf("section('Motion'");
+
+  assert.ok(presetIndex >= 0, 'preset saving section must exist');
+  assert.ok(keepsakeIndex > presetIndex, 'JIEYOU留影 must follow preset saving');
+  assert.ok(motionIndex > keepsakeIndex, 'JIEYOU留影 must appear before Motion');
+  assert.match(source, /view.*keepsake/);
+  assert.doesNotMatch(
+    styles,
+    /\.navigation-section\s*>\s*h2\s*\{[^}]*\bright\s*:/s,
+    'JIEYOU留影 title must size to its content instead of stretching across the row',
+  );
 });

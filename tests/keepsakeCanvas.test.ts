@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
 import {
@@ -63,7 +64,7 @@ test('clamps zoom and pan so the photo always covers the window', () => {
 })
 
 test('renderer uses selected frame configuration and fixed output geometry', () => {
-  const calls: Array<{ name: string; args: unknown[]; fillStyle?: string }> = []
+  const calls: Array<{ name: string; args: unknown[]; fillStyle?: string; textAlign?: string }> = []
   const ctx = new Proxy({
     fillStyle: '',
     strokeStyle: '',
@@ -76,7 +77,7 @@ test('renderer uses selected frame configuration and fixed output geometry', () 
   }, {
     get(target, key: string) {
       if (key in target) return (target as Record<string, unknown>)[key]
-      return (...args: unknown[]) => calls.push({ name: key, args, fillStyle: target.fillStyle })
+      return (...args: unknown[]) => calls.push({ name: key, args, fillStyle: target.fillStyle, textAlign: target.textAlign })
     },
     set(target, key: string, value) {
       (target as Record<string, unknown>)[key] = value
@@ -94,12 +95,33 @@ test('renderer uses selected frame configuration and fixed output geometry', () 
     title: '今晚的星光',
     body: '愿这一刻被好好收藏。',
     date: '2026-08-23',
-    signature: 'JIEYOU',
+    location: '医大',
+    sentence: '今晚校园跑吗？一起呗！',
   })
 
   assert.equal(KEEPSAKE_WIDTH, 1200)
   assert.equal(KEEPSAKE_HEIGHT, 1600)
   assert.ok(calls.some((call) => call.name === 'fillRect' && call.fillStyle === frame.palette.paper))
   assert.ok(calls.some((call) => call.name === 'fillText' && call.args[0] === '今晚的星光' && call.args[2] === frame.typography.titleY))
+  assert.ok(calls.some((call) => call.name === 'fillText' && call.args[0] === 'JIEYOU×生命万岁企划' && call.args[2] === 100))
+  assert.ok(calls.some((call) => call.name === 'fillText' && call.args[0] === '2026-08-23' && call.args[2] === 100))
+  assert.ok(calls.some((call) => call.name === 'fillText' && call.args[0] === '医大' && call.args[1] > 1000 && call.args[2] === 100))
+  assert.ok(!calls.some((call) => call.name === 'fillText' && call.args[0] === '2026-08-23' && call.args[2] === frame.typography.metaY))
+  assert.ok(calls.some((call) => call.name === 'fillText' && call.args[0] === '今晚校园跑吗？一起呗！' && call.args[1] === KEEPSAKE_WIDTH / 2 && call.args[2] === frame.typography.metaY && call.textAlign === 'center'))
+  assert.ok(!calls.some((call) => call.name === 'fillText' && call.args[0] === 'JIEYOU MEMORY'))
   assert.ok(calls.some((call) => call.name === 'arc' || call.name === 'lineTo'))
+})
+
+test('ships the five unnumbered campus sentences for random selection', () => {
+  const expected = [
+    '今晚校园跑吗？一起呗！',
+    '听说财院的伙食很好，咱周末去试试看？',
+    '快来快来，校车阿叔马上要走了。',
+    '医大的晚霞很美诶，骑车去逛逛校园吹吹风？',
+    '听学姐说，在图书馆一楼校园跑很高效。',
+  ]
+  const source = readFileSync(new URL('../src/components/Keepsake/keepsakeCanvas.ts', import.meta.url), 'utf8')
+
+  expected.forEach((sentence) => assert.match(source, new RegExp(sentence.replace(/[？。！]/g, '\\$&'))))
+  assert.doesNotMatch(source, /[①②③④⑤]/)
 })

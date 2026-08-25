@@ -61,12 +61,51 @@ test('keepsake studio navigation changes only the current view', () => {
   assert.equal(useAppStore.getState().currentView, 'theme-hub')
 })
 
-test('homepage exposes a first-class keepsake studio entry', () => {
+test('keepsake studio is opened from Meow Generator instead of a duplicate homepage card', () => {
   const hubSource = readFileSync(new URL('../src/components/Theme/ThemeHub.tsx', import.meta.url), 'utf8')
   const appSource = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
 
-  assert.match(hubSource, /onOpenKeepsake/)
-  assert.match(hubSource, /MEMORY STUDIO/)
-  assert.match(hubSource, />留影</)
+  assert.doesNotMatch(hubSource, /onOpenKeepsake/)
+  assert.doesNotMatch(hubSource, /MEMORY STUDIO/)
+  assert.doesNotMatch(hubSource, /进入留影工坊/)
+  assert.match(appSource, /view.*keepsake/)
+  assert.match(appSource, /enterKeepsakeStudio\(\)/)
   assert.match(appSource, /currentView === 'keepsake-studio'/)
+})
+
+test('song request navigation changes only the current view', () => {
+  const user = { id: 'u3', nickname: '点歌人', isAuthenticated: false }
+  useAppStore.setState({ activeTheme: 'jieyou', currentView: 'welcome', user })
+
+  useAppStore.getState().enterSongRequestStation()
+
+  assert.equal(useAppStore.getState().currentView, 'song-request')
+  assert.equal(useAppStore.getState().activeTheme, 'jieyou')
+  assert.deepEqual(useAppStore.getState().user, user)
+})
+
+test('homepage exposes a first-class song request entry', () => {
+  const hubSource = readFileSync(new URL('../src/components/Theme/ThemeHub.tsx', import.meta.url), 'utf8')
+  const appSource = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
+
+  assert.match(hubSource, /onOpenSongRequest/)
+  assert.match(hubSource, /SONG REQUEST/)
+  assert.match(hubSource, />点歌台</)
+  assert.match(appSource, /currentView === 'song-request'/)
+})
+
+test('all four homepage cards share one responsive size contract', () => {
+  const hubSource = readFileSync(new URL('../src/components/Theme/ThemeHub.tsx', import.meta.url), 'utf8')
+
+  assert.match(hubSource, /const HUB_CARD_SIZE_CLASS = 'h-\[300px\] md:h-\[310px\]'/)
+  assert.equal(hubSource.match(/\$\{HUB_CARD_SIZE_CLASS\}/g)?.length, 3)
+  assert.doesNotMatch(hubSource, /min-h-36/)
+})
+
+test('all four homepage cards share the compact content rhythm', () => {
+  const hubSource = readFileSync(new URL('../src/components/Theme/ThemeHub.tsx', import.meta.url), 'utf8')
+
+  assert.match(hubSource, /const HUB_CARD_CONTENT_CLASS = 'relative flex h-full flex-col gap-5'/)
+  assert.equal(hubSource.match(/\{HUB_CARD_CONTENT_CLASS\}/g)?.length, 3)
+  assert.doesNotMatch(hubSource, /justify-between gap-16/)
 })

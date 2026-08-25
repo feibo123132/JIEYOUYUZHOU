@@ -3,6 +3,15 @@ export const KEEPSAKE_HEIGHT = 1600
 export const PHOTO_WINDOW = Object.freeze({ x: 90, y: 185, width: 1020, height: 980 })
 
 export type KeepsakeFrameId = 'warm-paper' | 'midnight-map' | 'cream-collage'
+export type KeepsakeLocation = '医大' | '南湖'
+export const KEEPSAKE_SENTENCES = [
+  '今晚校园跑吗？一起呗！',
+  '听说财院的伙食很好，咱周末去试试看？',
+  '快来快来，校车阿叔马上要走了。',
+  '医大的晚霞很美诶，骑车去逛逛校园吹吹风？',
+  '听学姐说，在图书馆一楼校园跑很高效。',
+] as const
+export type KeepsakeSentence = (typeof KEEPSAKE_SENTENCES)[number]
 export type Point = { x: number; y: number }
 type PaletteKey = 'paper' | 'ink' | 'accent' | 'detail' | 'mat'
 
@@ -159,7 +168,8 @@ export interface KeepsakeRenderState {
   title: string
   body: string
   date: string
-  signature: string
+  location: KeepsakeLocation
+  sentence: KeepsakeSentence
 }
 
 function drawStar(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
@@ -214,7 +224,6 @@ export function renderKeepsake(ctx: CanvasRenderingContext2D, state: KeepsakeRen
   const frame = KEEPSAKE_FRAMES.find((item) => item.id === state.frameId) ?? KEEPSAKE_FRAMES[0]
   const title = normalizeKeepsakeText('title', state.title).trim() || '今日留影'
   const body = normalizeKeepsakeText('body', state.body)
-  const signature = normalizeKeepsakeText('signature', state.signature).trim()
 
   ctx.clearRect(0, 0, KEEPSAKE_WIDTH, KEEPSAKE_HEIGHT)
   ctx.fillStyle = frame.palette.paper
@@ -241,7 +250,21 @@ export function renderKeepsake(ctx: CanvasRenderingContext2D, state: KeepsakeRen
   ctx.font = '800 28px "Microsoft YaHei", sans-serif'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  ctx.fillText('JIEYOU · 留影', 237, 100)
+  ctx.fillText('JIEYOU×生命万岁企划', 237, 100)
+
+  ctx.fillStyle = frame.palette.detail
+  roundedPath(ctx, 780, 62, 220, 76, 24)
+  ctx.fill()
+  ctx.strokeStyle = frame.palette.ink
+  ctx.lineWidth = 5
+  ctx.stroke()
+  roundedPath(ctx, 1018, 62, 120, 76, 24)
+  ctx.fill()
+  ctx.stroke()
+  ctx.fillStyle = frame.palette.ink
+  ctx.font = '800 24px "Microsoft YaHei", sans-serif'
+  ctx.fillText(state.date || '', 890, 100)
+  ctx.fillText(state.location, 1078, 100)
 
   ctx.fillStyle = frame.palette.mat
   roundedPath(ctx, PHOTO_WINDOW.x - 10, PHOTO_WINDOW.y - 10, PHOTO_WINDOW.width + 20, PHOTO_WINDOW.height + 20, 38)
@@ -281,9 +304,7 @@ export function renderKeepsake(ctx: CanvasRenderingContext2D, state: KeepsakeRen
     ctx.fillText(line, KEEPSAKE_WIDTH / 2, frame.typography.bodyY + index * 42)
   })
 
-  ctx.font = '700 24px "Microsoft YaHei", sans-serif'
-  ctx.textAlign = 'left'
-  ctx.fillText(state.date || '', 96, frame.typography.metaY)
-  ctx.textAlign = 'right'
-  ctx.fillText(signature ? `— ${signature}` : 'JIEYOU MEMORY', KEEPSAKE_WIDTH - 96, frame.typography.metaY)
+  ctx.font = '700 22px "Microsoft YaHei", sans-serif'
+  ctx.textAlign = 'center'
+  ctx.fillText(state.sentence || KEEPSAKE_SENTENCES[0], KEEPSAKE_WIDTH / 2, frame.typography.metaY)
 }

@@ -1576,6 +1576,45 @@ function section(title, { collapsible = false, collapsed = false, badge = '' } =
   return div;
 }
 
+function getKeepsakeStudioUrl() {
+  const url = new URL('../', window.location.href);
+  url.searchParams.set('view', 'keepsake');
+  return url.toString();
+}
+
+function navigationSection(title, getDestination) {
+  const div = document.createElement('div');
+  div.className = 'section navigation-section collapsed';
+  div.dataset.navigationHref = getDestination();
+
+  const heading = document.createElement('h2');
+  const titleText = document.createElement('span');
+  titleText.className = 'section-title';
+  titleText.textContent = title;
+  heading.appendChild(titleText);
+  heading.setAttribute('role', 'link');
+  heading.setAttribute('tabindex', '0');
+  heading.setAttribute('aria-label', `进入${title}`);
+
+  const arrow = document.createElement('span');
+  arrow.className = 'navigation-section-arrow';
+  arrow.setAttribute('aria-hidden', 'true');
+  arrow.textContent = '›';
+  heading.appendChild(arrow);
+
+  const navigate = () => window.location.assign(getDestination());
+  heading.addEventListener('click', navigate);
+  heading.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    navigate();
+  });
+
+  div.appendChild(heading);
+  controlsEl.appendChild(div);
+  return div;
+}
+
 function controlGroup(parent, title, { open = false } = {}) {
   const disclosure = document.createElement('details');
   disclosure.className = 'nested-disclosure control-group';
@@ -1724,6 +1763,7 @@ const bodySec = section('体型', { collapsible: true, collapsed: false });
 const coatSec = section('花纹与眼睛', { collapsible: true, collapsed: true });
 const sceneSec = section('场景与渲染', { collapsible: true, collapsed: true });
 const presetSec = section('预设保存', { collapsible: true, collapsed: true });
+navigationSection('JIEYOU留影', getKeepsakeStudioUrl);
 const motionSec = section('Motion', {
   collapsible: true,
   collapsed: true,
@@ -3217,6 +3257,10 @@ mobileSections.forEach((sectionElement, index) => {
   button.setAttribute('aria-controls', sectionElement.id);
   button.textContent = mobileSectionTitle(sectionElement);
   button.addEventListener('click', () => {
+    if (sectionElement.dataset.navigationHref) {
+      window.location.assign(sectionElement.dataset.navigationHref);
+      return;
+    }
     setMobilePanelCollapsed(false);
     selectMobileSection(index);
   });

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Toaster, toast } from 'sonner';
 import ThemeHub from './components/Theme/ThemeHub';
 import KeepsakeStudio from './components/Keepsake/KeepsakeStudio';
+import SongRequestStation from './components/SongRequest/SongRequestStation';
 import WelcomeScreen from './components/Welcome/WelcomeScreen';
 import NicknameInput from './components/Welcome/NicknameInput';
 import StarrySky from './components/StarrySky/StarrySky';
@@ -26,6 +27,7 @@ function App() {
     activeTheme,
     currentView,
     enterKeepsakeStudio,
+    enterSongRequestStation,
     enterStarrySky,
     enterTheme,
     returnToWelcome,
@@ -39,6 +41,15 @@ function App() {
   useEffect(() => {
     isPlayingRef.current = isPlaying;
   }, [isPlaying]);
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('view') !== 'keepsake') return;
+
+    enterKeepsakeStudio();
+    url.searchParams.delete('view');
+    window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+  }, [enterKeepsakeStudio]);
 
   useEffect(() => {
     const audio = new Audio();
@@ -172,10 +183,12 @@ function App() {
       />
 
       {currentView === 'theme-hub' && (
-        <ThemeHub onSelect={handleSelectTheme} onOpenKeepsake={enterKeepsakeStudio} />
+        <ThemeHub onSelect={handleSelectTheme} onOpenSongRequest={enterSongRequestStation} />
       )}
 
       {currentView === 'keepsake-studio' && <KeepsakeStudio onBack={returnToThemeHub} />}
+
+      {currentView === 'song-request' && <SongRequestStation onBack={returnToThemeHub} />}
 
       {currentView === 'welcome' && theme && (
         <div className="relative z-10 min-h-screen">

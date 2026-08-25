@@ -1740,6 +1740,24 @@ select {
   transform: translate(-2px, 0) rotate(-45deg);
 }
 
+.navigation-section > h2 {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+}
+
+.navigation-section > h2:focus-visible {
+  outline: 3px solid rgba(67, 114, 84, 0.42);
+  outline-offset: 3px;
+}
+
+.navigation-section-arrow {
+  margin-left: 10px;
+  font-size: 18px;
+  line-height: 0.7;
+}
+
 .nested-disclosure {
   margin: 9px 0 4px;
   border: 2px solid rgba(167, 148, 104, 0.72);

@@ -1,0 +1,14 @@
+{
+  "$schema": "https://static.cloudbase.net/cli/cloudbaserc.schema.json",
+  "envId": "jieyou-3gr01mvob9ad92de",
+  "functionRoot": "cloudfunctions",
+  "functions": [
+    {
+      "name": "songRequestSync",
+      "dir": "cloudfunctions/songRequestSync",
+      "runtime": "Nodejs20.19",
+      "handler": "index.main",
+      "installDependency": true
+    }
+  ]
+}
