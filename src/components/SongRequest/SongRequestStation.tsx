@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft, CalendarDays, Check, ChevronRight, Flame, Guitar,
-  Library, Mic2, Plus, Search, Trash2, Trophy,
+  Library, Mic2, Plus, Search, Target, Trash2, Trophy,
 } from 'lucide-react';
 import useAppStore from '../../store/appStore';
 import { SONGS, type Song } from './songCatalog';
@@ -12,23 +12,32 @@ import {
   type EditableCatalog, type VoteCounts,
 } from './songRequest';
 import { groupSongsByArtist } from './roadshow';
-import { incrementCloudVote, pullCloudVotes } from './songRequestCloud';
+import { incrementCloudVote, pullCloudVotes, pullSongRecords } from './songRequestCloud';
 import RoadshowPanel from './RoadshowPanel';
+import SongDetailPanel from './SongDetailPanel';
+import {
+  loadSongRecordCache, parseSongRecords, rankSongsByPracticeMatch, readSongRecordSession, recoverSongsFromRecords,
+  saveSongRecordCache, SONG_REQUEST_SESSION_EVENT,
+  type SongRecord, type SongRecordSession,
+} from './songRecords';
 
 interface SongRequestStationProps { onBack: () => void; }
 type SectionId = 'ranking' | 'artists' | 'roadshows' | 'playlists';
+type RankingView = 'requests' | 'personal';
 
 const HUB_DIRECTIONS = [
-  { id: 'ranking', label: '点歌榜', eyebrow: 'REQUESTS', description: '看看大家累计点过哪些歌', icon: Trophy, tone: 'from-amber-400/20 to-orange-600/5' },
+  { id: 'ranking', label: '排行榜', eyebrow: 'RANKINGS', description: '切换查看点歌榜和个人榜', icon: Trophy, tone: 'from-amber-400/20 to-orange-600/5' },
   { id: 'artists', label: '歌手', eyebrow: 'ARTISTS', description: '按歌手找到我会唱的歌', icon: Mic2, tone: 'from-rose-400/20 to-pink-700/5' },
-  { id: 'roadshows', label: '路演', eyebrow: 'ROADSHOWS', description: '私密管理每次路演与游戏曲目', icon: CalendarDays, tone: 'from-cyan-400/20 to-blue-700/5' },
+  { id: 'roadshows', label: '我的档案', eyebrow: 'PRIVATE ARCHIVE', description: '日常练习与路演记录', icon: CalendarDays, tone: 'from-cyan-400/20 to-blue-700/5' },
   { id: 'playlists', label: '歌单', eyebrow: 'SONGBOOK', description: '浏览热门歌曲与完整曲库', icon: Library, tone: 'from-violet-400/20 to-purple-700/5' },
 ] as const;
 
 const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   const nickname = useAppStore((state) => state.user?.nickname || '');
   const [activeSection, setActiveSection] = useState<SectionId | null>(null);
+  const [rankingView, setRankingView] = useState<RankingView>('requests');
   const [selectedArtist, setSelectedArtist] = useState<string | null>(null);
+  const [selectedSong, setSelectedSong] = useState<Song | null>(null);
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('全部');
   const [catalog, setCatalog] = useState<EditableCatalog>(() => (
@@ -39,6 +48,14 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   ));
   const [requestedId, setRequestedId] = useState<string | null>(null);
   const [syncMessage, setSyncMessage] = useState('');
+  const [songRecordSession, setSongRecordSession] = useState<SongRecordSession | null>(() => (
+    typeof window === 'undefined' ? null : readSongRecordSession(window.sessionStorage)
+  ));
+  const [songRecords, setSongRecords] = useState<SongRecord[]>(() => (
+    typeof window === 'undefined' ? [] : loadSongRecordCache(window.localStorage, readSongRecordSession(window.sessionStorage))
+  ));
+  const [recoveredSongs, setRecoveredSongs] = useState<Song[]>([]);
+  const [recordSyncStatus, setRecordSyncStatus] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -50,24 +67,77 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     return () => { active = false; };
   }, []);
 
-  const catalogSongs = catalog.songs;
+  useEffect(() => {
+    const refreshSession = () => {
+      const next = readSongRecordSession(window.sessionStorage);
+      setSongRecordSession(next);
+      if (!next) {
+        setSelectedSong(null);
+        setSelectedArtist(null);
+      }
+    };
+    window.addEventListener(SONG_REQUEST_SESSION_EVENT, refreshSession);
+    return () => window.removeEventListener(SONG_REQUEST_SESSION_EVENT, refreshSession);
+  }, []);
+
+  useEffect(() => {
+    if (!songRecordSession) {
+      setSongRecords([]);
+      setRecoveredSongs([]);
+      setRecordSyncStatus('');
+      return;
+    }
+    let active = true;
+    const cached = loadSongRecordCache(window.localStorage, songRecordSession);
+    setSongRecords(cached);
+    setRecoveredSongs(recoverSongsFromRecords(cached, catalog.songs));
+    setRecordSyncStatus(cached.length ? '正在同步，当前显示本地记录' : '正在从腾讯云同步');
+    pullSongRecords(songRecordSession).then((cloudRecords) => {
+      if (!active) return;
+      const validRecords = parseSongRecords(cloudRecords);
+      setSongRecords(validRecords);
+      setRecoveredSongs(recoverSongsFromRecords(validRecords, catalog.songs));
+      saveSongRecordCache(window.localStorage, songRecordSession.alias, validRecords);
+      setRecordSyncStatus('已同步');
+    }).catch(() => {
+      if (active) setRecordSyncStatus(cached.length ? '云端暂时未连接，当前记录尚未同步' : '云端暂时未连接');
+    });
+    return () => { active = false; };
+  }, [songRecordSession, catalog.songs]);
+
+  const catalogSongs = useMemo(() => {
+    const ids = new Set(catalog.songs.map((song) => song.id));
+    return [...catalog.songs, ...recoveredSongs.filter((song) => !ids.has(song.id))];
+  }, [catalog.songs, recoveredSongs]);
   const songCategories = useMemo(() => ['全部', ...new Set(catalogSongs.map((song) => song.category))], [catalogSongs]);
   const featuredSongs = useMemo(() => getFeaturedSongs(catalogSongs), [catalogSongs]);
   const visibleSongs = useMemo(() => filterSongs(catalogSongs, query, category), [catalogSongs, category, query]);
   const ranking = useMemo(() => rankSongsByVotes(catalogSongs, votes), [catalogSongs, votes]);
+  const personalRanking = useMemo(() => rankSongsByPracticeMatch(catalogSongs, songRecords), [catalogSongs, songRecords]);
   const artistGroups = useMemo(() => {
     const grouped = new Map(groupSongsByArtist(catalogSongs).map((group) => [group.artist, group.songs]));
     const needle = query.trim().toLowerCase();
-    return catalog.artists.map((artist) => ({ artist, songs: grouped.get(artist) ?? [] })).filter(({ artist, songs }) => (
+    const visibleArtists = [...new Set([...catalog.artists, ...recoveredSongs.map((song) => song.artist)])];
+    return visibleArtists.map((artist) => ({ artist, songs: grouped.get(artist) ?? [] })).filter(({ artist, songs }) => (
       !needle || artist.toLowerCase().includes(needle)
         || songs.some((song) => song.title.toLowerCase().includes(needle))
     ));
-  }, [catalog.artists, catalogSongs, query]);
+  }, [catalog.artists, catalogSongs, query, recoveredSongs]);
 
   const commitCatalog = (next: EditableCatalog) => {
     setCatalog(next);
     try { saveEditableCatalog(window.localStorage, next); } catch {}
   };
+
+  const commitSongRecords = (next: SongRecord[]) => {
+    setSongRecords(next);
+    if (songRecordSession) {
+      try { saveSongRecordCache(window.localStorage, songRecordSession.alias, next); } catch {}
+      setRecoveredSongs(recoverSongsFromRecords(next, catalog.songs));
+    }
+  };
+
+  const openSongDetail = (song: Song) => setSelectedSong(song);
 
   const handleAddArtist = () => {
     const artist = window.prompt('请输入新歌手名：')?.trim();
@@ -110,11 +180,24 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   };
 
   const goBack = () => {
+    if (selectedSong) {
+      const song = selectedSong;
+      setSelectedSong(null);
+      setActiveSection('artists');
+      setSelectedArtist(song.artist);
+      return;
+    }
     if (activeSection === null) return onBack();
     if (selectedArtist) return setSelectedArtist(null);
     setActiveSection(null);
     setQuery('');
     setCategory('全部');
+  };
+
+  const openPrivateSpace = () => {
+    setSelectedSong(null);
+    setSelectedArtist(null);
+    setActiveSection('roadshows');
   };
 
   const requestSong = async (song: Song) => {
@@ -137,7 +220,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   const RequestButton = ({ song }: { song: Song }) => {
     const done = requestedId === song.id;
     return (
-      <button type="button" onClick={() => requestSong(song)} disabled={done}
+      <button type="button" onClick={(event) => { event.stopPropagation(); void requestSong(song); }} disabled={done}
         className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3.5 py-2 text-xs font-bold transition active:scale-95 ${done ? 'border-emerald-300/30 bg-emerald-300/15 text-emerald-100' : 'border-orange-200/25 bg-orange-400/15 text-orange-100 hover:bg-orange-400/25'}`}>
         {done ? <><Check className="h-4 w-4" />已点</> : '点歌'}
       </button>
@@ -147,8 +230,10 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   const SongRows = ({ songs }: { songs: Song[] }) => (
     <div className="grid gap-3 sm:grid-cols-2">
       {songs.map((song) => (
-        <article key={song.id} className="flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-white/10 bg-black/25 p-4">
-          <div className="min-w-0"><h3 className="truncate font-bold">{song.title}</h3><p title={song.hotComment} className="mt-1 truncate text-xs text-white/40">{getSongSubtitle(song)}</p></div>
+        <article key={song.id} className="group flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-white/10 bg-black/25 p-2 transition hover:border-orange-200/25 hover:bg-white/[.045]">
+          <button type="button" onClick={() => openSongDetail(song)} className="min-w-0 flex-1 rounded-xl px-2 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-orange-300/50">
+            <h3 className="truncate font-bold transition group-hover:text-orange-100">{song.title}</h3><p title={song.hotComment} className="mt-1 truncate text-xs text-white/40">{getSongSubtitle(song)}</p>
+          </button>
           <RequestButton song={song} />
         </article>
       ))}
@@ -163,12 +248,14 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
       <div className="relative mx-auto w-full max-w-6xl">
         <header className="mb-8 flex items-center justify-between gap-4">
           <button type="button" onClick={goBack} className="inline-flex h-11 items-center gap-2 rounded-full border border-white/10 bg-black/35 px-4 text-sm font-semibold text-white/70 backdrop-blur-xl transition hover:text-white">
-            <ArrowLeft className="h-4 w-4" /> {activeSection === null ? '返回宇宙' : selectedArtist ? `返回${sectionTitle}` : '返回点歌台'}
+            <ArrowLeft className="h-4 w-4" /> {selectedSong ? `返回${selectedSong.artist}` : activeSection === null ? '返回宇宙' : selectedArtist ? `返回${sectionTitle}` : '返回点歌台'}
           </button>
           <span className="text-[10px] font-bold tracking-[0.28em] text-orange-200/55">JIEYOU · SONG REQUEST</span>
         </header>
 
-        {activeSection === null ? (
+        {selectedSong ? (
+          <SongDetailPanel song={selectedSong} records={songRecords} session={songRecordSession} syncStatus={recordSyncStatus} onRecordsChange={commitSongRecords} onOpenPrivateSpace={openPrivateSpace} />
+        ) : activeSection === null ? (
           <>
             <section className="mx-auto max-w-3xl py-5 text-center sm:py-10">
               <span className="inline-flex items-center gap-2 text-xs font-black tracking-[0.25em] text-orange-300"><Guitar className="h-4 w-4" /> LIVE SONGBOOK</span>
@@ -191,8 +278,20 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
           <section>
             <div className="mb-7 flex items-end justify-between gap-4">
               <div><p className="text-[10px] font-black tracking-[0.28em] text-orange-300/65">SONG REQUEST</p>
-                <h1 className="mt-1 font-serif text-4xl font-black sm:text-5xl">{selectedArtist || sectionTitle}</h1>
+                <h1 className="mt-1 font-serif text-4xl font-black sm:text-5xl">{selectedArtist || (activeSection === 'ranking' ? rankingView === 'requests' ? '点歌榜' : '个人榜' : sectionTitle)}</h1>
               </div>
+              {activeSection === 'ranking' && (
+                <div role="tablist" aria-label="排行榜切换" className="flex shrink-0 gap-1 rounded-full border border-white/10 bg-black/35 p-1">
+                  <button type="button" aria-label="切换到点歌榜" aria-pressed={rankingView === 'requests'} onClick={() => setRankingView('requests')}
+                    className={`grid h-10 w-10 place-items-center rounded-full transition ${rankingView === 'requests' ? 'bg-orange-300 text-black' : 'text-white/45 hover:text-white'}`}>
+                    <Trophy className="h-4 w-4" />
+                  </button>
+                  <button type="button" aria-label="切换到个人榜" aria-pressed={rankingView === 'personal'} onClick={() => setRankingView('personal')}
+                    className={`grid h-10 w-10 place-items-center rounded-full transition ${rankingView === 'personal' ? 'bg-orange-300 text-black' : 'text-white/45 hover:text-white'}`}>
+                    <Target className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
               {activeSection === 'artists' && (
                 <div className="flex shrink-0 gap-2">
                   <button type="button" onClick={selectedArtist ? handleAddSong : handleAddArtist} className="inline-flex items-center gap-1.5 rounded-full border border-rose-200/25 bg-rose-300/10 px-3.5 py-2 text-xs font-bold text-rose-100 transition hover:bg-rose-300/20">
@@ -208,15 +307,25 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
             {activeSection === 'ranking' && (
               <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
                 <div className="rounded-[1.75rem] border border-white/10 bg-black/35 p-5 sm:p-7">
-                  {ranking.length ? <ol className="space-y-3">{ranking.map(({ song, count }, index) => (
-                    <li key={song.id} className="flex items-center gap-4 rounded-2xl border border-white/10 bg-white/[.035] p-4">
-                      <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-full font-serif font-black ${index === 0 ? 'bg-amber-300 text-black' : 'bg-white/10 text-white/55'}`}>{index + 1}</span>
-                      <div className="min-w-0 flex-1"><p className="truncate font-bold">{song.title}</p><p className="truncate text-xs text-white/40">{song.artist}</p></div>
-                      <strong className="font-serif text-xl text-orange-200">{count}<small className="ml-1 font-sans text-[10px] font-normal text-white/30">次</small></strong>
-                    </li>
-                  ))}</ol> : <div className="grid min-h-64 place-items-center text-center text-white/40"><div><Trophy className="mx-auto h-9 w-9 opacity-40" /><p className="mt-3">还没有人点歌</p></div></div>}
+                  {rankingView === 'requests' ? (
+                    ranking.length ? <ol className="space-y-3">{ranking.map(({ song, count }, index) => (
+                      <li key={song.id} className="flex items-center gap-4 rounded-2xl border border-white/10 bg-white/[.035] p-4">
+                        <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-full font-serif font-black ${index === 0 ? 'bg-amber-300 text-black' : 'bg-white/10 text-white/55'}`}>{index + 1}</span>
+                        <button type="button" onClick={() => openSongDetail(song)} className="min-w-0 flex-1 text-left"><p className="truncate font-bold hover:text-orange-100">{song.title}</p><p className="truncate text-xs text-white/40">{song.artist}</p></button>
+                        <strong className="font-serif text-xl text-orange-200">{count}<small className="ml-1 font-sans text-[10px] font-normal text-white/30">次</small></strong>
+                      </li>
+                    ))}</ol> : <div className="grid min-h-64 place-items-center text-center text-white/40"><div><Trophy className="mx-auto h-9 w-9 opacity-40" /><p className="mt-3">还没有人点歌</p></div></div>
+                  ) : (
+                    personalRanking.length ? <ol className="space-y-3">{personalRanking.map(({ song, score, practiceCount }, index) => (
+                      <li key={song.id} className="flex items-center gap-4 rounded-2xl border border-white/10 bg-white/[.035] p-4">
+                        <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-full font-serif font-black ${index === 0 ? 'bg-amber-300 text-black' : 'bg-white/10 text-white/55'}`}>{index + 1}</span>
+                        <button type="button" onClick={() => openSongDetail(song)} className="min-w-0 flex-1 text-left"><p className="truncate font-bold hover:text-orange-100">{song.title}</p><p className="truncate text-xs text-white/40">{song.artist} · 练习 {practiceCount} 次</p></button>
+                        <strong className="font-serif text-xl text-orange-200">{score}<small className="ml-1 font-sans text-[10px] font-normal text-white/30">匹配度</small></strong>
+                      </li>
+                    ))}</ol> : <div className="grid min-h-64 place-items-center text-center text-white/40"><div><Target className="mx-auto h-9 w-9 opacity-40" /><p className="mt-3">{songRecordSession ? '还没有练习记录' : '请先进入私有空间查看个人榜'}</p></div></div>
+                  )}
                 </div>
-                <aside className="h-fit rounded-[1.75rem] border border-orange-200/15 bg-orange-950/20 p-6 text-sm leading-7 text-white/45">点歌榜会汇总所有设备上的累计点歌次数。</aside>
+                <aside className="h-fit rounded-[1.75rem] border border-orange-200/15 bg-orange-950/20 p-6 text-sm leading-7 text-white/45">{rankingView === 'requests' ? '点歌榜会汇总所有设备上的累计点歌次数。' : '个人榜按每首歌全部练习记录的平均匹配度排序。'}</aside>
               </div>
             )}
 
@@ -246,7 +355,15 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
               </div>
             )}
 
-            {activeSection === 'roadshows' && <RoadshowPanel defaultAlias={nickname} />}
+            {activeSection === 'roadshows' && (
+              <RoadshowPanel
+                defaultAlias={nickname}
+                songs={catalogSongs}
+                records={songRecords}
+                syncStatus={recordSyncStatus}
+                onRecordsChange={commitSongRecords}
+              />
+            )}
           </section>
         )}
       </div>

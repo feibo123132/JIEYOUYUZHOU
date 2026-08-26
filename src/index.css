@@ -225,3 +225,56 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+/* Private archive / compact daily practice */
+.archive-panel { border: 1px solid rgba(255,210,180,.14); border-radius: 2rem; background: rgba(12,8,8,.82); padding: clamp(1.1rem,3vw,2rem); backdrop-filter: blur(20px); }
+.archive-header,.archive-section-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; flex-wrap:wrap; }
+.archive-header h2,.archive-section-heading h2 { margin:.2rem 0 0; font-family:Georgia,"Noto Serif SC",serif; font-size:clamp(1.7rem,3vw,2.35rem); font-weight:900; }
+.archive-header p,.archive-section-heading p { margin:.35rem 0 0; color:rgba(255,255,255,.42); font-size:.82rem; }
+.archive-lock,.archive-section-heading>button,.practice-save-row button { display:inline-flex; align-items:center; justify-content:center; gap:.45rem; min-height:2.5rem; border:1px solid rgba(255,255,255,.12); border-radius:999px; padding:0 1rem; color:rgba(255,255,255,.7); background:rgba(255,255,255,.04); font-size:.76rem; font-weight:800; }
+.archive-section-heading>button,.practice-save-row button { border-color:transparent; background:#fb923c; color:#130a05; }
+.archive-tabs { display:inline-flex; gap:.3rem; margin:1.4rem 0 1.7rem; padding:.3rem; border:1px solid rgba(255,255,255,.1); border-radius:999px; background:rgba(0,0,0,.32); }
+.archive-tabs button { display:flex; align-items:center; gap:.45rem; min-height:2.35rem; border-radius:999px; padding:0 1rem; color:rgba(255,255,255,.45); font-size:.78rem; font-weight:800; }
+.archive-tabs button.active { background:#fdba74; color:#1b0d06; box-shadow:0 6px 22px rgba(251,146,60,.2); }
+.archive-section-heading .eyebrow { color:rgba(253,186,116,.58); font-size:.62rem; font-weight:900; letter-spacing:.24em; }
+.practice-sync-status,.archive-cloud-message { display:inline-flex; align-items:center; gap:.4rem; color:rgba(167,243,208,.7); font-size:.7rem; }
+.daily-practice-layout { display:grid; grid-template-columns:minmax(0,1.05fr) minmax(20rem,.95fr); gap:1.25rem; margin-top:1.2rem; }
+.practice-batch-editor,.practice-history,.roadshow-archive-section { min-width:0; border:1px solid rgba(255,255,255,.1); border-radius:1.55rem; background:rgba(0,0,0,.24); padding:clamp(1rem,2.4vw,1.55rem); }
+.practice-card-title { display:flex; align-items:center; gap:.75rem; margin-bottom:1.1rem; }
+.practice-card-title h3 { margin:0; font-family:Georgia,"Noto Serif SC",serif; font-size:1.25rem; font-weight:900; }
+.practice-card-title p { margin:.15rem 0 0; color:rgba(255,255,255,.32); font-size:.7rem; }
+.practice-card-icon { display:grid; width:2.6rem; height:2.6rem; place-items:center; border:1px solid rgba(253,186,116,.18); border-radius:.8rem; background:rgba(251,146,60,.09); color:#fdba74; }
+.practice-date-row { display:grid; grid-template-columns:1fr 1fr; gap:.65rem; }
+.practice-date-row label,.practice-draft-main label { color:rgba(255,255,255,.42); font-size:.68rem; font-weight:750; }
+.practice-date-row input,.manual-song-entry input,.practice-draft-main input { display:block; width:100%; margin-top:.35rem; border:1px solid rgba(255,255,255,.1); border-radius:.75rem; background:rgba(0,0,0,.32); padding:.68rem .75rem; color:white; outline:none; color-scheme:dark; }
+.practice-search { display:flex; align-items:center; gap:.55rem; margin:1rem 0 .65rem; border:1px solid rgba(255,255,255,.1); border-radius:999px; padding:.65rem .85rem; color:rgba(253,186,116,.6); }
+.practice-search input { min-width:0; flex:1; background:transparent; color:white; outline:none; font-size:.78rem; }
+.practice-song-picker { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.45rem; max-height:14rem; overflow:auto; padding-right:.15rem; }
+.practice-song-picker button { display:flex; align-items:center; justify-content:space-between; gap:.65rem; border:1px solid rgba(255,255,255,.08); border-radius:.75rem; padding:.6rem .7rem; text-align:left; color:rgba(255,255,255,.72); background:rgba(255,255,255,.025); }
+.practice-song-picker button.selected { border-color:rgba(253,186,116,.38); background:rgba(251,146,60,.1); color:#fed7aa; }
+.practice-song-picker span,.practice-draft-main>span:first-child,.practice-day-records button>span { min-width:0; }
+.practice-song-picker strong,.practice-song-picker small,.practice-draft-main strong,.practice-draft-main small,.practice-day-records strong,.practice-day-records small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.practice-song-picker strong { font-size:.78rem; }.practice-song-picker small,.practice-draft-main small,.practice-day-records small { margin-top:.12rem; color:rgba(255,255,255,.3); font-size:.64rem; }
+.manual-song-entry { margin:.7rem 0 1rem; border:1px dashed rgba(255,255,255,.1); border-radius:.8rem; padding:.7rem; }
+.manual-song-entry summary,.practice-draft details summary { display:flex; align-items:center; gap:.4rem; cursor:pointer; color:rgba(255,255,255,.48); font-size:.72rem; font-weight:750; list-style:none; }
+.manual-song-entry>div { display:grid; grid-template-columns:1fr 1fr auto; gap:.45rem; margin-top:.65rem; }
+.manual-song-entry input { margin:0; }.manual-song-entry button { border-radius:.65rem; padding:0 .8rem; background:rgba(253,186,116,.9); color:#180b04; font-size:.7rem; font-weight:850; }
+.practice-draft-list { display:grid; gap:.55rem; }
+.practice-draft { border:1px solid rgba(255,255,255,.09); border-radius:.9rem; background:rgba(0,0,0,.2); padding:.7rem; }
+.practice-draft-main { display:grid; grid-template-columns:minmax(0,1fr) 5.2rem 3rem 1.7rem; align-items:center; gap:.55rem; }
+.practice-draft-main strong { font-size:.8rem; }.practice-draft-main input { margin:.2rem 0 0; padding:.45rem .55rem; }
+.practice-draft-main>button { color:rgba(248,113,113,.5); }.practice-quality { font-size:.66rem; font-style:normal; font-weight:900; }
+.practice-quality.white { color:#fff; }.practice-quality.green { color:#4ade80; }.practice-quality.lightBlue { color:#7dd3fc; }.practice-quality.darkBlue { color:#2563eb; }.practice-quality.purple { color:#c084fc; }.practice-quality.gold { color:#fbbf24; }
+.practice-draft details { margin-top:.55rem; }.practice-draft textarea { width:100%; min-height:4.4rem; margin-top:.5rem; resize:vertical; border:1px solid rgba(255,255,255,.08); border-radius:.65rem; background:rgba(0,0,0,.3); padding:.65rem; color:white; outline:none; font-size:.72rem; }
+.practice-save-row { display:flex; align-items:center; justify-content:space-between; gap:.7rem; margin-top:1rem; color:rgba(255,255,255,.36); font-size:.7rem; }.practice-save-row button:disabled { opacity:.5; }
+.practice-message { margin:.7rem 0 0; color:rgba(253,230,138,.72); font-size:.7rem; }
+.practice-empty,.roadshow-empty { display:grid; min-height:10rem; place-items:center; border:1px dashed rgba(255,255,255,.09); border-radius:1rem; color:rgba(255,255,255,.3); text-align:center; font-size:.74rem; }
+.practice-month,.practice-week,.practice-day { margin-top:.5rem; border:1px solid rgba(255,255,255,.08); border-radius:.85rem; background:rgba(0,0,0,.16); overflow:hidden; }
+.practice-month>summary,.practice-week>summary,.practice-day>summary { display:grid; grid-template-columns:1fr auto auto; align-items:center; gap:.55rem; cursor:pointer; padding:.72rem .8rem; list-style:none; }
+.practice-month>summary span { font-family:Georgia,"Noto Serif SC",serif; font-weight:900; }.practice-month summary small { color:rgba(255,255,255,.32); font-size:.64rem; }.practice-month[open]>summary>svg,.practice-week[open]>summary>svg,.practice-day[open]>summary>svg { transform:rotate(180deg); }
+.practice-week { margin:.45rem; }.practice-week>summary { color:rgba(253,186,116,.72); font-size:.75rem; }.practice-day { margin:.38rem; }.practice-day>summary { font-size:.72rem; }
+.practice-day-records { display:grid; gap:.3rem; padding:0 .45rem .45rem; }.practice-day-records button { display:grid; grid-template-columns:minmax(0,1fr) 2rem 2.8rem 1rem; align-items:center; gap:.4rem; border-radius:.6rem; padding:.55rem .6rem; background:rgba(255,255,255,.025); color:rgba(255,255,255,.7); text-align:left; }.practice-day-records b { color:#fed7aa; font-size:.72rem; }
+.roadshow-record-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.7rem; margin-top:1rem; }.roadshow-record-card { display:grid; grid-template-columns:2.5rem minmax(0,1fr) auto; align-items:center; gap:.75rem; border:1px solid rgba(255,255,255,.08); border-radius:1rem; padding:.85rem; background:rgba(0,0,0,.22); color:rgba(255,255,255,.75); text-align:left; }.roadshow-record-card>span:first-child { display:grid; width:2.5rem;height:2.5rem;place-items:center;border-radius:.75rem;background:rgba(251,146,60,.1);color:#fdba74; }.roadshow-record-card strong,.roadshow-record-card small { display:block; }.roadshow-record-card small { margin-top:.2rem;color:rgba(255,255,255,.3);font-size:.66rem; }
+
+@media (max-width: 900px) { .daily-practice-layout { grid-template-columns:1fr; }.practice-history { order:2; } }
+@media (max-width: 640px) { .archive-panel { border-radius:1.25rem; }.archive-tabs { display:grid; grid-template-columns:1fr 1fr; width:100%; }.archive-tabs button { justify-content:center; }.practice-date-row,.practice-song-picker,.roadshow-record-grid { grid-template-columns:1fr; }.manual-song-entry>div { grid-template-columns:1fr; }.manual-song-entry button { min-height:2.6rem; }.practice-draft-main { grid-template-columns:minmax(0,1fr) 4.5rem 2.6rem 1.5rem; } }

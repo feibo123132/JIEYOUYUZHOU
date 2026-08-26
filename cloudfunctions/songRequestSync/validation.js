@@ -5,12 +5,27 @@ const ACTIONS = new Set([
   'roadshows:pull',
   'roadshows:save',
   'roadshows:delete',
+  'songRecords:pull',
+  'songRecords:save',
+  'songRecords:saveBatch',
+  'songRecords:delete',
 ]);
 
 const cleanText = (value, max, error) => {
   if (typeof value !== 'string') throw new Error(error);
   const text = value.trim();
   if (!text || text.length > max) throw new Error(error);
+  return text;
+};
+
+const cleanOptionalText = (value, max, error) => {
+  if (typeof value !== 'string' || value.length > max) throw new Error(error);
+  return value.trim();
+};
+
+const cleanIsoTime = (value, error) => {
+  const text = cleanText(value, 40, error);
+  if (!Number.isFinite(Date.parse(text))) throw new Error(error);
   return text;
 };
 
@@ -47,6 +62,34 @@ const validateRecord = (value) => {
   };
 };
 
+const validateSongRecord = (value) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('INVALID_SONG_RECORD');
+  const base = {
+    id: cleanText(value.id, 100, 'INVALID_SONG_RECORD'),
+    songId: cleanText(value.songId, 100, 'INVALID_SONG_RECORD'),
+    songTitle: cleanText(value.songTitle, 100, 'INVALID_SONG_RECORD'),
+    songArtist: cleanOptionalText(value.songArtist, 100, 'INVALID_SONG_RECORD'),
+    occurredAt: cleanIsoTime(value.occurredAt, 'INVALID_SONG_RECORD'),
+    updatedAt: typeof value.updatedAt === 'string' ? value.updatedAt : '',
+  };
+  if (value.kind === 'practice') {
+    if (!Number.isInteger(value.matchScore) || value.matchScore < 70 || value.matchScore > 100) throw new Error('INVALID_SONG_RECORD');
+    const feelings = cleanOptionalText(value.feelings, 2000, 'INVALID_SONG_RECORD');
+    const problems = cleanOptionalText(value.problems, 2000, 'INVALID_SONG_RECORD');
+    const improvements = cleanOptionalText(value.improvements, 2000, 'INVALID_SONG_RECORD');
+    return { ...base, kind: 'practice', matchScore: value.matchScore, feelings, problems, improvements };
+  }
+  if (value.kind === 'roadshow') {
+    return {
+      ...base,
+      kind: 'roadshow',
+      audienceName: cleanOptionalText(value.audienceName, 100, 'INVALID_SONG_RECORD'),
+      feedback: cleanText(value.feedback, 4000, 'INVALID_SONG_RECORD'),
+    };
+  }
+  throw new Error('INVALID_SONG_RECORD');
+};
+
 function validateRequest(event) {
   if (!event || typeof event !== 'object' || !ACTIONS.has(event.action)) throw new Error('INVALID_ACTION');
   if (Buffer.byteLength(JSON.stringify(event), 'utf8') > 256 * 1024) throw new Error('PAYLOAD_TOO_LARGE');
@@ -63,6 +106,14 @@ function validateRequest(event) {
   const base = { action: event.action, alias, password: event.password };
   if (event.action === 'roadshows:save') return { ...base, record: validateRecord(event.record) };
   if (event.action === 'roadshows:delete') return { ...base, id: cleanText(event.id, 80, 'INVALID_RECORD') };
+  if (event.action === 'songRecords:save') return { ...base, record: validateSongRecord(event.record) };
+  if (event.action === 'songRecords:saveBatch') {
+    if (!Array.isArray(event.records) || event.records.length < 1 || event.records.length > 50) throw new Error('INVALID_SONG_RECORD');
+    const records = event.records.map(validateSongRecord);
+    if (records.some((record) => record.kind !== 'practice') || new Set(records.map((record) => record.id)).size !== records.length) throw new Error('INVALID_SONG_RECORD');
+    return { ...base, records };
+  }
+  if (event.action === 'songRecords:delete') return { ...base, id: cleanText(event.id, 100, 'INVALID_SONG_RECORD') };
   return base;
 }
 

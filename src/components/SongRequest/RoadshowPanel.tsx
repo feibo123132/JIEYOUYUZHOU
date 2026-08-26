@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CalendarDays, Check, ChevronRight, Cloud, Lock, Plus, Save, Trash2, X } from 'lucide-react';
+import { CalendarDays, Check, ChevronRight, Cloud, Guitar, Lock, Plus, Save, Trash2, X } from 'lucide-react';
 import { SONGS } from './songCatalog';
+import type { Song } from './songCatalog';
+import DailyPracticePanel from './DailyPracticePanel';
 import {
   createManualRoadshowSong,
   createRoadshowSong,
@@ -18,6 +20,12 @@ import {
   registerRoadshowWorkspace,
   saveRoadshow,
 } from './songRequestCloud';
+import {
+  clearSongRecordCache,
+  readSongRecordSession,
+  SONG_REQUEST_SESSION_EVENT,
+  type SongRecord,
+} from './songRecords';
 
 interface Credentials {
   alias: string;
@@ -26,13 +34,16 @@ interface Credentials {
 
 interface RoadshowPanelProps {
   defaultAlias?: string;
+  songs?: Song[];
+  records?: SongRecord[];
+  syncStatus?: string;
+  onRecordsChange?: (records: SongRecord[]) => void;
 }
 
+type ArchiveView = 'practice' | 'roadshows';
+
 const readSession = (): Credentials | null => {
-  try {
-    const value = JSON.parse(sessionStorage.getItem(ROADSHOW_SESSION_KEY) || 'null');
-    return value && typeof value.alias === 'string' && typeof value.password === 'string' ? value : null;
-  } catch { return null; }
+  return readSongRecordSession(sessionStorage);
 };
 
 const cacheRecords = (records: RoadshowRecord[]) => {
@@ -54,7 +65,13 @@ const emptyRecord = (index: number): RoadshowRecord => ({
   updatedAt: new Date().toISOString(),
 });
 
-const RoadshowPanel = ({ defaultAlias = '' }: RoadshowPanelProps) => {
+const RoadshowPanel = ({
+  defaultAlias = '',
+  songs = SONGS,
+  records: songRecords = [],
+  syncStatus = '已同步',
+  onRecordsChange = () => undefined,
+}: RoadshowPanelProps) => {
   const [credentials, setCredentials] = useState<Credentials | null>(() => readSession());
   const [alias, setAlias] = useState(() => readSession()?.alias || defaultAlias);
   const [password, setPassword] = useState(() => readSession()?.password || '');
@@ -64,6 +81,7 @@ const RoadshowPanel = ({ defaultAlias = '' }: RoadshowPanelProps) => {
   const [editing, setEditing] = useState<RoadshowRecord | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  const [archiveView, setArchiveView] = useState<ArchiveView>('practice');
 
   useEffect(() => {
     if (!credentials) return;
@@ -94,6 +112,7 @@ const RoadshowPanel = ({ defaultAlias = '' }: RoadshowPanelProps) => {
         ? await registerRoadshowWorkspace(next)
         : await pullRoadshows(next);
       sessionStorage.setItem(ROADSHOW_SESSION_KEY, JSON.stringify(next));
+      window.dispatchEvent(new Event(SONG_REQUEST_SESSION_EVENT));
       setCredentials(next);
       setRecords(cloudRecords);
       cacheRecords(cloudRecords);
@@ -105,12 +124,14 @@ const RoadshowPanel = ({ defaultAlias = '' }: RoadshowPanelProps) => {
   };
 
   const lock = () => {
+    if (credentials) clearSongRecordCache(localStorage, credentials.alias);
     sessionStorage.removeItem(ROADSHOW_SESSION_KEY);
+    window.dispatchEvent(new Event(SONG_REQUEST_SESSION_EVENT));
     setCredentials(null);
     setPassword('');
     setEditing(null);
     setRecords([]);
-    setMessage('路演档案已锁定');
+    setMessage('我的档案已锁定');
   };
 
   const persistRecord = async () => {
@@ -149,14 +170,14 @@ const RoadshowPanel = ({ defaultAlias = '' }: RoadshowPanelProps) => {
     return (
       <section className="mx-auto max-w-xl rounded-[2rem] border border-orange-200/15 bg-[#120b08]/85 p-6 shadow-[0_28px_90px_rgba(0,0,0,.35)] backdrop-blur-2xl sm:p-9">
         <div className="grid h-14 w-14 place-items-center rounded-2xl border border-orange-200/20 bg-orange-300/10 text-orange-200"><Lock className="h-6 w-6" /></div>
-        <h2 className="mt-5 font-serif text-3xl font-black">仅属于你的路演档案</h2>
-        <p className="mt-2 text-sm leading-7 text-white/45">用别称和管理口令进入。档案通过腾讯云在电脑、手机之间同步。</p>
+        <h2 className="mt-5 font-serif text-3xl font-black">仅属于你的私人档案</h2>
+        <p className="mt-2 text-sm leading-7 text-white/45">用别称和管理口令进入。日常练习和路演档案通过腾讯云在电脑、手机之间同步。</p>
         <div className="mt-6 space-y-3">
           <input value={alias} onChange={(event) => setAlias(event.target.value)} placeholder="你的别称" maxLength={30} className="h-12 w-full rounded-xl border border-white/10 bg-black/35 px-4 outline-none focus:border-orange-300/45" />
           <input value={password} onChange={(event) => setPassword(event.target.value)} placeholder="管理口令（至少 6 位）" type="password" maxLength={64} className="h-12 w-full rounded-xl border border-white/10 bg-black/35 px-4 outline-none focus:border-orange-300/45" />
         </div>
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
-          <button type="button" disabled={busy} onClick={() => void authenticate('login')} className="h-12 rounded-xl bg-orange-400 font-black text-black transition hover:bg-orange-300 disabled:opacity-50">进入路演档案</button>
+          <button type="button" disabled={busy} onClick={() => void authenticate('login')} className="h-12 rounded-xl bg-orange-400 font-black text-black transition hover:bg-orange-300 disabled:opacity-50">进入我的档案</button>
           <button type="button" disabled={busy} onClick={() => void authenticate('register')} className="h-12 rounded-xl border border-white/15 bg-white/5 font-bold text-white/75 transition hover:bg-white/10 disabled:opacity-50">首次启用</button>
         </div>
         {message && <p className="mt-4 text-sm text-amber-200/80" role="status">{message}</p>}
@@ -181,32 +202,50 @@ const RoadshowPanel = ({ defaultAlias = '' }: RoadshowPanelProps) => {
   }
 
   return (
-    <section className="rounded-[2rem] border border-orange-200/15 bg-[#100b09]/80 p-5 backdrop-blur-xl sm:p-8">
-      <div className="flex flex-wrap items-start justify-between gap-4">
+    <section className="archive-panel">
+      <header className="archive-header">
         <div>
           <p className="text-[10px] font-black tracking-[.28em] text-orange-300/60">PRIVATE · CLOUD SYNC</p>
-          <h2 className="mt-1 font-serif text-3xl font-black">路演档案</h2>
-          <p className="mt-2 text-sm text-white/40">{credentials.alias} 的私人记录</p>
+          <h2>我的档案</h2>
+          <p>{credentials.alias} 的私人记录</p>
         </div>
-        <div className="flex gap-2">
-          <button type="button" onClick={lock} className="inline-flex h-10 items-center gap-2 rounded-full border border-white/10 px-4 text-xs font-bold text-white/55 hover:text-white"><Lock className="h-4 w-4" />锁定路演</button>
-          <button type="button" onClick={() => setEditing(emptyRecord(records.length + 1))} className="inline-flex h-10 items-center gap-2 rounded-full bg-orange-400 px-4 text-xs font-black text-black"><Plus className="h-4 w-4" />创建路演</button>
-        </div>
-      </div>
-      {message && <p className="mt-4 inline-flex items-center gap-2 text-xs text-emerald-200/70" role="status"><Cloud className="h-4 w-4" />{message}</p>}
+        <button type="button" onClick={lock} className="archive-lock"><Lock size={15} />锁定档案</button>
+      </header>
 
-      {records.length ? (
-        <div className="mt-6 grid gap-3 sm:grid-cols-2">
-          {records.map((record) => (
-            <button key={record.id} type="button" onClick={() => setEditing(record)} className="group flex items-center gap-4 rounded-2xl border border-white/8 bg-black/25 p-4 text-left transition hover:border-orange-200/25">
-              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-orange-300/10 text-orange-200"><CalendarDays className="h-5 w-5" /></span>
-              <span className="min-w-0 flex-1"><strong className="block truncate font-serif text-lg">{record.title}</strong><small className="mt-1 block text-white/35">{record.date} · 演唱 {record.performanceSongs.length} · 听歌识曲 {record.recognitionSongs.length}</small></span>
-              <ChevronRight className="h-5 w-5 text-white/20 transition group-hover:translate-x-1 group-hover:text-orange-200" />
-            </button>
-          ))}
-        </div>
+      <nav className="archive-tabs" aria-label="档案分类">
+        <button type="button" className={archiveView === 'practice' ? 'active' : ''} onClick={() => setArchiveView('practice')}><Guitar size={16} />日常练习</button>
+        <button type="button" className={archiveView === 'roadshows' ? 'active' : ''} onClick={() => setArchiveView('roadshows')}><CalendarDays size={16} />路演档案</button>
+      </nav>
+
+      {archiveView === 'practice' ? (
+        <DailyPracticePanel
+          songs={songs}
+          records={songRecords}
+          credentials={credentials}
+          syncStatus={syncStatus}
+          onRecordsChange={onRecordsChange}
+        />
       ) : (
-        <div className="mt-6 grid min-h-56 place-items-center rounded-2xl border border-dashed border-white/10 text-center"><div><CalendarDays className="mx-auto h-9 w-9 text-orange-200/25" /><p className="mt-3 font-bold text-white/55">还没有路演记录</p><p className="mt-1 text-xs text-white/30">从第一次路演开始记录。</p></div></div>
+        <section className="roadshow-archive-section">
+          <div className="archive-section-heading">
+            <div><span className="eyebrow">ROADSHOW ARCHIVE</span><h2>路演档案</h2><p>记录每一场准备过和唱过的歌。</p></div>
+            <button type="button" onClick={() => setEditing(emptyRecord(records.length + 1))}><Plus size={16} />创建路演</button>
+          </div>
+          {message && <p className="archive-cloud-message" role="status"><Cloud size={15} />{message}</p>}
+          {records.length ? (
+            <div className="roadshow-record-grid">
+              {records.map((record) => (
+                <button key={record.id} type="button" onClick={() => setEditing(record)} className="roadshow-record-card">
+                  <span><CalendarDays size={20} /></span>
+                  <span><strong>{record.title}</strong><small>{record.date} · 演唱 {record.performanceSongs.length} · 听歌识曲 {record.recognitionSongs.length}</small></span>
+                  <ChevronRight size={19} />
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="roadshow-empty"><div><CalendarDays size={36} /><p>还没有路演记录</p><small>从第一次路演开始记录。</small></div></div>
+          )}
+        </section>
       )}
     </section>
   );
@@ -231,7 +270,7 @@ const RoadshowEditor = ({ record, allRecords, busy, message, onChange, onBack, o
       <div className="rounded-[1.75rem] border border-orange-200/15 bg-[#120b08]/85 p-5 backdrop-blur-xl sm:p-7">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <button type="button" onClick={onBack} className="text-sm font-bold text-white/50 hover:text-white">← 返回路演列表</button>
-          <button type="button" onClick={onLock} className="inline-flex items-center gap-2 text-xs font-bold text-white/40 hover:text-white"><Lock className="h-4 w-4" />锁定路演</button>
+          <button type="button" onClick={onLock} className="inline-flex items-center gap-2 text-xs font-bold text-white/40 hover:text-white"><Lock className="h-4 w-4" />锁定档案</button>
         </div>
         <div className="mt-5 grid gap-3 sm:grid-cols-[1fr_12rem]">
           <input value={record.title} onChange={(event) => onChange({ ...record, title: event.target.value })} maxLength={60} className="h-12 rounded-xl border border-white/10 bg-black/35 px-4 font-serif text-xl font-black outline-none focus:border-orange-300/45" />

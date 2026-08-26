@@ -8,6 +8,9 @@ const roadshowModuleUrl = new URL('../src/components/SongRequest/roadshow.ts', i
 const roadshowPanelUrl = new URL('../src/components/SongRequest/RoadshowPanel.tsx', import.meta.url)
 const cloudAdapterUrl = new URL('../src/components/SongRequest/songRequestCloud.ts', import.meta.url)
 const catalogModuleUrl = new URL('../src/components/SongRequest/songCatalog.ts', import.meta.url)
+const songRecordsModuleUrl = new URL('../src/components/SongRequest/songRecords.ts', import.meta.url)
+const songDetailPanelUrl = new URL('../src/components/SongRequest/SongDetailPanel.tsx', import.meta.url)
+const dailyPracticePanelUrl = new URL('../src/components/SongRequest/DailyPracticePanel.tsx', import.meta.url)
 
 const songs = [
   { id: 'a', title: '晴天', artist: '周杰伦', category: '华语', featured: true },
@@ -194,6 +197,162 @@ test('旧版曲库快照会补齐新版默认歌手并保留自定义歌曲', as
   assert.deepEqual(catalog.songs.map((song: { id: string }) => song.id), ['a', 'b', 'c', 'default:new', 'custom:legacy'])
 })
 
+test('歌曲记录支持同一首歌多次练习并按时间倒序过滤无效云端数据', async () => {
+  assert.ok(existsSync(songRecordsModuleUrl), 'song record helper must exist')
+  const { parseSongRecords } = await import(songRecordsModuleUrl.href)
+  const practice = (id: string, occurredAt: string) => ({
+    id, kind: 'practice', songId: 'a', songTitle: '晴天', songArtist: '周杰伦', occurredAt,
+    matchScore: 86, feelings: '适合我的音色', problems: '', improvements: '降低速度练习',
+    updatedAt: occurredAt,
+  })
+
+  const records = parseSongRecords([{ ...practice('older', '2026-08-20T10:00:00.000Z'), durationMinutes: 30 }, { bad: true }, practice('newer', '2026-08-25T10:00:00.000Z')])
+
+  assert.deepEqual(records.map((record: { id: string }) => record.id), ['newer', 'older'])
+  assert.equal('durationMinutes' in records[1], false)
+})
+
+test('歌曲记录校验匹配度、文本以及路演反馈', async () => {
+  const { isValidSongRecord } = await import(songRecordsModuleUrl.href)
+  const base = {
+    id: 'practice-1', kind: 'practice', songId: 'a', songTitle: '晴天', songArtist: '周杰伦',
+    occurredAt: '2026-08-25T10:00:00.000Z', matchScore: 80,
+    feelings: '', problems: '副歌换和弦慢', improvements: '', updatedAt: '2026-08-25T10:10:00.000Z',
+  }
+
+  assert.equal(isValidSongRecord(base), true)
+  assert.equal(isValidSongRecord({ ...base, matchScore: 70 }), true)
+  assert.equal(isValidSongRecord({ ...base, matchScore: 69 }), false)
+  assert.equal(isValidSongRecord({ ...base, feelings: '', problems: '', improvements: '' }), true)
+  assert.equal(isValidSongRecord({ ...base, kind: 'roadshow', audienceName: '', feedback: '观众觉得副歌很有共鸣' }), true)
+  assert.equal(isValidSongRecord({ ...base, kind: 'roadshow', audienceName: '', feedback: '  ' }), false)
+})
+
+test('匹配度输入允许暂时清空后再输入新分数', async () => {
+  const { parseMatchScoreInput } = await import(songRecordsModuleUrl.href)
+
+  assert.equal(parseMatchScoreInput(''), '')
+  assert.equal(parseMatchScoreInput('78'), 78)
+})
+
+test('匹配度自动锁定品质并区分普通与两档精良颜色', async () => {
+  const { getMatchQuality } = await import(songRecordsModuleUrl.href)
+
+  assert.deepEqual(getMatchQuality(70), { label: '普通', tone: 'white' })
+  assert.deepEqual(getMatchQuality(74), { label: '普通', tone: 'white' })
+  assert.deepEqual(getMatchQuality(75), { label: '优秀', tone: 'green' })
+  assert.deepEqual(getMatchQuality(79), { label: '优秀', tone: 'green' })
+  assert.deepEqual(getMatchQuality(80), { label: '精良', tone: 'lightBlue' })
+  assert.deepEqual(getMatchQuality(84), { label: '精良', tone: 'lightBlue' })
+  assert.deepEqual(getMatchQuality(85), { label: '精良', tone: 'darkBlue' })
+  assert.deepEqual(getMatchQuality(89), { label: '精良', tone: 'darkBlue' })
+  assert.deepEqual(getMatchQuality(90), { label: '稀有', tone: 'purple' })
+  assert.deepEqual(getMatchQuality(95), { label: '稀有', tone: 'purple' })
+  assert.deepEqual(getMatchQuality(96), { label: '传奇', tone: 'gold' })
+  assert.deepEqual(getMatchQuality(100), { label: '传奇', tone: 'gold' })
+  assert.equal(getMatchQuality(69), null)
+  assert.equal(getMatchQuality(101), null)
+})
+
+test('练习时间匹配度和只读品质在同一行展示', () => {
+  const panel = readFileSync(songDetailPanelUrl, 'utf8')
+
+  assert.match(panel, /sm:grid-cols-\[minmax\(0,1\.4fr\)_minmax\(90px,\.8fr\)_minmax\(90px,\.8fr\)\]/)
+  assert.match(panel, /<Field label="品质">/)
+  assert.match(panel, /aria-readonly="true"/)
+  assert.match(panel, /text-white/)
+  assert.match(panel, /text-emerald-400/)
+  assert.match(panel, /text-sky-300/)
+  assert.match(panel, /text-blue-600/)
+  assert.match(panel, /text-purple-400/)
+  assert.match(panel, /text-amber-300/)
+})
+
+test('日常练习按月周日压缩分组并统计每天数据', async () => {
+  const { groupPracticeRecordsByCalendar } = await import(songRecordsModuleUrl.href)
+  const practice = (id: string, occurredAt: string, matchScore: number) => ({
+    id, kind: 'practice' as const, songId: id, songTitle: id, songArtist: '', occurredAt, updatedAt: occurredAt,
+    matchScore, feelings: '', problems: '', improvements: '',
+  })
+  const groups = groupPracticeRecordsByCalendar([
+    practice('a', '2026-08-24T12:00:00.000Z', 80),
+    practice('b', '2026-08-25T12:00:00.000Z', 90),
+    practice('c', '2026-08-25T13:00:00.000Z', 85),
+    practice('d', '2026-08-31T12:00:00.000Z', 96),
+  ])
+
+  assert.deepEqual(groups.map((month: { key: string }) => month.key), ['2026-08'])
+  assert.deepEqual(groups[0].weeks.map((week: { key: string }) => week.key), ['2026-08-31', '2026-08-24'])
+  assert.deepEqual(groups[0].weeks[1].days.map((day: { key: string }) => day.key), ['2026-08-25', '2026-08-24'])
+  assert.equal(groups[0].weeks[1].days[0].count, 2)
+  assert.equal(groups[0].weeks[1].days[0].averageScore, 87.5)
+})
+
+test('歌曲详情匹配度统计使用全部练习记录的平均值', async () => {
+  const { averageMatchScore } = await import(songRecordsModuleUrl.href)
+
+  assert.equal(typeof averageMatchScore, 'function')
+  assert.equal(averageMatchScore([{ matchScore: 80 }, { matchScore: 85 }]), 82.5)
+  assert.equal(averageMatchScore([{ matchScore: 80 }, { matchScore: 90 }]), 85)
+  assert.equal(averageMatchScore([]), null)
+})
+
+test('个人榜按每首歌的平均匹配度降序排名', async () => {
+  const { rankSongsByPracticeMatch } = await import(songRecordsModuleUrl.href)
+  const practice = (id: string, songId: string, matchScore: number) => ({
+    id, kind: 'practice' as const, songId, songTitle: songId, songArtist: '',
+    occurredAt: '2026-08-25T10:00:00.000Z', updatedAt: '2026-08-25T10:00:00.000Z',
+    matchScore, feelings: '练习', problems: '', improvements: '',
+  })
+  const records = [practice('a1', 'a', 80), practice('a2', 'a', 90), practice('b1', 'b', 92)]
+
+  assert.deepEqual(rankSongsByPracticeMatch(songs, records).map((item: { song: { id: string }, score: number, practiceCount: number }) => (
+    [item.song.id, item.score, item.practiceCount]
+  )), [['b', 92, 1], ['a', 85, 2]])
+})
+
+test('旧练习记录的问题与改进会合并为弹唱感想', async () => {
+  const { getPracticeReflection } = await import(songRecordsModuleUrl.href)
+
+  assert.equal(typeof getPracticeReflection, 'function')
+  assert.equal(getPracticeReflection({ problems: '副歌换和弦卡顿', improvements: '分段慢练' }), '副歌换和弦卡顿\n分段慢练')
+  assert.equal(getPracticeReflection({ problems: '', improvements: '降低速度' }), '降低速度')
+})
+
+test('歌曲记录缓存按别称隔离且锁定后可以清除', async () => {
+  const { clearSongRecordCache, loadSongRecordCache, saveSongRecordCache, songRecordCacheKey } = await import(songRecordsModuleUrl.href)
+  const values = new Map<string, string>()
+  const storage = {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => { values.set(key, value) },
+    removeItem: (key: string) => { values.delete(key) },
+  }
+  const record = {
+    id: 'roadshow-1', kind: 'roadshow', songId: 'a', songTitle: '晴天', songArtist: '周杰伦',
+    occurredAt: '2026-08-25T10:00:00.000Z', audienceName: '小林', feedback: '想再听一次', updatedAt: '2026-08-25T10:00:00.000Z',
+  }
+
+  saveSongRecordCache(storage, ' JIEYOU ', [record])
+  assert.deepEqual(loadSongRecordCache(storage, { alias: 'jieyou', password: 'secret1' }).map((item: { id: string }) => item.id), ['roadshow-1'])
+  assert.deepEqual(loadSongRecordCache(storage, { alias: '别人', password: 'secret2' }), [])
+  assert.deepEqual(loadSongRecordCache(storage, null), [])
+  clearSongRecordCache(storage, 'jieyou')
+  assert.equal(values.has(songRecordCacheKey('JIEYOU')), false)
+})
+
+test('歌曲记录快照只恢复当前私有会话缺少的自定义歌曲', async () => {
+  const { recoverSongsFromRecords } = await import(songRecordsModuleUrl.href)
+  const records = [{
+    id: 'practice-custom', kind: 'practice', songId: 'custom:later', songTitle: '后来', songArtist: '刘若英',
+    occurredAt: '2026-08-25T10:00:00.000Z', matchScore: 80,
+    feelings: '合适', problems: '', improvements: '', updatedAt: '2026-08-25T10:00:00.000Z',
+  }]
+
+  assert.deepEqual(recoverSongsFromRecords(records, songs), [{
+    id: 'custom:later', title: '后来', artist: '刘若英', category: '私有自定义', featured: false,
+  }])
+})
+
 test('featured songs remain an unranked catalog subset', async () => {
   const { getFeaturedSongs } = await loadModule()
   assert.deepEqual(getFeaturedSongs(songs).map((song: { id: string }) => song.id), ['a', 'c'])
@@ -249,6 +408,9 @@ test('station exposes requests and rankings without playback controls', () => {
 
   assert.match(source, /热门歌曲/)
   assert.match(source, /点歌榜/)
+  assert.match(source, /个人榜/)
+  assert.match(source, /aria-label="切换到个人榜"/)
+  assert.match(source, /rankSongsByPracticeMatch/)
   assert.match(source, /搜索歌名或歌手/)
   assert.match(source, /: '点歌'/)
   assert.match(source, /getSongSubtitle\(song\)/)
@@ -308,9 +470,9 @@ test('station home is a four-direction guide and details are separate', () => {
   const source = readFileSync(stationUrl, 'utf8')
 
   assert.match(source, /const HUB_DIRECTIONS/)
-  assert.match(source, /id: 'ranking'.*label: '点歌榜'/s)
+  assert.match(source, /id: 'ranking'.*label: '排行榜'/s)
   assert.match(source, /id: 'artists'.*label: '歌手'/s)
-  assert.match(source, /id: 'roadshows'.*label: '路演'/s)
+  assert.match(source, /id: 'roadshows'.*label: '我的档案'/s)
   assert.match(source, /id: 'playlists'.*label: '歌单'/s)
   assert.match(source, /activeSection === null/)
   assert.doesNotMatch(source, /id: 'languages'/)
@@ -326,7 +488,28 @@ test('roadshow panel keeps performance and recognition songs distinct', () => {
   assert.match(source, /互动游戏准备的题目歌曲/)
   assert.match(source, /从曲库添加/)
   assert.match(source, /手动添加曲库外歌曲/)
-  assert.match(source, /锁定路演/)
+  assert.match(source, /锁定档案/)
+})
+
+test('我的档案整合日常练习批量记录和月周日折叠历史', () => {
+  assert.ok(existsSync(dailyPracticePanelUrl), 'daily practice panel must exist')
+  const daily = readFileSync(dailyPracticePanelUrl, 'utf8')
+  const archive = readFileSync(roadshowPanelUrl, 'utf8')
+  const station = readFileSync(stationUrl, 'utf8')
+
+  assert.match(archive, /DailyPracticePanel/)
+  assert.match(archive, /'practice' \| 'roadshows'/)
+  assert.match(archive, /日常练习/)
+  assert.match(archive, /路演档案/)
+  assert.match(daily, /记录今日练习/)
+  assert.match(daily, /groupPracticeRecordsByCalendar/)
+  assert.match(daily, /saveSongRecords/)
+  assert.match(daily, /<details/)
+  assert.match(daily, /<summary/)
+  assert.match(daily, /补充文字（可选）/)
+  assert.match(daily, /手动添加曲库外歌曲/)
+  assert.match(station, /songs=\{catalogSongs\}[\s\S]*records=\{songRecords\}/)
+  assert.match(station, /onRecordsChange=\{commitSongRecords\}/)
 })
 
 test('browser adapter routes public and private sync through the existing CloudBase singleton', () => {
@@ -341,4 +524,86 @@ test('browser adapter routes public and private sync through the existing CloudB
   assert.match(source, /pullRoadshows/)
   assert.match(source, /saveRoadshow/)
   assert.match(source, /deleteRoadshow/)
+  assert.match(source, /export const pullSongRecords/)
+  assert.match(source, /export const saveSongRecord/)
+  assert.match(source, /export const saveSongRecords/)
+  assert.match(source, /export const deleteSongRecord/)
+  assert.match(source, /action: 'songRecords:pull'/)
+  assert.match(source, /action: 'songRecords:save'/)
+  assert.match(source, /action: 'songRecords:saveBatch'/)
+  assert.match(source, /action: 'songRecords:delete'/)
+})
+
+test('歌曲详情页提供练习与路演记录并保留点歌按钮的独立行为', () => {
+  assert.ok(existsSync(songDetailPanelUrl), 'song detail panel must exist')
+  const station = readFileSync(stationUrl, 'utf8')
+  const panel = readFileSync(songDetailPanelUrl, 'utf8')
+  const roadshowPanel = readFileSync(roadshowPanelUrl, 'utf8')
+
+  assert.match(station, /selectedSong/)
+  assert.match(station, /openSongDetail/)
+  assert.match(station, /event\.stopPropagation\(\)/)
+  assert.match(station, /pullSongRecords/)
+  assert.match(station, /SONG_REQUEST_SESSION_EVENT/)
+  assert.match(station, /setActiveSection\('artists'\)/)
+  assert.match(station, /setSelectedArtist\(song\.artist\)/)
+  assert.match(station, /if \(!next\).*setSelectedSong\(null\).*setSelectedArtist\(null\)/s)
+  assert.match(panel, /练习记录/)
+  assert.match(panel, /路演记录/)
+  assert.match(panel, /useState<JournalKind>\('practice'\)/)
+  assert.match(panel, /aria-label="切换记录类型"/)
+  assert.match(panel, /aria-pressed=\{activeJournal === 'practice'\}/)
+  assert.match(panel, /aria-pressed=\{activeJournal === 'roadshow'\}/)
+  assert.doesNotMatch(panel, /lg:w-4\/5/)
+  assert.match(panel, /sm:items-start/)
+  assert.match(panel, /data-journal-eyebrow.*MY SONG JOURNAL.*role="status"/s)
+  assert.match(panel, /role="status"><Cloud className="h-2\.5 w-2\.5"/)
+  assert.doesNotMatch(panel, /data-journal-toolbar.*role="status"/s)
+  assert.match(station, /setRecordSyncStatus\('已同步'\)/)
+  assert.doesNotMatch(station, /setRecordSyncStatus\('已从腾讯云同步'\)/)
+  assert.match(panel, /RecordTimeline records=\{activeJournal === 'practice' \? practices : roadshows\}/)
+  assert.match(panel, /type="datetime-local"/)
+  assert.match(panel, /label="练习时间"/)
+  assert.match(panel, /label="路演时间"/)
+  assert.doesNotMatch(panel, /练习日期与时间|路演日期与时间/)
+  assert.match(panel, /\[color-scheme:dark\]/)
+  assert.match(panel, /showPicker\?\.\(\)/)
+  assert.match(panel, /setPracticeAt\(event\.target\.value\)/)
+  assert.match(panel, /setRoadshowAt\(event\.target\.value\)/)
+  assert.doesNotMatch(panel, /练习分钟数|durationMinutes|累计[^<]*分/)
+  assert.match(panel, /匹配度（70–100）/)
+  assert.match(panel, /averageMatchScore\(practices\)/)
+  assert.doesNotMatch(panel, /practices\[0\]\?\.matchScore/)
+  assert.match(panel, /min="70" max="100"/)
+  assert.doesNotMatch(panel, /匹配度（60–100）|min="60"/)
+  assert.match(panel, /练习感受/)
+  assert.match(panel, /label="弹唱感想"/)
+  assert.match(panel, /getPracticeReflection\(record\)/)
+  assert.doesNotMatch(panel, /label="问题描述"|label="改进办法"/)
+  assert.match(panel, /观众称呼（可选）/)
+  assert.match(panel, /现场反馈与观察/)
+  assert.match(panel, /请先进入路演档案解锁/)
+  assert.doesNotMatch(panel, /至少记录一项练习感受或弹唱感想/)
+  assert.match(panel, /deleteSongRecord/)
+  assert.match(panel, /const beginEdit = \(record: SongRecord\)/)
+  assert.match(panel, /onDoubleClick=\{\(\) => onEdit\(record\)\}/)
+  assert.match(panel, /onDoubleClick=\{\(event\) => event\.stopPropagation\(\)\}/)
+  assert.match(panel, /id: editingRecord\?\.kind === 'practice' \? editingRecord\.id : recordId\('practice'\)/)
+  assert.match(panel, /id: editingRecord\?\.kind === 'roadshow' \? editingRecord\.id : recordId\('roadshow'\)/)
+  assert.match(panel, /editingRecord\?\.kind === 'practice' \? '保存修改' : '保存练习记录'/)
+  assert.match(panel, /editingRecord\?\.kind === 'roadshow' \? '保存修改' : '保存路演记录'/)
+  assert.match(roadshowPanel, /clearSongRecordCache/)
+  assert.match(roadshowPanel, /SONG_REQUEST_SESSION_EVENT/)
+  assert.match(roadshowPanel, /dispatchEvent/)
+})
+
+test('歌曲详情页会话只读取有效的现有私有空间凭据', async () => {
+  const { readSongRecordSession, SONG_REQUEST_SESSION_EVENT } = await import(songRecordsModuleUrl.href)
+  const values = new Map<string, string>([['jieyou-roadshow-session-v1', JSON.stringify({ alias: 'JIEYOU', password: 'guitar-2026' })]])
+  const storage = { getItem: (key: string) => values.get(key) ?? null }
+
+  assert.deepEqual(readSongRecordSession(storage), { alias: 'JIEYOU', password: 'guitar-2026' })
+  values.set('jieyou-roadshow-session-v1', JSON.stringify({ alias: '', password: '123' }))
+  assert.equal(readSongRecordSession(storage), null)
+  assert.equal(SONG_REQUEST_SESSION_EVENT, 'jieyou-song-request-session-change')
 })
