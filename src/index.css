@@ -17,6 +17,60 @@
   to { transform: translate3d(-50%, -50%, 0); }
 }
 
+.popular-song-board {
+  position: relative;
+  height: clamp(21rem, 48vw, 26rem);
+  overflow: hidden;
+  border: 1px solid rgba(196, 181, 253, .16);
+  border-radius: 2rem;
+  background:
+    radial-gradient(circle at 72% 58%, rgba(6, 182, 212, .07), transparent 30%),
+    rgba(2, 2, 8, .7);
+  box-shadow: inset 0 1px rgba(255, 255, 255, .04), 0 30px 80px rgba(0, 0, 0, .22);
+}
+
+.popular-song-board--immersive {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  background:
+    radial-gradient(circle at 72% 58%, rgba(8, 145, 178, .06), transparent 28%),
+    #020207;
+}
+
+.popular-song-board::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(circle, rgba(255,255,255,.72) 0 1px, transparent 1.4px),
+    radial-gradient(circle, rgba(255,255,255,.36) 0 1px, transparent 1.3px);
+  background-position: 0 0, 31px 19px;
+  background-size: 61px 61px, 83px 83px;
+  opacity: .34;
+}
+
+.barrage-stage.popular-song-stage {
+  top: 3%;
+  bottom: 3%;
+}
+
+.popular-song-chip {
+  background: rgba(3, 5, 10, .66);
+  font-size: clamp(.88rem, 1.25vw, 1.08rem);
+  font-weight: 750;
+  letter-spacing: .02em;
+}
+
+.popular-song-chip:hover,
+.popular-song-chip:focus-visible {
+  background: rgba(12, 12, 20, .96);
+  outline: 2px solid rgba(255,255,255,.78);
+  outline-offset: 3px;
+}
+
 .barrage-stage {
   top: 7%;
   bottom: 17%;
@@ -202,6 +256,17 @@
     font-size: .75rem;
     opacity: .82;
   }
+
+  .popular-song-board {
+    height: auto;
+    min-height: 18rem;
+  }
+
+  .popular-song-board--immersive {
+    height: 100%;
+    min-height: 100%;
+  }
+
 }
 
 @media (max-width: 640px) and (prefers-reduced-motion: reduce) {
@@ -270,6 +335,14 @@
 .practice-message { margin:.7rem 0 0; color:rgba(253,230,138,.72); font-size:.7rem; }
 .practice-empty,.roadshow-empty { display:grid; min-height:10rem; place-items:center; border:1px dashed rgba(255,255,255,.09); border-radius:1rem; color:rgba(255,255,255,.3); text-align:center; font-size:.74rem; }
 .practice-month,.practice-week,.practice-day { margin-top:.5rem; border:1px solid rgba(255,255,255,.08); border-radius:.85rem; background:rgba(0,0,0,.16); overflow:hidden; }
+.practice-month-content,.practice-week-content { min-height:0; }
+.practice-scroll-region { max-height:30.55rem; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; scrollbar-color:rgba(251,146,60,.52) rgba(255,255,255,.04); }
+.practice-scroll-region::-webkit-scrollbar { width:.36rem; }
+.practice-scroll-region::-webkit-scrollbar-track { border-radius:999px; background:rgba(255,255,255,.04); }
+.practice-scroll-region::-webkit-scrollbar-thumb { border-radius:999px; background:rgba(251,146,60,.52); }
+.practice-scroll-region:focus-visible { outline:1px solid rgba(253,186,116,.72); outline-offset:-2px; }
+.practice-month-content.practice-scroll-region,.practice-week-content.practice-scroll-region { padding-right:.2rem; }
+.practice-day-records.practice-scroll-region { margin-right:.2rem; padding-right:.25rem; }
 .practice-month>summary,.practice-week>summary,.practice-day>summary { display:grid; grid-template-columns:1fr auto auto; align-items:center; gap:.55rem; cursor:pointer; padding:.72rem .8rem; list-style:none; }
 .practice-month>summary span { font-family:Georgia,"Noto Serif SC",serif; font-weight:900; }.practice-month summary small { color:rgba(255,255,255,.32); font-size:.64rem; }.practice-month[open]>summary>svg,.practice-week[open]>summary>svg,.practice-day[open]>summary>svg { transform:rotate(180deg); }
 .practice-week { margin:.45rem; }.practice-week>summary { color:rgba(253,186,116,.72); font-size:.75rem; }.practice-day { margin:.38rem; }.practice-day>summary { font-size:.72rem; }

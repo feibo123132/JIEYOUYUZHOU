@@ -1,7 +1,7 @@
 import type { Song } from './songCatalog.ts';
 
 export type VoteCounts = Record<string, number>;
-export interface EditableCatalog { version: 2; artists: string[]; songs: Song[]; }
+export interface EditableCatalog { version: 5; artists: string[]; songs: Song[]; }
 
 interface ReadableStorage {
   getItem: (key: string) => string | null;
@@ -15,7 +15,7 @@ export const VOTE_STORAGE_KEY = 'jieyou-song-request-votes-v1';
 export const CATALOG_STORAGE_KEY = 'jieyou-song-catalog-v1';
 
 export const createEditableCatalog = (songs: Song[]): EditableCatalog => ({
-  version: 2,
+  version: 5,
   artists: [...new Set(songs.map((song) => song.artist))],
   songs: [...songs],
 });
@@ -60,16 +60,20 @@ export const loadEditableCatalog = (storage: ReadableStorage, fallbackSongs: Son
     if (!Array.isArray(parsed.artists) || !Array.isArray(parsed.songs)
       || !parsed.artists.every((artist) => typeof artist === 'string' && artist.trim())
       || !parsed.songs.every(isSong)) return createEditableCatalog(fallbackSongs);
-    if (parsed.version === 2) {
-      return { version: 2, artists: [...new Set(parsed.artists)], songs: parsed.songs };
+    if (parsed.version === 5) {
+      return { version: 5, artists: [...new Set(parsed.artists)], songs: parsed.songs };
     }
-    if (parsed.version === 1) {
+    if (parsed.version === 1 || parsed.version === 2 || parsed.version === 3 || parsed.version === 4) {
       const defaultCatalog = createEditableCatalog(fallbackSongs);
       const defaultSongIds = new Set(fallbackSongs.map((song) => song.id));
+      const cachedSongs = new Map(parsed.songs.map((song) => [song.id, song]));
       return {
-        version: 2,
+        version: 5,
         artists: [...new Set([...defaultCatalog.artists, ...parsed.artists])],
-        songs: [...fallbackSongs, ...parsed.songs.filter((song) => !defaultSongIds.has(song.id))],
+        songs: [
+          ...fallbackSongs.map((song) => ({ ...(cachedSongs.get(song.id) ?? {}), ...song })),
+          ...parsed.songs.filter((song) => !defaultSongIds.has(song.id)),
+        ],
       };
     }
     return createEditableCatalog(fallbackSongs);

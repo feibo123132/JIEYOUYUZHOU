@@ -171,6 +171,15 @@ test('soft delete strips the CloudBase reserved document id before writing', () 
   assert.match(readFileSync(functionPath, 'utf8'), /ref\.set\(buildSoftDeletedSongRecord\(current, workspaceId, deletedAt\)\)/);
 })
 
+test('roadshow save strips the CloudBase reserved workspace id before writing', () => {
+  const { buildWritableWorkspace } = loadFunction();
+  const workspace = { _id: 'cloud-document-id', version: 1, alias: 'JIEYOU', roadshows: [] };
+
+  assert.equal(typeof buildWritableWorkspace, 'function');
+  assert.deepEqual(buildWritableWorkspace(workspace), { version: 1, alias: 'JIEYOU', roadshows: [] });
+  assert.match(readFileSync(functionPath, 'utf8'), /setWorkspace: \(id, value\) => workspaces\.doc\(id\)\.set\(buildWritableWorkspace\(value\)\)/);
+})
+
 test('keeps private song records isolated, independent, and soft-deleted', async () => {
   const store = memoryStore();
   const { createHandler } = loadFunction();

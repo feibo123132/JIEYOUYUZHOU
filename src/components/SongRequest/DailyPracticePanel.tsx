@@ -42,6 +42,16 @@ interface PracticeDraft {
   reflection: string;
 }
 
+const PRACTICE_SCROLL_THRESHOLD = 8;
+
+const scrollRegionProps = (baseClass: string, recordCount: number, label: string) => {
+  const scrollable = recordCount > PRACTICE_SCROLL_THRESHOLD;
+  return {
+    className: `${baseClass}${scrollable ? ' practice-scroll-region' : ''}`,
+    ...(scrollable ? { tabIndex: 0, 'aria-label': label } : {}),
+  };
+};
+
 const pad = (value: number) => String(value).padStart(2, '0');
 
 const currentTime = () => {
@@ -318,38 +328,56 @@ export default function DailyPracticePanel({
             return (
               <details className="practice-month" key={month.key} open={month.key === today.slice(0, 7)}>
                 <summary><span>{monthLabel(month.key)}</span><small>{month.weeks.flatMap((week) => week.days).length} 天 · {monthRecords.length} 首</small><ChevronDown size={15} /></summary>
-                {month.weeks.map((week) => {
-                  const weekDays = week.days;
-                  const weekRecords = weekDays.flatMap((day) => day.records);
-                  const containsToday = weekDays.some((day) => day.key === today);
-                  return (
-                    <details className="practice-week" key={week.key} open={containsToday}>
-                      <summary><span>{containsToday ? '本周' : `${weekDays.at(-1)?.key.slice(5).replace('-', '/')}–${weekDays[0]?.key.slice(5).replace('-', '/')}`}</span><small>{weekRecords.length} 首</small><ChevronDown size={14} /></summary>
-                      {weekDays.map((day) => (
-                        <details className="practice-day" key={day.key} open={day.key === today}>
-                          <summary>
-                            <span>{dayLabel(day.key)}</span>
-                            <small>{day.count} 首{day.averageScore === null ? '' : ` · 均分 ${day.averageScore}`}</small>
-                            <ChevronDown size={14} />
-                          </summary>
-                          <div className="practice-day-records">
-                            {day.records.map((record) => {
-                              const quality = qualityOf(record.matchScore);
-                              return (
-                                <button type="button" key={record.id} onDoubleClick={() => editRecord(record)} onClick={() => editRecord(record)}>
-                                  <span><strong>{record.songTitle}</strong><small>{record.songArtist}</small></span>
-                                  <b>{record.matchScore}</b>
-                                  <em className={quality.className}>{quality.label}</em>
-                                  <Edit3 size={14} />
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </details>
-                      ))}
-                    </details>
-                  );
-                })}
+                <div {...scrollRegionProps(
+                  'practice-month-content',
+                  monthRecords.length,
+                  `${monthLabel(month.key)}练习记录`,
+                )}>
+                  {month.weeks.map((week) => {
+                    const weekDays = week.days;
+                    const weekRecords = weekDays.flatMap((day) => day.records);
+                    const containsToday = weekDays.some((day) => day.key === today);
+                    const visibleWeekRange = `${weekDays.at(-1)?.key.slice(5).replace('-', '/')}–${weekDays[0]?.key.slice(5).replace('-', '/')}`;
+                    const visibleWeekLabel = containsToday ? '本周' : visibleWeekRange;
+                    return (
+                      <details className="practice-week" key={week.key} open={containsToday}>
+                        <summary><span>{visibleWeekLabel}</span><small>{weekRecords.length} 首</small><ChevronDown size={14} /></summary>
+                        <div {...scrollRegionProps(
+                          'practice-week-content',
+                          weekRecords.length,
+                          `${visibleWeekLabel}练习记录`,
+                        )}>
+                          {weekDays.map((day) => (
+                            <details className="practice-day" key={day.key} open={day.key === today}>
+                              <summary>
+                                <span>{dayLabel(day.key)}</span>
+                                <small>{day.count} 首{day.averageScore === null ? '' : ` · 均分 ${day.averageScore}`}</small>
+                                <ChevronDown size={14} />
+                              </summary>
+                              <div {...scrollRegionProps(
+                                'practice-day-records',
+                                day.records.length,
+                                `${dayLabel(day.key)}练习记录`,
+                              )}>
+                                {day.records.map((record) => {
+                                  const quality = qualityOf(record.matchScore);
+                                  return (
+                                    <button type="button" key={record.id} onDoubleClick={() => editRecord(record)} onClick={() => editRecord(record)}>
+                                      <span><strong>{record.songTitle}</strong><small>{record.songArtist}</small></span>
+                                      <b>{record.matchScore}</b>
+                                      <em className={quality.className}>{quality.label}</em>
+                                      <Edit3 size={14} />
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </details>
+                          ))}
+                        </div>
+                      </details>
+                    );
+                  })}
+                </div>
               </details>
             );
           })}

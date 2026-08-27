@@ -11,6 +11,7 @@ const workspaceId = (alias) => crypto.createHash('sha256').update(alias.trim().t
 const passwordHash = (password, salt) => crypto.scryptSync(password, salt, 32).toString('hex');
 const songRecordDocumentId = (workspace, record) => crypto.createHash('sha256').update(`${workspace}:${record}`).digest('hex');
 const publicSongRecord = ({ workspaceId: _workspaceId, deletedAt: _deletedAt, _id: _documentId, ...record }) => record;
+const buildWritableWorkspace = ({ _id: _documentId, ...workspace }) => workspace;
 const buildSoftDeletedSongRecord = (current, workspaceId, deletedAt) => {
   if (!current || current.workspaceId !== workspaceId || current.deletedAt) throw new Error('NOT_FOUND');
   const { _id: _documentId, ...writableRecord } = current;
@@ -128,7 +129,7 @@ exports.main = async (event) => {
           throw error;
         }
       },
-      setWorkspace: (id, value) => workspaces.doc(id).set(value),
+      setWorkspace: (id, value) => workspaces.doc(id).set(buildWritableWorkspace(value)),
       async getVotes() {
         const result = await votes.limit(100).get();
         return Object.fromEntries((result.data || []).map((item) => [item._id, Number(item.count) || 0]));
@@ -203,4 +204,5 @@ exports.main = async (event) => {
 };
 
 exports.createHandler = createHandler;
+exports.buildWritableWorkspace = buildWritableWorkspace;
 exports.buildSoftDeletedSongRecord = buildSoftDeletedSongRecord;

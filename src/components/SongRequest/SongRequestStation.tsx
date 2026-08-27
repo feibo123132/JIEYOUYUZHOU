@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  ArrowLeft, CalendarDays, Check, ChevronRight, Flame, Guitar,
-  Library, Mic2, Plus, Search, Target, Trash2, Trophy,
+  ArrowLeft, CalendarDays, Check, ChevronRight, Guitar,
+  Library, Mic2, Plus, RotateCcw, Search, SlidersHorizontal, Target, Trash2, Trophy, X,
 } from 'lucide-react';
 import useAppStore from '../../store/appStore';
 import { SONGS, type Song } from './songCatalog';
 import {
-  addCatalogArtist, addCatalogSong, createEditableCatalog, filterSongs, getFeaturedSongs,
+  addCatalogArtist, addCatalogSong, createEditableCatalog, getFeaturedSongs,
   getSongSubtitle, incrementSongVote, loadEditableCatalog, loadVoteCounts, rankSongsByVotes,
   removeCatalogArtist, removeCatalogSong, saveEditableCatalog, saveVoteCounts,
   type EditableCatalog, type VoteCounts,
@@ -15,8 +15,10 @@ import { groupSongsByArtist } from './roadshow';
 import { incrementCloudVote, pullCloudVotes, pullSongRecords } from './songRequestCloud';
 import RoadshowPanel from './RoadshowPanel';
 import SongDetailPanel from './SongDetailPanel';
+import PopularSongBarrage from './PopularSongBarrage';
+import { createInitialBarragePreferences, setBarragePreference } from '../StarrySky/barragePreferences';
 import {
-  loadSongRecordCache, parseSongRecords, rankSongsByPracticeMatch, readSongRecordSession, recoverSongsFromRecords,
+  getMatchQuality, loadSongRecordCache, parseSongRecords, rankSongsByPracticeMatch, readSongRecordSession, recoverSongsFromRecords,
   saveSongRecordCache, SONG_REQUEST_SESSION_EVENT,
   type SongRecord, type SongRecordSession,
 } from './songRecords';
@@ -24,22 +26,61 @@ import {
 interface SongRequestStationProps { onBack: () => void; }
 type SectionId = 'ranking' | 'artists' | 'roadshows' | 'playlists';
 type RankingView = 'requests' | 'personal';
+type ArtistLanguageFilter = 'chinese' | 'foreign' | 'single';
+type SongDisplayMode = 'random' | 'full';
+
+const ARTIST_LANGUAGE_FILTERS: { value: ArtistLanguageFilter; label: string }[] = [
+  { value: 'chinese', label: '华语歌手' },
+  { value: 'foreign', label: '外语歌手' },
+  { value: 'single', label: '一人一曲' },
+];
+
+const PERSONAL_RANKING_SCROLL_THRESHOLD = 8;
 
 const HUB_DIRECTIONS = [
-  { id: 'ranking', label: '排行榜', eyebrow: 'RANKINGS', description: '切换查看点歌榜和个人榜', icon: Trophy, tone: 'from-amber-400/20 to-orange-600/5' },
+  { id: 'ranking', label: '排行榜', eyebrow: 'RANKINGS', description: '切换查看点歌榜和个人练习榜', icon: Trophy, tone: 'from-amber-400/20 to-orange-600/5' },
   { id: 'artists', label: '歌手', eyebrow: 'ARTISTS', description: '按歌手找到我会唱的歌', icon: Mic2, tone: 'from-rose-400/20 to-pink-700/5' },
-  { id: 'roadshows', label: '我的档案', eyebrow: 'PRIVATE ARCHIVE', description: '日常练习与路演记录', icon: CalendarDays, tone: 'from-cyan-400/20 to-blue-700/5' },
-  { id: 'playlists', label: '歌单', eyebrow: 'SONGBOOK', description: '浏览热门歌曲与完整曲库', icon: Library, tone: 'from-violet-400/20 to-purple-700/5' },
+  { id: 'roadshows', label: '记录', eyebrow: 'PRIVATE ARCHIVE', description: '日常练习与路演记录', icon: CalendarDays, tone: 'from-cyan-400/20 to-blue-700/5' },
+  { id: 'playlists', label: '热门歌曲', eyebrow: 'HOT SONGS', description: '看歌名化作彩色弹幕穿过星空', icon: Library, tone: 'from-violet-400/20 to-purple-700/5' },
 ] as const;
+
+const ARTIST_AVATARS: Record<string, { src: string; position: string; scale: number }> = {
+  周杰伦: { src: '/images/song-request/artists/jay-chou.png', position: '50% 24%', scale: 1.35 },
+  林俊杰: { src: '/images/song-request/artists/jj-lin.png', position: '50% 38%', scale: 1.35 },
+  孙燕姿: { src: '/images/song-request/artists/stefanie-sun.png', position: '50% 24%', scale: 1.65 },
+  邓紫棋: { src: '/images/song-request/artists/gem.png', position: '50% 34%', scale: 1.45 },
+  薛之谦: { src: '/images/song-request/artists/joker-xue.png', position: '50% 29%', scale: 1.3 },
+  汪苏泷: { src: '/images/song-request/artists/silence-wang.png', position: '50% 27%', scale: 1.35 },
+  梁静茹: { src: '/images/song-request/artists/fish-leong.png', position: '50% 30%', scale: 1.4 },
+  陶喆: { src: '/images/song-request/artists/david-tao.png', position: '67% 46%', scale: 2.7 },
+  王力宏: { src: '/images/song-request/artists/wang-leehom.png', position: '50% 34%', scale: 1.35 },
+  许嵩: { src: '/images/song-request/artists/vae.png', position: '63% 25%', scale: 1.55 },
+  陈奕迅: { src: '/images/song-request/artists/eason-chan.png', position: '50% 43%', scale: 2.45 },
+  郑润泽: { src: '/images/song-request/artists/zheng-runze.png', position: '50% 22%', scale: 1.35 },
+};
+
+interface AvatarAdjustment { x: number; y: number; scale: number; rotation: number; }
+const ARTIST_AVATAR_ADJUSTMENTS_KEY = 'jieyou-artist-avatar-adjustments-v1';
+
+const getDefaultAvatarAdjustment = (avatar: { position: string; scale: number }): AvatarAdjustment => {
+  const [x = 50, y = 50] = avatar.position.split(' ').map((value) => Number.parseFloat(value));
+  return { x, y, scale: avatar.scale, rotation: 0 };
+};
+
+const loadAvatarAdjustments = (): Record<string, AvatarAdjustment> => {
+  try { return JSON.parse(window.localStorage.getItem(ARTIST_AVATAR_ADJUSTMENTS_KEY) || '{}'); } catch { return {}; }
+};
 
 const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   const nickname = useAppStore((state) => state.user?.nickname || '');
   const [activeSection, setActiveSection] = useState<SectionId | null>(null);
   const [rankingView, setRankingView] = useState<RankingView>('requests');
+  const [personalRankingArtist, setPersonalRankingArtist] = useState<string | null>(null);
+  const [rankingArtistQuery, setRankingArtistQuery] = useState('');
   const [selectedArtist, setSelectedArtist] = useState<string | null>(null);
   const [selectedSong, setSelectedSong] = useState<Song | null>(null);
   const [query, setQuery] = useState('');
-  const [category, setCategory] = useState('全部');
+  const [artistLanguageFilter, setArtistLanguageFilter] = useState<ArtistLanguageFilter>('chinese');
   const [catalog, setCatalog] = useState<EditableCatalog>(() => (
     typeof window === 'undefined' ? createEditableCatalog(SONGS) : loadEditableCatalog(window.localStorage, SONGS)
   ));
@@ -56,6 +97,17 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   ));
   const [recoveredSongs, setRecoveredSongs] = useState<Song[]>([]);
   const [recordSyncStatus, setRecordSyncStatus] = useState('');
+  const [avatarAdjustMode, setAvatarAdjustMode] = useState(false);
+  const [adjustingArtist, setAdjustingArtist] = useState<string | null>(null);
+  const [avatarAdjustments, setAvatarAdjustments] = useState<Record<string, AvatarAdjustment>>(() => (
+    typeof window === 'undefined' ? {} : loadAvatarAdjustments()
+  ));
+  const [songAssistantOpen, setSongAssistantOpen] = useState(false);
+  const [barragePreferences, setBarragePreferences] = useState(createInitialBarragePreferences);
+  const barrageMode = barragePreferences.immersive;
+  const intimateMode = barragePreferences.intimate;
+  const fillMode = barragePreferences.fill;
+  const [songDisplayMode, setSongDisplayMode] = useState<SongDisplayMode>('random');
 
   useEffect(() => {
     let active = true;
@@ -109,20 +161,52 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     const ids = new Set(catalog.songs.map((song) => song.id));
     return [...catalog.songs, ...recoveredSongs.filter((song) => !ids.has(song.id))];
   }, [catalog.songs, recoveredSongs]);
-  const songCategories = useMemo(() => ['全部', ...new Set(catalogSongs.map((song) => song.category))], [catalogSongs]);
-  const featuredSongs = useMemo(() => getFeaturedSongs(catalogSongs), [catalogSongs]);
-  const visibleSongs = useMemo(() => filterSongs(catalogSongs, query, category), [catalogSongs, category, query]);
+  const providedSongs = useMemo(() => getFeaturedSongs(catalogSongs), [catalogSongs]);
+  const randomSongs = useMemo(() => {
+    const shuffled = [...providedSongs];
+    for (let index = shuffled.length - 1; index > 0; index -= 1) {
+      const swapIndex = Math.floor(Math.random() * (index + 1));
+      [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+    }
+    return shuffled.slice(0, 60);
+  }, [providedSongs]);
+  const barrageSongs = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (needle) {
+      return providedSongs.filter((song) => song.title.toLowerCase().includes(needle)
+        || song.artist.toLowerCase().includes(needle));
+    }
+    return songDisplayMode === 'full' ? providedSongs : randomSongs;
+  }, [providedSongs, query, randomSongs, songDisplayMode]);
   const ranking = useMemo(() => rankSongsByVotes(catalogSongs, votes), [catalogSongs, votes]);
   const personalRanking = useMemo(() => rankSongsByPracticeMatch(catalogSongs, songRecords), [catalogSongs, songRecords]);
+  const visiblePersonalRanking = useMemo(() => (
+    personalRankingArtist
+      ? personalRanking.filter(({ song }) => song.artist === personalRankingArtist)
+      : personalRanking
+  ), [personalRanking, personalRankingArtist]);
+  const personalRankingArtists = useMemo(() => {
+    const needle = rankingArtistQuery.trim().toLowerCase();
+    return groupSongsByArtist(catalogSongs).filter(({ songs }) => songs.length >= 2).filter(({ artist, songs }) => (
+      !needle || artist.toLowerCase().includes(needle)
+        || songs.some((song) => song.title.toLowerCase().includes(needle))
+    ));
+  }, [catalogSongs, rankingArtistQuery]);
   const artistGroups = useMemo(() => {
     const grouped = new Map(groupSongsByArtist(catalogSongs).map((group) => [group.artist, group.songs]));
     const needle = query.trim().toLowerCase();
     const visibleArtists = [...new Set([...catalog.artists, ...recoveredSongs.map((song) => song.artist)])];
-    return visibleArtists.map((artist) => ({ artist, songs: grouped.get(artist) ?? [] })).filter(({ artist, songs }) => (
-      !needle || artist.toLowerCase().includes(needle)
-        || songs.some((song) => song.title.toLowerCase().includes(needle))
-    ));
-  }, [catalog.artists, catalogSongs, query, recoveredSongs]);
+    return visibleArtists.map((artist) => ({ artist, songs: grouped.get(artist) ?? [] })).filter(({ artist, songs }) => {
+      const singleSongArtist = songs.length === 1;
+      const chineseArtist = !songs.some((song) => song.category === '欧美流行');
+      const matchesCatalogGroup = artistLanguageFilter === 'single' ? singleSongArtist : songs.length >= 2;
+      const matchesLanguage = artistLanguageFilter === 'single'
+        || (artistLanguageFilter === 'chinese' ? chineseArtist : !chineseArtist);
+      const matchesQuery = !needle || artist.toLowerCase().includes(needle)
+        || songs.some((song) => song.title.toLowerCase().includes(needle));
+      return matchesCatalogGroup && matchesLanguage && matchesQuery;
+    });
+  }, [artistLanguageFilter, catalog.artists, catalogSongs, query, recoveredSongs]);
 
   const commitCatalog = (next: EditableCatalog) => {
     setCatalog(next);
@@ -179,10 +263,35 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     commitCatalog(removeCatalogSong(catalog, song.id));
   };
 
+  const getAvatarStyle = (artist: string) => {
+    const avatar = ARTIST_AVATARS[artist];
+    return avatar ? (avatarAdjustments[artist] ?? getDefaultAvatarAdjustment(avatar)) : null;
+  };
+
+  const updateAvatarAdjustment = (artist: string, patch: Partial<AvatarAdjustment>) => {
+    const avatar = ARTIST_AVATARS[artist];
+    if (!avatar) return;
+    setAvatarAdjustments((current) => {
+      const next = { ...current, [artist]: { ...(current[artist] ?? getDefaultAvatarAdjustment(avatar)), ...patch } };
+      try { window.localStorage.setItem(ARTIST_AVATAR_ADJUSTMENTS_KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
+
+  const resetAvatarAdjustment = (artist: string) => {
+    setAvatarAdjustments((current) => {
+      const next = { ...current };
+      delete next[artist];
+      try { window.localStorage.setItem(ARTIST_AVATAR_ADJUSTMENTS_KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
+
   const goBack = () => {
     if (selectedSong) {
       const song = selectedSong;
       setSelectedSong(null);
+      if (activeSection === 'playlists') return;
       setActiveSection('artists');
       setSelectedArtist(song.artist);
       return;
@@ -191,7 +300,6 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     if (selectedArtist) return setSelectedArtist(null);
     setActiveSection(null);
     setQuery('');
-    setCategory('全部');
   };
 
   const openPrivateSpace = () => {
@@ -241,12 +349,54 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   );
 
   const sectionTitle = HUB_DIRECTIONS.find((item) => item.id === activeSection)?.label;
+  const popularImmersive = activeSection === 'playlists' && !selectedSong;
 
   return (
-    <main className="relative z-20 min-h-screen overflow-y-auto bg-[radial-gradient(circle_at_15%_0%,rgba(249,115,22,.14),transparent_30%),radial-gradient(circle_at_88%_18%,rgba(124,58,237,.12),transparent_28%)] px-4 py-5 text-white sm:px-7 lg:px-10 lg:py-8">
+    <main className={`relative z-20 min-h-screen bg-[radial-gradient(circle_at_15%_0%,rgba(249,115,22,.14),transparent_30%),radial-gradient(circle_at_88%_18%,rgba(124,58,237,.12),transparent_28%)] text-white ${popularImmersive ? 'h-screen overflow-hidden' : 'overflow-y-auto px-4 py-5 sm:px-7 lg:px-10 lg:py-8'}`}>
       <div className="pointer-events-none fixed inset-0 opacity-[.16] [background-image:linear-gradient(rgba(255,255,255,.035)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.035)_1px,transparent_1px)] [background-size:42px_42px]" />
+      {popularImmersive && !songAssistantOpen && (
+        <button type="button" aria-label="打开歌曲助手" onClick={() => { (window as any).playClickSound?.(); setSongAssistantOpen(true); }} className="fixed right-4 top-4 z-40 bg-transparent text-3xl drop-shadow-[0_0_14px_rgba(251,191,36,.35)]">
+          <span role="img" aria-label="cat" className="breath-slow inline-block transition-transform duration-200 hover:scale-125 hover:rotate-12">🐱</span>
+        </button>
+      )}
+      {songAssistantOpen && (
+        <SongAssistant
+          query={query}
+          displayMode={songDisplayMode}
+          barrageMode={barrageMode}
+          intimateMode={intimateMode}
+          fillMode={fillMode}
+          onQueryChange={(value) => { setQuery(value); setActiveSection('playlists'); setSelectedArtist(null); setSelectedSong(null); }}
+          onResetSearch={() => setQuery('')}
+          onDisplayModeChange={(mode) => { setSongDisplayMode(mode); setActiveSection('playlists'); setSelectedArtist(null); setSelectedSong(null); }}
+          onBarrageModeChange={(enabled) => setBarragePreferences((current) => setBarragePreference(current, 'immersive', enabled))}
+          onIntimateModeChange={(enabled) => setBarragePreferences((current) => setBarragePreference(current, 'intimate', enabled))}
+          onFillModeChange={(enabled) => setBarragePreferences((current) => setBarragePreference(current, 'fill', enabled))}
+          onShowPopular={() => { setActiveSection('playlists'); setSelectedArtist(null); setSelectedSong(null); setQuery(''); setSongAssistantOpen(false); }}
+          onClose={() => setSongAssistantOpen(false)}
+        />
+      )}
+      {popularImmersive ? (
+        <section data-popular-immersive className="fixed inset-0 z-10 overflow-hidden bg-[#020207]">
+          <PopularSongBarrage songs={barrageSongs} intimate={intimateMode} fill={fillMode} onSelectSong={openSongDetail} immersive />
+          {!barrageMode && (
+          <header className="pointer-events-none fixed inset-x-0 top-0 z-30 flex items-start justify-between p-4 pr-16 sm:p-6 sm:pr-20">
+            <button type="button" onClick={goBack} className="pointer-events-auto inline-flex h-11 items-center gap-2 rounded-xl border border-white/10 bg-black/45 px-4 text-sm font-semibold text-white/75 shadow-2xl backdrop-blur-xl transition hover:bg-white/15 hover:text-white">
+              <ArrowLeft className="h-4 w-4" /> 返回点歌台
+            </button>
+            <div className="absolute left-1/2 top-4 -translate-x-1/2 whitespace-nowrap text-center sm:top-6">
+              <p className="text-[9px] font-black tracking-[0.3em] text-violet-200/45 sm:text-[10px]">JIEYOU · HOT SONGS</p>
+              <h1 className="mt-1 font-serif text-2xl font-black tracking-[-0.03em] text-white sm:text-4xl">✨ 热门歌曲 ✨</h1>
+            </div>
+          </header>
+          )}
+          {!barrageMode && (
+            <p className="pointer-events-none fixed bottom-5 left-1/2 z-30 -translate-x-1/2 whitespace-nowrap text-[11px] text-white/35">{barrageSongs.length} 首 · 点击歌名查看详情</p>
+          )}
+        </section>
+      ) : (
       <div className="relative mx-auto w-full max-w-6xl">
-        <header className="mb-8 flex items-center justify-between gap-4">
+        <header className="mb-8 flex items-center justify-between gap-4 pr-14 sm:pr-16">
           <button type="button" onClick={goBack} className="inline-flex h-11 items-center gap-2 rounded-full border border-white/10 bg-black/35 px-4 text-sm font-semibold text-white/70 backdrop-blur-xl transition hover:text-white">
             <ArrowLeft className="h-4 w-4" /> {selectedSong ? `返回${selectedSong.artist}` : activeSection === null ? '返回宇宙' : selectedArtist ? `返回${sectionTitle}` : '返回点歌台'}
           </button>
@@ -276,9 +426,10 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
           </>
         ) : (
           <section>
+            {activeSection !== 'roadshows' && (
             <div className="mb-7 flex items-end justify-between gap-4">
               <div><p className="text-[10px] font-black tracking-[0.28em] text-orange-300/65">SONG REQUEST</p>
-                <h1 className="mt-1 font-serif text-4xl font-black sm:text-5xl">{selectedArtist || (activeSection === 'ranking' ? rankingView === 'requests' ? '点歌榜' : '个人榜' : sectionTitle)}</h1>
+                <h1 className="mt-1 font-serif text-4xl font-black sm:text-5xl">{selectedArtist || (activeSection === 'ranking' ? rankingView === 'requests' ? '点歌榜' : personalRankingArtist ? `${personalRankingArtist} · 个人练习榜` : '个人练习榜' : sectionTitle)}</h1>
               </div>
               {activeSection === 'ranking' && (
                 <div role="tablist" aria-label="排行榜切换" className="flex shrink-0 gap-1 rounded-full border border-white/10 bg-black/35 p-1">
@@ -286,7 +437,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                     className={`grid h-10 w-10 place-items-center rounded-full transition ${rankingView === 'requests' ? 'bg-orange-300 text-black' : 'text-white/45 hover:text-white'}`}>
                     <Trophy className="h-4 w-4" />
                   </button>
-                  <button type="button" aria-label="切换到个人榜" aria-pressed={rankingView === 'personal'} onClick={() => setRankingView('personal')}
+                  <button type="button" aria-label="切换到个人练习榜" aria-pressed={rankingView === 'personal'} onClick={() => setRankingView('personal')}
                     className={`grid h-10 w-10 place-items-center rounded-full transition ${rankingView === 'personal' ? 'bg-orange-300 text-black' : 'text-white/45 hover:text-white'}`}>
                     <Target className="h-4 w-4" />
                   </button>
@@ -294,6 +445,9 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
               )}
               {activeSection === 'artists' && (
                 <div className="flex shrink-0 gap-2">
+                  {!selectedArtist && <button type="button" aria-pressed={avatarAdjustMode} onClick={() => { setAvatarAdjustMode((current) => !current); setAdjustingArtist(null); }} className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-xs font-bold transition ${avatarAdjustMode ? 'border-orange-200/40 bg-orange-300 text-black' : 'border-white/10 bg-black/30 text-white/55 hover:text-white'}`}>
+                    <SlidersHorizontal className="h-4 w-4" />{avatarAdjustMode ? '退出调整' : '调整头像'}
+                  </button>}
                   <button type="button" onClick={selectedArtist ? handleAddSong : handleAddArtist} className="inline-flex items-center gap-1.5 rounded-full border border-rose-200/25 bg-rose-300/10 px-3.5 py-2 text-xs font-bold text-rose-100 transition hover:bg-rose-300/20">
                     <Plus className="h-4 w-4" />{selectedArtist ? '新增歌曲' : '新增歌手'}
                   </button>
@@ -303,6 +457,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                 </div>
               )}
             </div>
+            )}
 
             {activeSection === 'ranking' && (
               <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
@@ -316,42 +471,100 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                       </li>
                     ))}</ol> : <div className="grid min-h-64 place-items-center text-center text-white/40"><div><Trophy className="mx-auto h-9 w-9 opacity-40" /><p className="mt-3">还没有人点歌</p></div></div>
                   ) : (
-                    personalRanking.length ? <ol className="space-y-3">{personalRanking.map(({ song, score, practiceCount }, index) => (
-                      <li key={song.id} className="flex items-center gap-4 rounded-2xl border border-white/10 bg-white/[.035] p-4">
-                        <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-full font-serif font-black ${index === 0 ? 'bg-amber-300 text-black' : 'bg-white/10 text-white/55'}`}>{index + 1}</span>
-                        <button type="button" onClick={() => openSongDetail(song)} className="min-w-0 flex-1 text-left"><p className="truncate font-bold hover:text-orange-100">{song.title}</p><p className="truncate text-xs text-white/40">{song.artist} · 练习 {practiceCount} 次</p></button>
-                        <strong className="font-serif text-xl text-orange-200">{score}<small className="ml-1 font-sans text-[10px] font-normal text-white/30">匹配度</small></strong>
-                      </li>
-                    ))}</ol> : <div className="grid min-h-64 place-items-center text-center text-white/40"><div><Target className="mx-auto h-9 w-9 opacity-40" /><p className="mt-3">{songRecordSession ? '还没有练习记录' : '请先进入私有空间查看个人榜'}</p></div></div>
+                    visiblePersonalRanking.length ? <ol
+                      tabIndex={visiblePersonalRanking.length > PERSONAL_RANKING_SCROLL_THRESHOLD ? 0 : undefined}
+                      aria-label={visiblePersonalRanking.length > PERSONAL_RANKING_SCROLL_THRESHOLD ? `${personalRankingArtist ?? '总榜'}匹配度排行，可上下滚动` : undefined}
+                      className={`space-y-3 ${visiblePersonalRanking.length > PERSONAL_RANKING_SCROLL_THRESHOLD ? 'max-h-[42rem] overflow-y-auto overscroll-contain pr-2' : ''}`}
+                    >{visiblePersonalRanking.map(({ song, score, practiceCount }, index) => {
+                      const quality = getMatchQuality(Math.round(score));
+                      return (
+                        <li key={song.id} className="flex items-center gap-4 rounded-2xl border border-white/10 bg-white/[.035] p-4">
+                          <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-full font-serif font-black ${index === 0 ? 'bg-amber-300 text-black' : 'bg-white/10 text-white/55'}`}>{index + 1}</span>
+                          <button type="button" onClick={() => openSongDetail(song)} className="min-w-0 flex-1 text-left"><p className="truncate font-bold hover:text-orange-100">{song.title}</p><p className="truncate text-xs text-white/40">{song.artist} · 练习 {practiceCount} 次</p></button>
+                          <span className="flex shrink-0 items-center gap-3">
+                            <em className={`practice-quality ${quality?.tone ?? 'white'}`}>{quality?.label ?? '—'}</em>
+                            <strong className="font-serif text-xl text-orange-200">{score}<small className="ml-1 font-sans text-[10px] font-normal text-white/30">匹配度</small></strong>
+                          </span>
+                        </li>
+                      );
+                    })}</ol> : <div className="grid min-h-64 place-items-center text-center text-white/40"><div><Target className="mx-auto h-9 w-9 opacity-40" /><p className="mt-3">{songRecordSession ? personalRankingArtist ? `${personalRankingArtist}还没有练习记录` : '还没有练习记录' : '请先进入私有空间查看个人练习榜'}</p></div></div>
                   )}
                 </div>
-                <aside className="h-fit rounded-[1.75rem] border border-orange-200/15 bg-orange-950/20 p-6 text-sm leading-7 text-white/45">{rankingView === 'requests' ? '点歌榜会汇总所有设备上的累计点歌次数。' : '个人榜按每首歌全部练习记录的平均匹配度排序。'}</aside>
+                {rankingView === 'requests' ? (
+                  <aside className="h-fit rounded-[1.75rem] border border-orange-200/15 bg-orange-950/20 p-6 text-sm leading-7 text-white/45">点歌榜会汇总所有设备上的累计点歌次数。</aside>
+                ) : (
+                  <aside aria-label="个人练习榜歌手筛选" className="h-fit overflow-hidden rounded-[1.75rem] border border-orange-200/15 bg-orange-950/20 p-4 sm:p-5">
+                    <label className="flex h-11 items-center gap-2.5 rounded-xl border border-white/10 bg-black/35 px-3.5 focus-within:border-orange-300/45">
+                      <Search className="h-4 w-4 shrink-0 text-orange-200/55" />
+                      <input value={rankingArtistQuery} onChange={(event) => setRankingArtistQuery(event.target.value)} placeholder="搜索歌手或歌曲" className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/28" />
+                    </label>
+                    <button type="button" aria-pressed={personalRankingArtist === null} onClick={() => setPersonalRankingArtist(null)} className={`mt-3 w-full rounded-xl border px-4 py-3 text-left text-sm font-black transition ${personalRankingArtist === null ? 'border-orange-300/45 bg-orange-300 text-black' : 'border-white/10 bg-black/25 text-white/65 hover:border-orange-200/25 hover:text-white'}`}>总榜</button>
+                    <div className="mt-3 grid max-h-[34rem] grid-cols-2 gap-2 overflow-y-auto overscroll-contain pr-1">
+                      {personalRankingArtists.map(({ artist, songs }) => {
+                        const avatar = ARTIST_AVATARS[artist];
+                        const avatarStyle = getAvatarStyle(artist);
+                        return (
+                          <button key={artist} type="button" aria-pressed={personalRankingArtist === artist} onClick={() => setPersonalRankingArtist(artist)} className={`flex min-w-0 items-center gap-2 rounded-xl border p-2.5 text-left transition ${personalRankingArtist === artist ? 'border-orange-300/50 bg-orange-300/12' : 'border-white/10 bg-black/25 hover:border-orange-200/25'}`}>
+                            <span className="grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-full border border-orange-200/15 bg-orange-300/10">
+                              {avatar && avatarStyle ? <img src={avatar.src} alt="" className="h-full w-full object-cover" style={{ objectPosition: `${avatarStyle.x}% ${avatarStyle.y}%`, transform: `scale(${avatarStyle.scale}) rotate(${avatarStyle.rotation}deg)`, transformOrigin: `${avatarStyle.x}% ${avatarStyle.y}%` }} /> : <Mic2 className="h-4 w-4 text-orange-200/70" />}
+                            </span>
+                            <span className="min-w-0 flex-1"><strong className="block truncate text-xs text-white/85">{artist}</strong><small className="text-[10px] text-white/35">{songs.length} 首</small></span>
+                            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-white/25" />
+                          </button>
+                        );
+                      })}
+                      {!personalRankingArtists.length && <p className="col-span-2 py-8 text-center text-xs text-white/35">没有找到歌手</p>}
+                    </div>
+                  </aside>
+                )}
               </div>
             )}
 
             {activeSection === 'artists' && (
               <div className="space-y-5">
                 <SearchBox query={query} setQuery={setQuery} />
-                {selectedArtist ? <SongRows songs={catalogSongs.filter((song) => song.artist === selectedArtist)} /> : (
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{artistGroups.map(({ artist, songs }) => (
-                    <button key={artist} type="button" onClick={() => setSelectedArtist(artist)} className="flex items-center gap-4 rounded-2xl border border-white/10 bg-black/30 p-4 text-left transition hover:border-rose-300/35">
-                      <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-rose-300/10"><Mic2 className="h-5 w-5 text-rose-200" /></span>
-                      <span className="min-w-0 flex-1"><strong className="block truncate">{artist}</strong><small className="text-white/35">{songs.length} 首</small></span><ChevronRight className="h-4 w-4 text-white/25" />
-                    </button>
-                  ))}</div>
+                {!selectedArtist && (
+                  <div role="tablist" aria-label="歌手语种筛选" className="flex items-center gap-2 overflow-x-auto pb-1">
+                    {ARTIST_LANGUAGE_FILTERS.map((item) => (
+                      <button
+                        key={item.value}
+                        type="button"
+                        role="tab"
+                        aria-selected={artistLanguageFilter === item.value}
+                        onClick={() => setArtistLanguageFilter(item.value)}
+                        className={`shrink-0 rounded-full border px-4 py-2 text-xs font-bold transition ${artistLanguageFilter === item.value ? 'border-orange-300/45 bg-orange-300 text-black shadow-[0_8px_24px_rgba(251,146,60,.16)]' : 'border-white/10 bg-black/30 text-white/45 hover:border-orange-200/25 hover:text-white/75'}`}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
                 )}
-              </div>
-            )}
-
-            {activeSection === 'playlists' && (
-              <div className="space-y-6">
-                <SearchBox query={query} setQuery={setQuery} />
-                {!query && category === '全部' && <SongSection title="热门歌曲" icon={<Flame className="h-5 w-5 text-orange-400" />}><SongRows songs={featuredSongs} /></SongSection>}
-                <section className="rounded-[1.75rem] border border-white/10 bg-black/35 p-5 sm:p-7">
-                  <div className="mb-5 flex items-center justify-between"><h2 className="font-serif text-2xl font-black">完整曲库</h2><span className="text-xs text-white/35">{visibleSongs.length} 首</span></div>
-                  <div className="mb-5 flex gap-2 overflow-x-auto pb-1">{songCategories.map((item) => <button key={item} type="button" onClick={() => setCategory(item)} className={`shrink-0 rounded-full border px-4 py-2 text-xs font-bold ${category === item ? 'border-orange-300/40 bg-orange-400/20 text-orange-100' : 'border-white/10 text-white/45'}`}>{item}</button>)}</div>
-                  {visibleSongs.length ? <SongRows songs={visibleSongs} /> : <p className="py-16 text-center text-sm text-white/35">没有找到这首歌</p>}
-                </section>
+                {avatarAdjustMode && !selectedArtist && (
+                  <AvatarAdjustmentPanel
+                    artist={adjustingArtist}
+                    avatar={adjustingArtist ? ARTIST_AVATARS[adjustingArtist] : undefined}
+                    adjustment={adjustingArtist ? getAvatarStyle(adjustingArtist) : null}
+                    onChange={(patch) => { if (adjustingArtist) updateAvatarAdjustment(adjustingArtist, patch); }}
+                    onReset={() => { if (adjustingArtist) resetAvatarAdjustment(adjustingArtist); }}
+                    onDone={() => setAdjustingArtist(null)}
+                  />
+                )}
+                {selectedArtist ? <SongRows songs={catalogSongs.filter((song) => song.artist === selectedArtist)} /> : (
+                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{artistGroups.map(({ artist, songs }) => {
+                        const avatar = ARTIST_AVATARS[artist];
+                        const avatarStyle = getAvatarStyle(artist);
+                        return (
+                          <button key={artist} type="button" onClick={() => avatarAdjustMode && avatar ? setAdjustingArtist(artist) : setSelectedArtist(artist)} className={`flex items-center gap-4 rounded-2xl border bg-black/30 p-4 text-left transition ${adjustingArtist === artist ? 'border-orange-300/70 ring-2 ring-orange-300/15' : 'border-white/10 hover:border-rose-300/35'}`}>
+                            <span className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-full border border-rose-200/20 bg-rose-300/10">
+                              {avatar && avatarStyle ? (
+                                <img src={avatar.src} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" style={{ objectPosition: `${avatarStyle.x}% ${avatarStyle.y}%`, transform: `scale(${avatarStyle.scale}) rotate(${avatarStyle.rotation}deg)`, transformOrigin: `${avatarStyle.x}% ${avatarStyle.y}%` }} />
+                              ) : <Mic2 className="h-5 w-5 text-rose-200" />}
+                            </span>
+                            <span className="min-w-0 flex-1"><strong className="block truncate">{artist}</strong><small className="text-white/35">{songs.length} 首</small></span><ChevronRight className="h-4 w-4 text-white/25" />
+                          </button>
+                        );
+                      })}</div>
+                )}
               </div>
             )}
 
@@ -367,9 +580,127 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
           </section>
         )}
       </div>
+      )}
       <p className="sr-only" aria-live="polite">{requestedId ? `已点歌曲 ${catalogSongs.find((song) => song.id === requestedId)?.title ?? ''}` : syncMessage}</p>
       {syncMessage && <div className="fixed bottom-5 left-1/2 -translate-x-1/2 rounded-full border border-red-200/15 bg-black/85 px-4 py-2 text-xs text-red-100 shadow-xl">{syncMessage}</div>}
     </main>
+  );
+};
+
+const SongAssistant = ({ query, displayMode, barrageMode, intimateMode, fillMode, onQueryChange, onResetSearch, onDisplayModeChange, onBarrageModeChange, onIntimateModeChange, onFillModeChange, onShowPopular, onClose }: {
+  query: string;
+  displayMode: SongDisplayMode;
+  barrageMode: boolean;
+  intimateMode: boolean;
+  fillMode: boolean;
+  onQueryChange: (value: string) => void;
+  onResetSearch: () => void;
+  onDisplayModeChange: (mode: SongDisplayMode) => void;
+  onBarrageModeChange: (enabled: boolean) => void;
+  onIntimateModeChange: (enabled: boolean) => void;
+  onFillModeChange: (enabled: boolean) => void;
+  onShowPopular: () => void;
+  onClose: () => void;
+}) => (
+  <>
+    <button type="button" aria-label="关闭歌曲助手" onClick={onClose} className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[2px]" />
+    <aside aria-label="歌曲助手栏" className="fixed right-0 top-0 z-50 h-full w-[min(24rem,88vw)] overflow-y-auto border-l border-white/10 bg-[#09070d]/88 p-5 text-white shadow-[-24px_0_80px_rgba(0,0,0,.45)] backdrop-blur-2xl">
+      <header className="flex items-center justify-between border-b border-white/10 pb-5">
+        <div><p className="text-[10px] font-black tracking-[0.25em] text-orange-200/55">JIEYOU ASSISTANT</p><h2 className="mt-1 text-2xl font-black">💪 助手栏</h2></div>
+        <button type="button" onClick={onClose} className="grid h-10 w-10 place-items-center rounded-full border border-white/10 text-white/55 transition hover:bg-white/10 hover:text-white"><X className="h-4 w-4" /></button>
+      </header>
+      <div className="mt-6 space-y-4">
+        <details className="group overflow-hidden rounded-2xl border border-white/10 bg-white/[.035]">
+          <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-4"><span className="text-lg font-bold">🔎 检索</span><ChevronRight className="h-4 w-4 text-white/45 transition group-open:rotate-90" /></summary>
+          <div className="space-y-3 border-t border-white/[.06] p-3">
+            <label className="flex items-center rounded-xl bg-white/[.055] px-3 py-2.5 focus-within:ring-1 focus-within:ring-cyan-200/45">
+              <Search className="mr-2 h-4 w-4 text-cyan-100/70" />
+              <input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="搜索歌名或歌手" className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/35" />
+            </label>
+            <button type="button" onClick={onResetSearch} className="w-full rounded-xl bg-white/[.07] px-3 py-2 text-xs font-bold text-white/70 transition hover:bg-white/[.12] hover:text-white">重置</button>
+          </div>
+        </details>
+
+        <details open className="group overflow-hidden rounded-2xl border border-white/10 bg-white/[.035]">
+          <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-4"><span className="text-lg font-bold">⭐ 歌曲展示</span><ChevronRight className="h-4 w-4 text-white/45 transition group-open:rotate-90" /></summary>
+          <div className="space-y-3 border-t border-white/[.06] p-3">
+            <div className="flex items-center justify-between gap-3 rounded-xl bg-white/[.055] px-3 py-2.5">
+              <span className="text-sm text-white/90">随机部分（60首，刷新重置）</span>
+              <label className="inline-flex shrink-0 items-center gap-2"><input type="checkbox" checked={displayMode === 'random'} onChange={(event) => onDisplayModeChange(event.target.checked ? 'random' : 'full')} className="accent-cyan-300" /><span className="text-xs text-white/70">{displayMode === 'random' ? '开启' : '关闭'}</span></label>
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded-xl bg-white/[.055] px-3 py-2.5">
+              <span className="text-sm text-white/90">完全展示（全部歌曲）</span>
+              <label className="inline-flex shrink-0 items-center gap-2"><input type="checkbox" checked={displayMode === 'full'} onChange={(event) => onDisplayModeChange(event.target.checked ? 'full' : 'random')} className="accent-cyan-300" /><span className="text-xs text-white/70">{displayMode === 'full' ? '开启' : '关闭'}</span></label>
+            </div>
+            <p className="px-1 text-xs leading-5 text-white/45">提示：使用“检索”时总是展示所有匹配歌曲。</p>
+          </div>
+        </details>
+
+        <details open className="group overflow-hidden rounded-2xl border border-white/10 bg-white/[.035]">
+          <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-4"><span className="text-lg font-bold">💬 弹幕</span><ChevronRight className="h-4 w-4 text-white/45 transition group-open:rotate-90" /></summary>
+          <div className="space-y-3 border-t border-white/[.06] p-3">
+            <div className="flex items-center justify-between rounded-xl bg-white/[.055] px-3 py-3">
+              <div><div className="text-sm text-white/90">弹幕模式</div><div className="mt-1 text-xs text-white/55">只保留星空与歌曲</div></div>
+              <button type="button" role="switch" aria-checked={barrageMode} aria-label="弹幕模式" onClick={() => onBarrageModeChange(!barrageMode)} className={`relative h-7 w-12 rounded-full border transition-colors duration-200 ${barrageMode ? 'border-emerald-300/60 bg-emerald-400/80' : 'border-white/20 bg-white/10'}`}>
+                <span className={`absolute left-0 top-1 h-5 w-5 rounded-full bg-white shadow-md transition-transform duration-200 ${barrageMode ? 'translate-x-6' : 'translate-x-1'}`} />
+              </button>
+            </div>
+            <div className="flex items-center justify-between rounded-xl bg-white/[.055] px-3 py-3">
+              <div><div className="text-sm text-white/90">亲密模式</div><div className="mt-1 text-xs text-white/55">弹幕横纵间距减半</div></div>
+              <button type="button" role="switch" aria-checked={intimateMode} aria-label="亲密模式" onClick={() => onIntimateModeChange(!intimateMode)} className={`relative h-7 w-12 rounded-full border transition-colors duration-200 ${intimateMode ? 'border-emerald-300/60 bg-emerald-400/80' : 'border-white/20 bg-white/10'}`}>
+                <span className={`absolute left-0 top-1 h-5 w-5 rounded-full bg-white shadow-md transition-transform duration-200 ${intimateMode ? 'translate-x-6' : 'translate-x-1'}`} />
+              </button>
+            </div>
+            <div className="flex items-center justify-between rounded-xl bg-white/[.055] px-3 py-3">
+              <div><div className="text-sm text-white/90">填充模式</div><div className="mt-1 text-xs text-white/55">循环补齐弹幕，减少屏幕空白</div></div>
+              <button type="button" role="switch" aria-checked={fillMode} aria-label="填充模式" onClick={() => onFillModeChange(!fillMode)} className={`relative h-7 w-12 rounded-full border transition-colors duration-200 ${fillMode ? 'border-emerald-300/60 bg-emerald-400/80' : 'border-white/20 bg-white/10'}`}>
+                <span className={`absolute left-0 top-1 h-5 w-5 rounded-full bg-white shadow-md transition-transform duration-200 ${fillMode ? 'translate-x-6' : 'translate-x-1'}`} />
+              </button>
+            </div>
+          </div>
+        </details>
+
+        <button type="button" onClick={onShowPopular} className="flex w-full items-center justify-between rounded-2xl border border-violet-200/15 bg-violet-300/[.06] p-4 text-left transition hover:border-violet-200/35"><span><strong className="block">查看热门歌曲</strong><small className="mt-1 block text-white/40">回到全屏彩色弹幕</small></span><ChevronRight className="h-5 w-5 text-violet-200/55" /></button>
+      </div>
+    </aside>
+  </>
+);
+
+const AvatarAdjustmentPanel = ({ artist, avatar, adjustment, onChange, onReset, onDone }: {
+  artist: string | null;
+  avatar?: { src: string; position: string; scale: number };
+  adjustment: AvatarAdjustment | null;
+  onChange: (patch: Partial<AvatarAdjustment>) => void;
+  onReset: () => void;
+  onDone: () => void;
+}) => {
+  if (!artist || !avatar || !adjustment) {
+    return <div className="rounded-2xl border border-dashed border-orange-200/20 bg-orange-950/10 px-5 py-4 text-sm text-white/45">点击任一歌手卡片，即可手动调整头像。</div>;
+  }
+
+  const controls = [
+    { label: '左右', key: 'x', min: 0, max: 100, step: 1, value: adjustment.x },
+    { label: '上下', key: 'y', min: 0, max: 100, step: 1, value: adjustment.y },
+    { label: '缩放', key: 'scale', min: 1, max: 4, step: 0.05, value: adjustment.scale },
+    { label: '旋转', key: 'rotation', min: -30, max: 30, step: 1, value: adjustment.rotation },
+  ] as const;
+
+  return (
+    <section className="rounded-[1.5rem] border border-orange-200/20 bg-black/45 p-4 sm:p-5">
+      <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
+        <span className="mx-auto grid h-24 w-24 shrink-0 place-items-center overflow-hidden rounded-full border border-orange-200/30 bg-black sm:mx-0">
+          <img src={avatar.src} alt={`${artist}头像预览`} className="h-full w-full object-cover" style={{ objectPosition: `${adjustment.x}% ${adjustment.y}%`, transform: `scale(${adjustment.scale}) rotate(${adjustment.rotation}deg)`, transformOrigin: `${adjustment.x}% ${adjustment.y}%` }} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="mb-4 flex items-center justify-between gap-3"><div><p className="text-[10px] font-black tracking-[0.2em] text-orange-300/65">头像微调</p><h2 className="mt-1 font-bold">{artist}</h2></div><div className="flex gap-2"><button type="button" onClick={onReset} className="inline-flex items-center gap-1 rounded-full border border-white/10 px-3 py-2 text-xs text-white/55 hover:text-white"><RotateCcw className="h-3.5 w-3.5" />重置</button><button type="button" onClick={onDone} className="rounded-full bg-orange-300 px-4 py-2 text-xs font-bold text-black">完成</button></div></div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {controls.map(({ label, key, min, max, step, value }) => (
+              <label key={key} className="text-xs text-white/50"><span className="mb-2 flex justify-between"><b className="text-white/75">{label}</b><span>{Number(value).toFixed(key === 'scale' ? 2 : 0)}</span></span><input type="range" min={min} max={max} step={step} value={value} onChange={(event) => onChange({ [key]: Number(event.target.value) })} className="w-full accent-orange-300" /></label>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
   );
 };
 
@@ -377,10 +708,6 @@ const SearchBox = ({ query, setQuery }: { query: string; setQuery: (value: strin
   <label className="flex h-13 items-center gap-3 rounded-2xl border border-white/10 bg-black/30 px-4 focus-within:border-orange-300/45">
     <Search className="h-5 w-5 text-orange-200/55" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索歌名或歌手" className="h-13 min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-white/30" />
   </label>
-);
-
-const SongSection = ({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) => (
-  <section className="rounded-[1.75rem] border border-orange-200/15 bg-orange-950/20 p-5 sm:p-7"><h2 className="mb-5 flex items-center gap-2 font-serif text-2xl font-black">{icon}{title}</h2>{children}</section>
 );
 
 export default SongRequestStation;

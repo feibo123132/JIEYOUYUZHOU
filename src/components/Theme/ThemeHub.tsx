@@ -102,7 +102,7 @@ const ThemeHub: React.FC<ThemeHubProps> = ({ onSelect, onOpenSongRequest }) => {
         <section className="mt-5 grid grid-cols-1 gap-5 md:mt-7 md:grid-cols-2 md:gap-7" aria-label="创作工具">
           <a
             href={getMeowGeneratorUrl()}
-            aria-label="进入猫猫生成器"
+            aria-label="捏猫"
             onClick={() => { (window as any).playClickSound?.(); }}
             className={`group relative ${HUB_CARD_SIZE_CLASS} overflow-hidden rounded-[2rem] border border-orange-200/20 bg-[#17100c]/85 p-7 text-left backdrop-blur-xl motion-safe:transition motion-safe:duration-500 motion-safe:hover:-translate-y-2 focus:outline-none focus:ring-2 focus:ring-emerald-200/70 md:p-9`}
           >
@@ -116,7 +116,7 @@ const ThemeHub: React.FC<ThemeHubProps> = ({ onSelect, onOpenSongRequest }) => {
               </span>
               <span>
                 <span className="block text-[10px] font-bold tracking-[0.28em] text-emerald-200/80">MEOW GENERATOR</span>
-                <span className="mt-3 block font-serif text-3xl font-black tracking-tight text-white md:text-4xl">进入猫猫生成器</span>
+                <span className="mt-3 block font-serif text-3xl font-black tracking-tight text-white md:text-4xl">捏猫</span>
                 <span className="mt-3 block max-w-md text-sm leading-7 text-white/55">捏出独一无二的小猫，换花色、玩玩具，再留下一张收藏卡。</span>
                 <span className="mt-7 inline-flex items-center gap-2 text-sm font-bold text-orange-100">
                   去捏一只猫

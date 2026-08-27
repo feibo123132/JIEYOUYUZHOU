@@ -11,11 +11,22 @@ const catalogModuleUrl = new URL('../src/components/SongRequest/songCatalog.ts',
 const songRecordsModuleUrl = new URL('../src/components/SongRequest/songRecords.ts', import.meta.url)
 const songDetailPanelUrl = new URL('../src/components/SongRequest/SongDetailPanel.tsx', import.meta.url)
 const dailyPracticePanelUrl = new URL('../src/components/SongRequest/DailyPracticePanel.tsx', import.meta.url)
+const popularSongBarrageUrl = new URL('../src/components/SongRequest/PopularSongBarrage.tsx', import.meta.url)
+const messageBarrageUrl = new URL('../src/components/StarrySky/MessageBarrage.tsx', import.meta.url)
+const indexCssUrl = new URL('../src/index.css', import.meta.url)
 
 const songs = [
   { id: 'a', title: '晴天', artist: '周杰伦', category: '华语', featured: true },
   { id: 'b', title: 'Yellow', artist: 'Coldplay', category: '欧美', featured: false },
   { id: 'c', title: '稻香', artist: '周杰伦', category: '华语', featured: true },
+]
+
+const requestedPopularSongTitles = [
+  '晴天', '小半', '等你下课', '红色高跟鞋', '如果呢', '一笑倾城', '就让这大雨全都落下', '甲乙丙丁',
+  '樱花草', '天后', '我们俩', '爱的回归线', '好像爱这个世界啊', '谁', '同花顺', '最后一页', '牵丝戏',
+  '有些', '舍得', '若把你', '下完这场雨', '爱情讯息', '离开我的依赖', '寂寞烟火', '海屿你',
+  '一个人想着一个人', '我怀念的', '开始懂了', '无人之岛', '富士山下', '遇到', '太阳', '孤雏',
+  '雨爱', '如果爱忘了', '如果可以', '太聪明',
 ]
 
 async function loadModule() {
@@ -103,6 +114,7 @@ test('周杰伦第 21 至 30 首歌按顺序保存热评且不带序号', async 
 
 test('曲库按指定歌手与歌曲顺序保存，且每首歌均有独立文案', async () => {
   const { SONGS } = await import(catalogModuleUrl.href)
+  const catalogSource = readFileSync(catalogModuleUrl, 'utf8')
   const expectedByArtist: Record<string, string[]> = {
     周杰伦: ['晴天', '青花瓷', '等你下课', '红尘客栈', '告白气球', '一路向北', '花海', '蒲公英的约定', '明明就', '枫', '不能说的秘密', '搁浅', '兰亭序', '手写的从前', '半岛铁盒', '我落泪情绪零碎', '那天下雨了', '简单爱', '园游会', '夏天的风', '最长的电影', '龙卷风', '烟花易冷', '退后', '倒带', '安静', '彩虹', '哪里都是你', '轨迹', '说好的幸福呢'],
     林俊杰: ['江南', '心墙', '当你', '修炼爱情', '不潮不用花钱', '我还想她', '背对背拥抱', 'Always on line', '小酒窝', '醉赤壁', '裹着心的光', '愿与愁', '黑夜问白天', '一千年以后', '交换余生', '裂缝中的阳光', '她说', '那些你很冒险的梦'],
@@ -116,6 +128,43 @@ test('曲库按指定歌手与歌曲顺序保存，且每首歌均有独立文�
     许嵩: ['素颜', '有何不可', '宿敌', '如果当时', '清明雨上', '最佳歌手', '庐州月'],
     陈奕迅: ['富士山下', '爱情转移'],
     郑润泽: ['如果呢', '于是', '瞬', '遐想'],
+    陈粒: ['小半', '奇妙能力歌', '虚拟'],
+    蔡健雅: ['红色高跟鞋', 'letting go', '别找我麻烦', '思念是一种病', '停格', '达尔文'],
+    陈绮贞: ['太聪明', '旅行的意义', '我爱上你时的心理活动'],
+    '张学友、郑中基、许志安': ['甲乙丙丁'],
+    Sweety: ['樱花草'],
+    陈势安: ['天后'],
+    郭顶: ['我们俩'],
+    '陈韵若、陈每文': ['爱的回归线'],
+    华晨宇: ['好像爱这个世界啊', '向阳而生', '烟火里的尘埃'],
+    廖俊涛: ['谁'],
+    林倛玉: ['同花顺'],
+    江语晨: ['最后一页'],
+    '银临、Aki阿杰': ['牵丝戏'],
+    颜人中: ['有些'],
+    王呈章: ['舍得'],
+    Kirsty刘瑾睿: ['若把你'],
+    后弦: ['下完这场雨'],
+    郭静: ['爱情讯息', '心墙', '下一个天亮'],
+    王艳薇: ['离开我的依赖'],
+    朱婧汐: ['寂寞烟火'],
+    '马也_Crabbit、Cole先生': ['海屿你'],
+    曾沛慈: ['一个人想着一个人'],
+    任然: ['无人之岛'],
+    方雅贤: ['遇到'],
+    邱振哲: ['太阳'],
+    AGA: ['孤雏'],
+    杨丞琳: ['雨爱'],
+    'Taylor Swift': ['Love story', 'Exile'],
+    'Justin Bieber': ['Baby', '10000 hours'],
+    五月天: ['知足', '温柔', '倔强', '步步', '突然好想你', '我不愿让你一个人', '后来的我们', '拥抱'],
+    赵雷: ['成都', '鼓楼', '程艾影', '我记得', '少年锦时', '玛丽', '南方姑娘'],
+    Alin: ['天若有情', '有一种悲伤', '给我一个理由忘记', '忘记拥抱'],
+    卢广仲: ['几分之几', '刻在我心底的名字'],
+    房东的猫: ['下一站茶山刘', '少年时', 'new boy', '和宇宙温柔相关', '星星在唱歌', '所念皆星河', '云烟成雨'],
+    莫文蔚: ['这世界有那么多人', '慢慢喜欢你', '忽然之间', '当你老了', '阴天'],
+    胡歌: ['指纹', '忘记时间'],
+    林宥嘉: ['说谎', '想自由', '浪费'],
   }
 
   assert.deepEqual([...new Set(SONGS.map((song: { artist: string }) => song.artist))], Object.keys(expectedByArtist))
@@ -123,9 +172,59 @@ test('曲库按指定歌手与歌曲顺序保存，且每首歌均有独立文�
     assert.deepEqual(SONGS.filter((song: { artist: string }) => song.artist === artist).map((song: { title: string }) => song.title), titles)
   }
   assert.equal(new Set(SONGS.map((song: { id: string }) => song.id)).size, SONGS.length)
-  assert.ok(SONGS.every((song: { category: string }) => song.category === '华语流行'))
+  assert.deepEqual([...new Set(SONGS.map((song: { category: string }) => song.category))], ['华语流行', '欧美流行'])
+  assert.equal(SONGS.filter((song: { category: string }) => song.category === '欧美流行').length, 4)
   assert.ok(SONGS.every((song: { hotComment?: string }) => Boolean(song.hotComment?.trim())))
-  assert.deepEqual(SONGS.filter((song: { featured: boolean }) => song.featured).map((song: { title: string }) => song.title), ['晴天'])
+  assert.deepEqual(SONGS.filter((song: { featured: boolean }) => song.featured).map((song: { title: string }) => song.title).sort(), [...requestedPopularSongTitles].sort())
+  assert.doesNotMatch(catalogSource, /POPULAR_SONG_TITLES|POPULAR_SONG_TITLE_SET/)
+  assert.doesNotMatch(catalogSource, /SONG_CATALOG\.map/)
+})
+
+test('新增十五位歌手的六十首歌曲均带热评并正确区分中外语种', async () => {
+  const { SONGS } = await import(catalogModuleUrl.href)
+  const requested: Record<string, string[]> = {
+    'Taylor Swift': ['Love story', 'Exile'],
+    'Justin Bieber': ['Baby', '10000 hours'],
+    华晨宇: ['好像爱这个世界啊', '向阳而生', '烟火里的尘埃'],
+    五月天: ['知足', '温柔', '倔强', '步步', '突然好想你', '我不愿让你一个人', '后来的我们', '拥抱'],
+    陈粒: ['奇妙能力歌', '小半', '虚拟'],
+    蔡健雅: ['红色高跟鞋', 'letting go', '别找我麻烦', '思念是一种病', '停格', '达尔文'],
+    陈绮贞: ['太聪明', '旅行的意义', '我爱上你时的心理活动'],
+    赵雷: ['成都', '鼓楼', '程艾影', '我记得', '少年锦时', '玛丽', '南方姑娘'],
+    Alin: ['天若有情', '有一种悲伤', '给我一个理由忘记', '忘记拥抱'],
+    卢广仲: ['几分之几', '刻在我心底的名字'],
+    房东的猫: ['下一站茶山刘', '少年时', 'new boy', '和宇宙温柔相关', '星星在唱歌', '所念皆星河', '云烟成雨'],
+    郭静: ['心墙', '爱情讯息', '下一个天亮'],
+    莫文蔚: ['这世界有那么多人', '慢慢喜欢你', '忽然之间', '当你老了', '阴天'],
+    胡歌: ['指纹', '忘记时间'],
+    林宥嘉: ['说谎', '想自由', '浪费'],
+  }
+  const requestedSongs = Object.entries(requested).flatMap(([artist, titles]) => titles.map((title) => (
+    SONGS.find((song: { artist: string, title: string }) => song.artist === artist && song.title === title)
+  )))
+
+  assert.equal(requestedSongs.length, 60)
+  assert.ok(requestedSongs.every(Boolean))
+  assert.ok(requestedSongs.every((song: { hotComment?: string } | undefined) => Boolean(song?.hotComment?.trim())))
+  assert.equal(new Set(requestedSongs.map((song: { hotComment?: string } | undefined) => song?.hotComment)).size, 60)
+  assert.ok(requestedSongs.filter((song: { artist?: string } | undefined) => ['Taylor Swift', 'Justin Bieber'].includes(song?.artist ?? '')).every((song: { category?: string } | undefined) => song?.category === '欧美流行'))
+  assert.ok(requestedSongs.filter((song: { artist?: string } | undefined) => !['Taylor Swift', 'Justin Bieber'].includes(song?.artist ?? '')).every((song: { category?: string } | undefined) => song?.category === '华语流行'))
+})
+
+test('第三版曲库缓存会补齐新默认歌曲并升级到第五版', async () => {
+  const { CATALOG_STORAGE_KEY, loadEditableCatalog } = await loadModule()
+  const newDefaultSong = { id: 'default:new-v4', title: '新增默认歌', artist: '新增歌手', category: '华语流行', featured: false, hotComment: '新增热评' }
+  const storage = {
+    getItem: (key: string) => key === CATALOG_STORAGE_KEY
+      ? JSON.stringify({ version: 3, artists: ['周杰伦', 'Coldplay'], songs })
+      : null,
+  }
+
+  const catalog = loadEditableCatalog(storage, [...songs, newDefaultSong])
+
+  assert.equal(catalog.version, 5)
+  assert.ok(catalog.artists.includes('新增歌手'))
+  assert.equal(catalog.songs.find((song: { id: string }) => song.id === newDefaultSong.id)?.title, '新增默认歌')
 })
 
 test('filters the catalog by title, artist, and category', async () => {
@@ -192,9 +291,30 @@ test('旧版曲库快照会补齐新版默认歌手并保留自定义歌曲', as
 
   const catalog = loadEditableCatalog(storage, [...songs, newDefaultSong])
 
-  assert.equal(catalog.version, 2)
+  assert.equal(catalog.version, 5)
   assert.deepEqual(catalog.artists, ['周杰伦', 'Coldplay', '新默认歌手', '自定义歌手'])
   assert.deepEqual(catalog.songs.map((song: { id: string }) => song.id), ['a', 'b', 'c', 'default:new', 'custom:legacy'])
+})
+
+test('第四版曲库快照会补齐默认歌曲、同步热门标记并保留自定义歌曲', async () => {
+  const { CATALOG_STORAGE_KEY, loadEditableCatalog } = await loadModule()
+  const cachedSongs = songs.map((song) => ({ ...song, featured: false }))
+  const newDefaultSong = { id: 'default:new', title: '新版热门歌', artist: '新歌手', category: '华语流行', featured: true }
+  const customSong = { id: 'custom:kept', title: '保留的自定义歌曲', artist: '自定义歌手', category: '华语流行', featured: true }
+  const storage = {
+    getItem: (key: string) => key === CATALOG_STORAGE_KEY
+      ? JSON.stringify({ version: 4, artists: ['周杰伦', 'Coldplay', '自定义歌手'], songs: [...cachedSongs, customSong] })
+      : null,
+  }
+
+  const catalog = loadEditableCatalog(storage, [...songs, newDefaultSong])
+
+  assert.equal(catalog.version, 5)
+  assert.equal(catalog.songs.find((song: { id: string }) => song.id === 'a')?.featured, true)
+  assert.equal(catalog.songs.find((song: { id: string }) => song.id === 'default:new')?.title, '新版热门歌')
+  assert.equal(catalog.songs.find((song: { id: string }) => song.id === 'custom:kept')?.title, '保留的自定义歌曲')
+  assert.ok(catalog.artists.includes('新歌手'))
+  assert.ok(catalog.artists.includes('自定义歌手'))
 })
 
 test('歌曲记录支持同一首歌多次练习并按时间倒序过滤无效云端数据', async () => {
@@ -408,8 +528,8 @@ test('station exposes requests and rankings without playback controls', () => {
 
   assert.match(source, /热门歌曲/)
   assert.match(source, /点歌榜/)
-  assert.match(source, /个人榜/)
-  assert.match(source, /aria-label="切换到个人榜"/)
+  assert.match(source, /个人练习榜/)
+  assert.match(source, /aria-label="切换到个人练习榜"/)
   assert.match(source, /rankSongsByPracticeMatch/)
   assert.match(source, /搜索歌名或歌手/)
   assert.match(source, /: '点歌'/)
@@ -423,6 +543,32 @@ test('station exposes requests and rankings without playback controls', () => {
   assert.match(source, /删除歌曲/)
   assert.match(source, /lg:grid-cols-\[minmax\(0,1fr\)_22rem\]/)
   assert.doesNotMatch(source, /<audio|new Audio|\.play\(|\.pause\(/)
+})
+
+test('个人练习榜超过八首时滚动并支持从右侧搜索切换总榜和正式歌手榜', () => {
+  const source = readFileSync(stationUrl, 'utf8')
+
+  assert.match(source, /const PERSONAL_RANKING_SCROLL_THRESHOLD = 8/)
+  assert.match(source, /const \[personalRankingArtist, setPersonalRankingArtist\] = useState<string \| null>\(null\)/)
+  assert.match(source, /const \[rankingArtistQuery, setRankingArtistQuery\] = useState\(''\)/)
+  assert.match(source, /const visiblePersonalRanking = useMemo/)
+  assert.match(source, /visiblePersonalRanking\.length > PERSONAL_RANKING_SCROLL_THRESHOLD/)
+  assert.match(source, /max-h-\[42rem\] overflow-y-auto/)
+  assert.match(source, /aria-label="个人练习榜歌手筛选"/)
+  assert.match(source, /placeholder="搜索歌手或歌曲"/)
+  assert.match(source, />总榜</)
+  assert.match(source, /groupSongsByArtist\(catalogSongs\)\.filter\(\(\{ songs \}\) => songs\.length >= 2\)/)
+  assert.match(source, /className="mt-3 grid max-h-\[34rem\] grid-cols-2 gap-2 overflow-y-auto/)
+  assert.match(source, /setPersonalRankingArtist\(artist\)/)
+})
+
+test('个人练习榜在平均匹配值旁显示对应品质', () => {
+  const source = readFileSync(stationUrl, 'utf8')
+
+  assert.match(source, /getMatchQuality/)
+  assert.match(source, /const quality = getMatchQuality\(Math\.round\(score\)\)/)
+  assert.match(source, /practice-quality \$\{quality\?\.tone \?\? 'white'\}/)
+  assert.match(source, /quality\?\.label \?\? '—'/)
 })
 
 test('groups songs by singer while preserving catalog order', async () => {
@@ -472,10 +618,162 @@ test('station home is a four-direction guide and details are separate', () => {
   assert.match(source, /const HUB_DIRECTIONS/)
   assert.match(source, /id: 'ranking'.*label: '排行榜'/s)
   assert.match(source, /id: 'artists'.*label: '歌手'/s)
-  assert.match(source, /id: 'roadshows'.*label: '我的档案'/s)
-  assert.match(source, /id: 'playlists'.*label: '歌单'/s)
+  assert.match(source, /id: 'roadshows'.*label: '记录'/s)
+  assert.match(source, /id: 'playlists'.*label: '热门歌曲'.*eyebrow: 'HOT SONGS'.*description: '看歌名化作彩色弹幕穿过星空'/s)
   assert.match(source, /activeSection === null/)
   assert.doesNotMatch(source, /id: 'languages'/)
+})
+
+test('热门歌曲以彩色描边弹幕从右向左展示且只显示歌名', () => {
+  assert.ok(existsSync(popularSongBarrageUrl), 'popular song barrage component must exist')
+  const station = readFileSync(stationUrl, 'utf8')
+  const barrage = readFileSync(popularSongBarrageUrl, 'utf8')
+  const css = readFileSync(indexCssUrl, 'utf8')
+
+  assert.match(station, /<PopularSongBarrage songs=\{barrageSongs\}/)
+  assert.match(barrage, /aria-label="热门歌曲弹幕"/)
+  assert.match(barrage, /message: song\.title/)
+  assert.doesNotMatch(barrage, /song\.artist|hotComment|getSongSubtitle/)
+  assert.match(barrage, /<MessageBarrage/)
+  assert.match(barrage, /simple/)
+  assert.match(css, /@keyframes barrage-travel[\s\S]*translate3d\(-100%, -50%, 0\)/)
+  assert.match(css, /\.barrage-lane[\s\S]*animation: barrage-travel/)
+})
+
+test('热门歌曲使用浅色描边且背景没有紫色光晕', () => {
+  const barrage = readFileSync(popularSongBarrageUrl, 'utf8')
+  const messageBarrage = readFileSync(messageBarrageUrl, 'utf8')
+  const css = readFileSync(indexCssUrl, 'utf8')
+
+  assert.match(barrage, /const COLORS = \['#fca5a5', '#fde68a', '#99f6e4', '#bae6fd', '#ddd6fe', '#fbcfe8', '#bbf7d0'\]/)
+  assert.match(messageBarrage, /boxShadow: `0 0 12px \$\{color\}1f, inset 0 0 10px \$\{color\}0a`/)
+  assert.doesNotMatch(barrage, /popular-song-board__glow/)
+  assert.doesNotMatch(css, /\.popular-song-board__glow/)
+  assert.doesNotMatch(css, /rgba\((?:91, 33, 182|124, 58, 237)/)
+})
+
+test('热门歌曲页拆除搜索与完整曲库并让弹幕覆盖整个可视区域', () => {
+  const station = readFileSync(stationUrl, 'utf8')
+  const barrage = readFileSync(popularSongBarrageUrl, 'utf8')
+  const css = readFileSync(indexCssUrl, 'utf8')
+
+  assert.match(station, /const popularImmersive = activeSection === 'playlists' && !selectedSong/)
+  assert.match(station, /data-popular-immersive/)
+  assert.match(station, /<PopularSongBarrage[\s\S]*immersive/)
+  assert.doesNotMatch(station, /完整曲库/)
+  assert.doesNotMatch(station, /songCategories|visibleSongs/)
+  assert.match(station, /if \(activeSection === 'playlists'\) return;/)
+  assert.match(barrage, /immersive\?: boolean/)
+  assert.match(barrage, /popular-song-board--immersive/)
+  assert.match(css, /\.popular-song-board--immersive\s*\{[^}]*position: absolute;[^}]*inset: 0;[^}]*height: 100%;[^}]*border-radius: 0;/s)
+})
+
+test('歌曲页猫咪助手复用检索歌曲展示与弹幕功能但不包含小工具', () => {
+  const station = readFileSync(stationUrl, 'utf8')
+  const barrage = readFileSync(popularSongBarrageUrl, 'utf8')
+  const messageBarrage = readFileSync(messageBarrageUrl, 'utf8')
+  const css = readFileSync(indexCssUrl, 'utf8')
+
+  assert.match(station, /aria-label="打开歌曲助手"/)
+  assert.match(station, /🐱/)
+  assert.match(station, /\{popularImmersive && !songAssistantOpen && \(/)
+  assert.doesNotMatch(station, /\{!songAssistantOpen && \(/)
+  assert.match(station, /aria-label="歌曲助手栏"/)
+  assert.match(station, /🔎 检索/)
+  assert.match(station, /搜索歌名或歌手/)
+  assert.match(station, /⭐ 歌曲展示/)
+  assert.match(station, /随机部分（60首，刷新重置）/)
+  assert.match(station, /完全展示（全部歌曲）/)
+  assert.match(station, /type SongDisplayMode = 'random' \| 'full'/)
+  assert.match(station, /const providedSongs = useMemo\(\(\) => getFeaturedSongs\(catalogSongs\), \[catalogSongs\]\)/)
+  assert.match(station, /const shuffled = \[\.\.\.providedSongs\]/)
+  assert.match(station, /return shuffled\.slice\(0, 60\)/)
+  assert.match(station, /const barrageSongs = useMemo/)
+  assert.match(station, /return providedSongs\.filter/)
+  assert.match(station, /songDisplayMode === 'full' \? providedSongs : randomSongs/)
+  assert.doesNotMatch(station, /const shuffled = \[\.\.\.catalogSongs\]/)
+  assert.match(station, /<PopularSongBarrage songs=\{barrageSongs\}/)
+  assert.doesNotMatch(station, /星星展示|30颗|全部星星|小工具/)
+  assert.match(station, /💬 弹幕/)
+  assert.match(station, /const barrageMode = barragePreferences\.immersive/)
+  assert.match(station, /const intimateMode = barragePreferences\.intimate/)
+  assert.match(station, /const fillMode = barragePreferences\.fill/)
+  assert.match(station, /aria-label="弹幕模式"/)
+  assert.match(station, /只保留星空与歌曲/)
+  assert.match(station, /aria-label="亲密模式"/)
+  assert.match(station, /弹幕横纵间距减半/)
+  assert.match(station, /aria-label="填充模式"/)
+  assert.match(station, /循环补齐弹幕，减少屏幕空白/)
+  assert.doesNotMatch(station, /暂停弹幕|继续弹幕|慢速|标准|快速/)
+  assert.match(station, /useState\(createInitialBarragePreferences\)/)
+  assert.doesNotMatch(station, /immersive: true/)
+  assert.doesNotMatch(station, /<PopularSongBarrage[^>]*active=/)
+  assert.match(station, /\{!barrageMode && \(\s*<header/)
+  assert.match(station, /\{!barrageMode && \(\s*<p className="pointer-events-none fixed bottom-5/)
+  assert.doesNotMatch(barrage, /active: boolean|popular-song-stage--paused/)
+  assert.match(barrage, /intimate: boolean/)
+  assert.match(barrage, /fill: boolean/)
+  assert.doesNotMatch(barrage, /\[\.\.\.songs, \.\.\.songs\]/)
+  assert.match(barrage, /<MessageBarrage[\s\S]*intimate=\{intimate\}[\s\S]*fill=\{fill\}/)
+  assert.match(messageBarrage, /getBarrageLayout\(intimate\)/)
+  assert.match(messageBarrage, /getSafeBarrageLaneCount/)
+  assert.match(messageBarrage, /getBarrageFillRepeatCount/)
+  assert.match(messageBarrage, /className="barrage-lane barrage-lane--fill"/)
+  assert.match(messageBarrage, /className="barrage-fill-probe"/)
+  assert.match(messageBarrage, /Array\.from\(\{ length: 2 \}/)
+  assert.match(css, /@keyframes barrage-fill-travel[\s\S]*translate3d\(-50%, -50%, 0\)/)
+})
+
+test('歌手卡片按既定顺序使用人物照片并保留自定义歌手兜底图标', () => {
+  const source = readFileSync(stationUrl, 'utf8')
+  const avatars = [
+    'jay-chou.png', 'jj-lin.png', 'stefanie-sun.png', 'gem.png',
+    'joker-xue.png', 'silence-wang.png', 'fish-leong.png', 'david-tao.png',
+    'wang-leehom.png', 'vae.png', 'eason-chan.png', 'zheng-runze.png',
+  ]
+
+  assert.match(source, /const ARTIST_AVATARS/)
+  for (const avatar of avatars) assert.match(source, new RegExp(`/images/song-request/artists/${avatar}`))
+  assert.match(source, /<img[\s\S]*src=\{avatar\.src\}/)
+  assert.match(source, /object-cover/)
+  assert.match(source, /objectPosition: `\$\{avatarStyle\.x\}% \$\{avatarStyle\.y\}%`/)
+  assert.match(source, /transform: `scale\(\$\{avatarStyle\.scale\}\) rotate/)
+  assert.match(source, /transformOrigin: `\$\{avatarStyle\.x\}% \$\{avatarStyle\.y\}%`/)
+  assert.match(source, /avatar && avatarStyle \? \(/)
+  assert.match(source, /: <Mic2/)
+})
+
+test('歌手页将仅有一首歌的歌手归入一人一曲且保留歌曲数据', async () => {
+  const source = readFileSync(stationUrl, 'utf8')
+  const { SONGS } = await import(catalogModuleUrl.href)
+
+  assert.match(source, /type ArtistLanguageFilter = 'chinese' \| 'foreign' \| 'single'/)
+  assert.match(source, /const \[artistLanguageFilter, setArtistLanguageFilter\] = useState<ArtistLanguageFilter>\('chinese'\)/)
+  assert.match(source, /const ARTIST_LANGUAGE_FILTERS/)
+  assert.match(source, /华语歌手/)
+  assert.match(source, /外语歌手/)
+  assert.match(source, /一人一曲/)
+  assert.match(source, /const singleSongArtist = songs\.length === 1;/)
+  assert.match(source, /artistLanguageFilter === 'single' \? singleSongArtist/)
+  assert.match(source, /songs\.length >= 2/)
+  assert.doesNotMatch(source, /value: 'all', label: '全部'/)
+  assert.match(source, /aria-label="歌手语种筛选"/)
+  assert.ok(SONGS.some((song: { artist: string, title: string }) => song.artist === 'Sweety' && song.title === '樱花草'))
+})
+
+test('歌手头像支持本机手动微调和重置', () => {
+  const source = readFileSync(stationUrl, 'utf8')
+
+  assert.match(source, /ARTIST_AVATAR_ADJUSTMENTS_KEY/)
+  assert.match(source, /调整头像/)
+  assert.match(source, /左右/)
+  assert.match(source, /上下/)
+  assert.match(source, /缩放/)
+  assert.match(source, /旋转/)
+  assert.match(source, /type="range"/)
+  assert.match(source, /localStorage\.setItem/)
+  assert.match(source, /重置/)
+  assert.match(source, /rotate\(\$\{avatarStyle\.rotation\}deg\)/)
 })
 
 test('roadshow panel keeps performance and recognition songs distinct', () => {
@@ -510,6 +808,23 @@ test('我的档案整合日常练习批量记录和月周日折叠历史', () =>
   assert.match(daily, /手动添加曲库外歌曲/)
   assert.match(station, /songs=\{catalogSongs\}[\s\S]*records=\{songRecords\}/)
   assert.match(station, /onRecordsChange=\{commitSongRecords\}/)
+  assert.match(station, /activeSection !== 'roadshows'/)
+})
+
+test('练习日历月周日超过八首时分别启用限高滚动', () => {
+  const daily = readFileSync(dailyPracticePanelUrl, 'utf8')
+  const css = readFileSync(indexCssUrl, 'utf8')
+
+  assert.match(daily, /const PRACTICE_SCROLL_THRESHOLD = 8;/)
+  assert.match(daily, /const scrollable = recordCount > PRACTICE_SCROLL_THRESHOLD;/)
+  assert.match(daily, /scrollable \? \{ tabIndex: 0, 'aria-label': label \} : \{\}/)
+  assert.match(daily, /scrollRegionProps\(\s*'practice-month-content',\s*monthRecords\.length,/)
+  assert.match(daily, /scrollRegionProps\(\s*'practice-week-content',\s*weekRecords\.length,/)
+  assert.match(daily, /scrollRegionProps\(\s*'practice-day-records',\s*day\.records\.length,/)
+
+  assert.match(css, /\.practice-month-content,\.practice-week-content\s*\{\s*min-height:0;\s*\}/)
+  assert.match(css, /\.practice-scroll-region\s*\{[^}]*max-height:30\.55rem;[^}]*overflow-y:auto;[^}]*scrollbar-color:rgba\(251,146,60,\.52\) rgba\(255,255,255,\.04\);[^}]*\}/s)
+  assert.match(css, /\.practice-scroll-region:focus-visible\s*\{[^}]*outline:1px solid rgba\(253,186,116,\.72\);[^}]*outline-offset:-2px;[^}]*\}/s)
 })
 
 test('browser adapter routes public and private sync through the existing CloudBase singleton', () => {
