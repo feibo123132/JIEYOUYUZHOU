@@ -325,7 +325,7 @@ test('新增十五位歌手的六十首歌曲均带热评并正确区分中外�
   assert.ok(requestedSongs.filter((song: { artist?: string } | undefined) => !['Taylor Swift', 'Justin Bieber'].includes(song?.artist ?? '')).every((song: { category?: string } | undefined) => song?.category === '华语流行'))
 })
 
-test('第三版曲库缓存会补齐新默认歌曲并升级到第五版', async () => {
+test('第三版曲库缓存会补齐新默认歌曲并升级到第六版', async () => {
   const { CATALOG_STORAGE_KEY, loadEditableCatalog } = await loadModule()
   const newDefaultSong = { id: 'default:new-v4', title: '新增默认歌', artist: '新增歌手', category: '华语流行', featured: false, hotComment: '新增热评' }
   const storage = {
@@ -336,7 +336,7 @@ test('第三版曲库缓存会补齐新默认歌曲并升级到第五版', async
 
   const catalog = loadEditableCatalog(storage, [...songs, newDefaultSong])
 
-  assert.equal(catalog.version, 5)
+  assert.equal(catalog.version, 6)
   assert.ok(catalog.artists.includes('新增歌手'))
   assert.equal(catalog.songs.find((song: { id: string }) => song.id === newDefaultSong.id)?.title, '新增默认歌')
 })
@@ -408,7 +408,7 @@ test('旧版曲库快照会补齐新版默认歌手并保留自定义歌曲', as
 
   const catalog = loadEditableCatalog(storage, [...songs, newDefaultSong])
 
-  assert.equal(catalog.version, 5)
+  assert.equal(catalog.version, 6)
   assert.deepEqual(catalog.artists, ['周杰伦', 'Coldplay', '新默认歌手', '自定义歌手'])
   assert.deepEqual(catalog.songs.map((song: { id: string }) => song.id), ['a', 'b', 'c', 'default:new', 'custom:legacy'])
 })
@@ -426,12 +426,38 @@ test('第四版曲库快照会补齐默认歌曲、同步热门标记并保留�
 
   const catalog = loadEditableCatalog(storage, [...songs, newDefaultSong])
 
-  assert.equal(catalog.version, 5)
+  assert.equal(catalog.version, 6)
   assert.equal(catalog.songs.find((song: { id: string }) => song.id === 'a')?.featured, true)
   assert.equal(catalog.songs.find((song: { id: string }) => song.id === 'default:new')?.title, '新版热门歌')
   assert.equal(catalog.songs.find((song: { id: string }) => song.id === 'custom:kept')?.title, '保留的自定义歌曲')
   assert.ok(catalog.artists.includes('新歌手'))
   assert.ok(catalog.artists.includes('自定义歌手'))
+})
+
+test('第五版曲库缓存会同步默认歌曲的歌手更正并保留自定义歌曲', async () => {
+  const { CATALOG_STORAGE_KEY, loadEditableCatalog } = await loadModule()
+  const correctedSongs = [
+    { ...songs[0], artist: '李佳薇' },
+    { ...songs[1], artist: '王唯旖' },
+  ]
+  const cachedSongs = [
+    { ...songs[0], artist: '张学友、郑中基、许志安' },
+    { ...songs[1], artist: '王呈章' },
+    { id: 'custom:kept', title: '保留歌曲', artist: '自定义歌手', category: '华语', featured: false },
+  ]
+  const storage = {
+    getItem: (key: string) => key === CATALOG_STORAGE_KEY
+      ? JSON.stringify({ version: 5, artists: ['张学友、郑中基、许志安', '王呈章', '自定义歌手'], songs: cachedSongs })
+      : null,
+  }
+
+  const catalog = loadEditableCatalog(storage, correctedSongs)
+
+  assert.equal(catalog.version, 6)
+  assert.equal(catalog.songs.find((song: { id: string }) => song.id === songs[0].id)?.artist, '李佳薇')
+  assert.equal(catalog.songs.find((song: { id: string }) => song.id === songs[1].id)?.artist, '王唯旖')
+  assert.ok(catalog.songs.some((song: { id: string }) => song.id === 'custom:kept'))
+  assert.deepEqual(catalog.artists, ['李佳薇', '王唯旖', '自定义歌手'])
 })
 
 test('歌曲记录支持同一首歌多次练习并按时间倒序过滤无效云端数据', async () => {
