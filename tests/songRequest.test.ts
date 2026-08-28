@@ -13,6 +13,7 @@ const songDetailPanelUrl = new URL('../src/components/SongRequest/SongDetailPane
 const dailyPracticePanelUrl = new URL('../src/components/SongRequest/DailyPracticePanel.tsx', import.meta.url)
 const popularSongBarrageUrl = new URL('../src/components/SongRequest/PopularSongBarrage.tsx', import.meta.url)
 const messageBarrageUrl = new URL('../src/components/StarrySky/MessageBarrage.tsx', import.meta.url)
+const artistSettingsUrl = new URL('../src/components/SongRequest/artistSettings.ts', import.meta.url)
 const indexCssUrl = new URL('../src/index.css', import.meta.url)
 
 const songs = [
@@ -39,12 +40,83 @@ async function loadRoadshowModule() {
   return import(roadshowModuleUrl.href)
 }
 
+const sampleArtistSettingsPayload = {
+  version: 1 as const,
+  artistOrder: ['周杰伦', '林俊杰'],
+  customAvatars: { 周杰伦: 'data:image/webp;base64,UklGRgAAAABXRUJQ' },
+  avatarAdjustments: { 周杰伦: { x: 48, y: 32, scale: 1.4, rotation: 2 } },
+}
+
+test('artist settings parse snapshots and merge cloud order without hiding new artists', async () => {
+  const { parseArtistSettingsSnapshot, mergeArtistOrder, createArtistSettingsPayload } = await import(artistSettingsUrl.href)
+  const snapshot = { ...sampleArtistSettingsPayload, revision: 3, updatedAt: '2026-08-28T08:00:00.000Z' }
+
+  assert.deepEqual(parseArtistSettingsSnapshot(snapshot), snapshot)
+  assert.equal(parseArtistSettingsSnapshot({ ...snapshot, revision: 0 }), null)
+  assert.equal(parseArtistSettingsSnapshot({ ...snapshot, avatarAdjustments: { 周杰伦: { x: 101, y: 32, scale: 1.4, rotation: 2 } } }), null)
+  assert.deepEqual(mergeArtistOrder(['林俊杰', '已删除歌手', '周杰伦'], ['周杰伦', '林俊杰', '孙燕姿']), ['林俊杰', '周杰伦', '孙燕姿'])
+  assert.deepEqual(createArtistSettingsPayload(
+    ['周杰伦'],
+    { 周杰伦: sampleArtistSettingsPayload.customAvatars.周杰伦, 已删除歌手: 'data:image/webp;base64,UklGRgAAAABXRUJQ' },
+    { 周杰伦: sampleArtistSettingsPayload.avatarAdjustments.周杰伦, 已删除歌手: { x: 50, y: 50, scale: 1, rotation: 0 } },
+  ), {
+    ...sampleArtistSettingsPayload,
+    artistOrder: ['周杰伦'],
+  })
+})
+
+test('artist settings draft is validated and survives pull conflicts or failures', async () => {
+  const {
+    ARTIST_SETTINGS_DRAFT_KEY, createArtistSettingsDraft, loadArtistSettingsDraft,
+    resolveArtistSettingsPull, saveArtistSettingsDraft,
+  } = await import(artistSettingsUrl.href)
+  const values = new Map<string, string>()
+  const storage = {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => { values.set(key, value) },
+    removeItem: (key: string) => { values.delete(key) },
+  }
+  const draft = createArtistSettingsDraft(null, 2, sampleArtistSettingsPayload)
+  saveArtistSettingsDraft(storage, draft)
+  assert.deepEqual(loadArtistSettingsDraft(storage), draft)
+  values.set(ARTIST_SETTINGS_DRAFT_KEY, JSON.stringify({ ...draft, snapshot: { version: 1, artistOrder: [], customAvatars: {}, avatarAdjustments: {} } }))
+  assert.equal(loadArtistSettingsDraft(storage), null)
+  saveArtistSettingsDraft(storage, draft)
+
+  const cloud = { ...sampleArtistSettingsPayload, revision: 3, updatedAt: '2026-08-28T08:00:00.000Z' }
+  assert.equal(resolveArtistSettingsPull({ cloud, local: sampleArtistSettingsPayload, draft, hasSession: true, defaultArtistOrder: sampleArtistSettingsPayload.artistOrder }).kind, 'conflict')
+  assert.equal(resolveArtistSettingsPull({ cloud: { ...cloud, revision: 2 }, local: sampleArtistSettingsPayload, draft, hasSession: true, defaultArtistOrder: sampleArtistSettingsPayload.artistOrder }).kind, 'push-draft')
+  assert.equal(resolveArtistSettingsPull({ cloud: null, local: sampleArtistSettingsPayload, draft: null, hasSession: true, defaultArtistOrder: ['周杰伦', '林俊杰', '孙燕姿'] }).kind, 'seed-cloud')
+  assert.throws(() => { throw new Error('SYNC_FAILED') }, /SYNC_FAILED/)
+  assert.deepEqual(loadArtistSettingsDraft(storage), draft, 'pull failure must preserve the local draft')
+})
+
+test('artist settings successful push only clears the newest draft and rebases later edits', async () => {
+  const { createArtistSettingsDraft, resolveSuccessfulArtistSettingsPush } = await import(artistSettingsUrl.href)
+  const first = createArtistSettingsDraft(null, 4, sampleArtistSettingsPayload)
+  const later = createArtistSettingsDraft(first, 4, { ...sampleArtistSettingsPayload, artistOrder: ['林俊杰', '周杰伦'] })
+  const server = { ...sampleArtistSettingsPayload, revision: 5, updatedAt: '2026-08-28T08:05:00.000Z' }
+
+  assert.equal(resolveSuccessfulArtistSettingsPush(first, first.changeId, server), null)
+  assert.deepEqual(resolveSuccessfulArtistSettingsPush(later, first.changeId, server), { ...later, baseRevision: 5 })
+  assert.deepEqual(resolveSuccessfulArtistSettingsPush(later, 999, server), later)
+})
+
 test('点歌台返回按钮仅显示目标名称并保留左箭头', () => {
   const stationSource = readFileSync(stationUrl, 'utf8')
 
   assert.doesNotMatch(stationSource, /返回(?:点歌台|宇宙)|`返回\$\{/)
   assert.match(stationSource, /<ArrowLeft className="h-4 w-4" \/> 点歌台/)
   assert.match(stationSource, /activeSection === null \? '宇宙'/)
+})
+
+test('入口和登录卡片统一使用私人记录文案', () => {
+  const stationSource = readFileSync(stationUrl, 'utf8')
+  const roadshowSource = readFileSync(roadshowPanelUrl, 'utf8')
+
+  assert.match(stationSource, /id: 'roadshows', label: '私人记录'/)
+  assert.match(roadshowSource, />私人记录<\/h2>/)
+  assert.doesNotMatch(roadshowSource, /仅属于你的私人档案/)
 })
 
 test('游客能读取脱敏个人练习榜但不能进入私人歌曲档案', async () => {

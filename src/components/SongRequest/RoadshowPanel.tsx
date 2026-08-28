@@ -170,7 +170,7 @@ const RoadshowPanel = ({
     return (
       <section className="mx-auto max-w-xl rounded-[2rem] border border-orange-200/15 bg-[#120b08]/85 p-6 shadow-[0_28px_90px_rgba(0,0,0,.35)] backdrop-blur-2xl sm:p-9">
         <div className="grid h-14 w-14 place-items-center rounded-2xl border border-orange-200/20 bg-orange-300/10 text-orange-200"><Lock className="h-6 w-6" /></div>
-        <h2 className="mt-5 font-serif text-3xl font-black">仅属于你的私人档案</h2>
+        <h2 className="mt-5 font-serif text-3xl font-black">私人记录</h2>
         <p className="mt-2 text-sm leading-7 text-white/45">用别称和管理口令进入。日常练习和路演档案通过腾讯云在电脑、手机之间同步。</p>
         <div className="mt-6 space-y-3">
           <input value={alias} onChange={(event) => setAlias(event.target.value)} placeholder="你的别称" maxLength={30} className="h-12 w-full rounded-xl border border-white/10 bg-black/35 px-4 outline-none focus:border-orange-300/45" />

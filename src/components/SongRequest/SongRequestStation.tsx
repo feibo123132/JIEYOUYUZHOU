@@ -40,7 +40,7 @@ const PERSONAL_RANKING_SCROLL_THRESHOLD = 8;
 const HUB_DIRECTIONS = [
   { id: 'ranking', label: '排行榜', eyebrow: 'RANKINGS', description: '切换查看点歌榜和个人练习榜', icon: Trophy, tone: 'from-amber-400/20 to-orange-600/5' },
   { id: 'artists', label: '歌手', eyebrow: 'ARTISTS', description: '按歌手找到我会唱的歌', icon: Mic2, tone: 'from-rose-400/20 to-pink-700/5' },
-  { id: 'roadshows', label: '记录', eyebrow: 'PRIVATE ARCHIVE', description: '日常练习与路演记录', icon: CalendarDays, tone: 'from-cyan-400/20 to-blue-700/5' },
+  { id: 'roadshows', label: '私人记录', eyebrow: 'PRIVATE ARCHIVE', description: '日常练习与路演记录', icon: CalendarDays, tone: 'from-cyan-400/20 to-blue-700/5' },
   { id: 'playlists', label: '热门歌曲', eyebrow: 'HOT SONGS', description: '看歌名化作彩色弹幕穿过星空', icon: Library, tone: 'from-violet-400/20 to-purple-700/5' },
 ] as const;
 
