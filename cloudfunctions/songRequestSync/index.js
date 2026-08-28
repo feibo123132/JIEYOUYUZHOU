@@ -5,8 +5,10 @@ const PUBLIC_ERRORS = new Set([
   'INVALID_ACTION', 'PAYLOAD_TOO_LARGE', 'INVALID_SONG_ID', 'INVALID_ALIAS', 'INVALID_PASSWORD',
   'INVALID_SONG', 'INVALID_SONG_LIST', 'INVALID_RECORD', 'ALREADY_REGISTERED', 'NOT_REGISTERED',
   'INVALID_SONG_RECORD', 'INVALID_ARTIST_SETTINGS', 'AUTH_FAILED', 'CONFLICT', 'NOT_FOUND',
+  'INVALID_FEATURED_SONGS',
 ]);
 
+const FEATURED_SONGS_OWNER_ALIAS = '2421415030@qq.com';
 const workspaceId = (alias) => crypto.createHash('sha256').update(alias.trim().toLocaleLowerCase()).digest('hex');
 const passwordHash = (password, salt) => crypto.scryptSync(password, salt, 32).toString('hex');
 const songRecordDocumentId = (workspace, record) => crypto.createHash('sha256').update(`${workspace}:${record}`).digest('hex');
@@ -67,6 +69,10 @@ function createHandler(store) {
       if (request.action === 'artistSettings:pull') {
         return { ok: true, snapshot: publicArtistSettings(await store.getArtistSettings()) };
       }
+      if (request.action === 'featuredSongs:pull') {
+        const owner = await store.getWorkspace(workspaceId(FEATURED_SONGS_OWNER_ALIAS));
+        return { ok: true, songIds: Array.isArray(owner?.featuredSongIds) ? owner.featuredSongIds : null };
+      }
       if (request.action === 'votes:increment') {
         return { ok: true, count: await store.incrementVote(request.songId) };
       }
@@ -90,10 +96,16 @@ function createHandler(store) {
       try {
         authenticated = await authenticate(store, request.alias, request.password);
       } catch (error) {
-        if (request.action === 'artistSettings:push' && error?.message === 'NOT_REGISTERED') throw new Error('AUTH_FAILED');
+        if ((request.action === 'artistSettings:push' || request.action === 'featuredSongs:set')
+          && error?.message === 'NOT_REGISTERED') throw new Error('AUTH_FAILED');
         throw error;
       }
       const { id, workspace } = authenticated;
+      if (request.action === 'featuredSongs:set') {
+        if (id !== workspaceId(FEATURED_SONGS_OWNER_ALIAS)) throw new Error('AUTH_FAILED');
+        await store.setFeaturedSongIds(id, request.songIds, store.now());
+        return { ok: true, songIds: request.songIds };
+      }
       if (request.action === 'artistSettings:push') {
         const saved = await store.saveArtistSettingsAtomically(id, request.expectedRevision, request.snapshot);
         return { ok: true, snapshot: publicArtistSettings(saved) };
@@ -176,6 +188,7 @@ exports.main = async (event) => {
         }
       },
       setWorkspace: (id, value) => workspaces.doc(id).set(buildWritableWorkspace(value)),
+      setFeaturedSongIds: (id, songIds, updatedAt) => workspaces.doc(id).update({ featuredSongIds: songIds, updatedAt }),
       async getVotes() {
         const result = await votes.limit(100).get();
         return Object.fromEntries((result.data || []).map((item) => [item._id, Number(item.count) || 0]));

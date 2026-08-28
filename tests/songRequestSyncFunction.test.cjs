@@ -36,6 +36,9 @@ function memoryStore() {
     get artistSettings() { return artistSettings; },
     getWorkspace: async (id) => workspaces.get(id) ?? null,
     setWorkspace: async (id, value) => { workspaces.set(id, structuredClone(value)); },
+    setFeaturedSongIds: async (id, songIds, updatedAt) => {
+      workspaces.set(id, { ...workspaces.get(id), featuredSongIds: structuredClone(songIds), updatedAt });
+    },
     getVotes: async () => Object.fromEntries(votes),
     incrementVote: async (songId) => {
       const count = (votes.get(songId) ?? 0) + 1;
@@ -185,6 +188,33 @@ test('increments and pulls public song request votes', async () => {
   assert.deepEqual(await handler({ action: 'votes:increment', songId: 'qing-tian' }), { ok: true, count: 1 });
   assert.deepEqual(await handler({ action: 'votes:increment', songId: 'qing-tian' }), { ok: true, count: 2 });
   assert.deepEqual(await handler({ action: 'votes:pull' }), { ok: true, counts: { 'qing-tian': 2 } });
+})
+
+test('only the authenticated owner email can publish global featured songs', async () => {
+  const store = memoryStore();
+  const { createHandler } = loadFunction();
+  const handler = createHandler(store);
+  const owner = { alias: '2421415030@qq.com', password: 'guitar-2026' };
+  const visitor = { alias: 'visitor@example.com', password: 'guitar-2026' };
+  await handler({ action: 'roadshows:register', ...owner });
+  await handler({ action: 'roadshows:register', ...visitor });
+
+  assert.deepEqual(await handler({ action: 'featuredSongs:pull' }), { ok: true, songIds: null });
+  assert.deepEqual(await handler({ action: 'featuredSongs:set', ...visitor, songIds: ['a'] }), { ok: false, error: 'AUTH_FAILED' });
+  assert.deepEqual(await handler({ action: 'featuredSongs:set', ...owner, password: 'wrong-password', songIds: ['a'] }), { ok: false, error: 'AUTH_FAILED' });
+  assert.deepEqual(await handler({ action: 'featuredSongs:set', ...owner, songIds: ['c', 'a', 'a'] }), { ok: true, songIds: ['c', 'a'] });
+  assert.deepEqual(await handler({ action: 'featuredSongs:pull' }), { ok: true, songIds: ['c', 'a'] });
+})
+
+test('validates featured song ids and keeps the pull action public', () => {
+  const { validateRequest } = require(validationPath);
+  const owner = { alias: '2421415030@qq.com', password: 'guitar-2026' };
+
+  assert.deepEqual(validateRequest({ action: 'featuredSongs:pull' }), { action: 'featuredSongs:pull' });
+  assert.deepEqual(validateRequest({ action: 'featuredSongs:set', ...owner, songIds: ['a', 'custom:1', 'a'] }), {
+    action: 'featuredSongs:set', ...owner, songIds: ['a', 'custom:1'],
+  });
+  assert.throws(() => validateRequest({ action: 'featuredSongs:set', ...owner, songIds: Array(501).fill('a') }), /INVALID_FEATURED_SONGS/);
 })
 
 test('publishes only sanitized practice averages to guests without credentials', async () => {

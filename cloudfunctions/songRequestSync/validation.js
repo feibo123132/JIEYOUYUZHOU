@@ -12,6 +12,8 @@ const ACTIONS = new Set([
   'songRecords:delete',
   'artistSettings:pull',
   'artistSettings:push',
+  'featuredSongs:pull',
+  'featuredSongs:set',
 ]);
 
 const ARTIST_SETTINGS_REQUEST_LIMIT = 5 * 1024 * 1024;
@@ -154,7 +156,8 @@ function validateRequest(event) {
   const requestLimit = event.action === 'artistSettings:push' ? ARTIST_SETTINGS_REQUEST_LIMIT : DEFAULT_REQUEST_LIMIT;
   if (Buffer.byteLength(JSON.stringify(event), 'utf8') > requestLimit) throw new Error('PAYLOAD_TOO_LARGE');
 
-  if (event.action === 'votes:pull' || event.action === 'songRecords:publicRanking' || event.action === 'artistSettings:pull') return { action: event.action };
+  if (event.action === 'votes:pull' || event.action === 'songRecords:publicRanking'
+    || event.action === 'artistSettings:pull' || event.action === 'featuredSongs:pull') return { action: event.action };
   if (event.action === 'votes:increment') {
     const songId = cleanText(event.songId, 80, 'INVALID_SONG_ID');
     if (!/^[a-z0-9-]+$/i.test(songId)) throw new Error('INVALID_SONG_ID');
@@ -164,6 +167,11 @@ function validateRequest(event) {
   const alias = cleanText(event.alias, 30, 'INVALID_ALIAS');
   if (typeof event.password !== 'string' || event.password.length < 6 || event.password.length > 64) throw new Error('INVALID_PASSWORD');
   const base = { action: event.action, alias, password: event.password };
+  if (event.action === 'featuredSongs:set') {
+    if (!Array.isArray(event.songIds) || event.songIds.length > 500) throw new Error('INVALID_FEATURED_SONGS');
+    const songIds = event.songIds.map((songId) => cleanText(songId, 100, 'INVALID_FEATURED_SONGS'));
+    return { ...base, songIds: [...new Set(songIds)] };
+  }
   if (event.action === 'artistSettings:push') {
     const expectedRevision = event.expectedRevision;
     if (!(expectedRevision === null || (Number.isInteger(expectedRevision) && expectedRevision >= 1))) throw new Error('INVALID_ARTIST_SETTINGS');

@@ -28,6 +28,14 @@ export const incrementCloudVote = async (songId: string): Promise<number> => (
   await callSync<{ count: number }>({ action: 'votes:increment', songId })
 ).count;
 
+export const pullCloudFeaturedSongIds = async (): Promise<string[] | null> => (
+  await callSync<{ songIds: string[] | null }>({ action: 'featuredSongs:pull' })
+).songIds;
+
+export const saveCloudFeaturedSongIds = async (credentials: Credentials, songIds: string[]): Promise<string[]> => (
+  await callSync<{ songIds: string[] }>({ action: 'featuredSongs:set', ...credentials, songIds })
+).songIds;
+
 export const registerRoadshowWorkspace = async (credentials: Credentials): Promise<RoadshowRecord[]> => (
   await callSync<{ records: RoadshowRecord[] }>({ action: 'roadshows:register', ...credentials })
 ).records;

@@ -68,7 +68,7 @@ test('artist settings parse snapshots and merge cloud order without hiding new a
 test('artist settings draft is validated and survives pull conflicts or failures', async () => {
   const {
     ARTIST_SETTINGS_DRAFT_KEY, createArtistSettingsDraft, loadArtistSettingsDraft,
-    resolveArtistSettingsPull, saveArtistSettingsDraft,
+    ensureArtistSettingsRetryDraft, resolveArtistSettingsPull, saveArtistSettingsDraft,
   } = await import(artistSettingsUrl.href)
   const values = new Map<string, string>()
   const storage = {
@@ -89,6 +89,24 @@ test('artist settings draft is validated and survives pull conflicts or failures
   assert.equal(resolveArtistSettingsPull({ cloud: null, local: sampleArtistSettingsPayload, draft: null, hasSession: true, defaultArtistOrder: ['周杰伦', '林俊杰', '孙燕姿'] }).kind, 'seed-cloud')
   assert.throws(() => { throw new Error('SYNC_FAILED') }, /SYNC_FAILED/)
   assert.deepEqual(loadArtistSettingsDraft(storage), draft, 'pull failure must preserve the local draft')
+
+  values.delete(ARTIST_SETTINGS_DRAFT_KEY)
+  const retryDraft = ensureArtistSettingsRetryDraft(
+    storage, sampleArtistSettingsPayload, ['周杰伦', '林俊杰', '孙燕姿'], null,
+  )
+  assert.deepEqual(loadArtistSettingsDraft(storage), retryDraft, 'a first pull failure must create a retryable draft')
+  assert.deepEqual(
+    ensureArtistSettingsRetryDraft(storage, sampleArtistSettingsPayload, ['周杰伦', '林俊杰', '孙燕姿'], null),
+    retryDraft,
+    'repeated retries must not replace the pending draft',
+  )
+  values.delete(ARTIST_SETTINGS_DRAFT_KEY)
+  const defaultPayload = { ...sampleArtistSettingsPayload, customAvatars: {}, avatarAdjustments: {} }
+  assert.equal(
+    ensureArtistSettingsRetryDraft(storage, defaultPayload, defaultPayload.artistOrder, null),
+    null,
+    'default settings must not create an unnecessary cloud draft',
+  )
 })
 
 test('artist settings successful push only clears the newest draft and rebases later edits', async () => {
@@ -227,7 +245,7 @@ test('曲库按指定歌手与歌曲顺序保存，且每首歌均有独立文�
     陈粒: ['小半', '奇妙能力歌', '虚拟'],
     蔡健雅: ['红色高跟鞋', 'letting go', '别找我麻烦', '思念是一种病', '停格', '达尔文'],
     陈绮贞: ['太聪明', '旅行的意义', '我爱上你时的心理活动'],
-    '张学友、郑中基、许志安': ['甲乙丙丁'],
+    李佳薇: ['甲乙丙丁'],
     Sweety: ['樱花草'],
     陈势安: ['天后'],
     郭顶: ['我们俩'],
@@ -238,7 +256,7 @@ test('曲库按指定歌手与歌曲顺序保存，且每首歌均有独立文�
     江语晨: ['最后一页'],
     '银临、Aki阿杰': ['牵丝戏'],
     颜人中: ['有些'],
-    王呈章: ['舍得'],
+    王唯旖: ['舍得'],
     Kirsty刘瑾睿: ['若把你'],
     后弦: ['下完这场雨'],
     郭静: ['爱情讯息', '心墙', '下一个天亮'],
@@ -573,8 +591,24 @@ test('歌曲记录快照只恢复当前私有会话缺少的自定义歌曲', as
 })
 
 test('featured songs remain an unranked catalog subset', async () => {
-  const { getFeaturedSongs } = await loadModule()
+  const { getFeaturedSongs, isFeaturedSongManager } = await loadModule()
   assert.deepEqual(getFeaturedSongs(songs).map((song: { id: string }) => song.id), ['a', 'c'])
+  assert.equal(isFeaturedSongManager(' 2421415030@QQ.COM '), true)
+  assert.equal(isFeaturedSongManager('visitor@example.com'), false)
+})
+
+test('热门歌曲火焰标记公开可见且仅本人登录后可操作', () => {
+  const station = readFileSync(stationUrl, 'utf8')
+  const cloud = readFileSync(cloudAdapterUrl, 'utf8')
+
+  assert.match(station, /const canManageFeaturedSongs = isFeaturedSongManager\(songRecordSession\?\.alias\)/)
+  assert.match(station, /aria-label=\{featured \? `取消\$\{song\.title\}的热门歌曲标记` : `将\$\{song\.title\}设为热门歌曲`\}/)
+  assert.match(station, /title="热门歌曲">🔥<\/span>/)
+  assert.match(station, /<FeaturedSongControl song=\{song\} \/>\s*<RequestButton song=\{song\} \/>/)
+  assert.match(cloud, /export const pullCloudFeaturedSongIds/)
+  assert.match(cloud, /export const saveCloudFeaturedSongIds/)
+  assert.match(cloud, /action: 'featuredSongs:pull'/)
+  assert.match(cloud, /action: 'featuredSongs:set'/)
 })
 
 test('increments cumulative votes without mutating the prior state', async () => {
@@ -714,6 +748,9 @@ test('歌手页支持持久排序及上传头像后继续微调', () => {
   assert.match(source, /artistSettingsInitializedRef/)
   assert.match(source, /resolveArtistSettingsPull/)
   assert.match(source, /runArtistSettingsPush/)
+  assert.match(source, /ensureArtistSettingsRetryDraft/)
+  assert.match(source, /window\.addEventListener\('online', retryArtistSettingsPush\)/)
+  assert.match(source, /window\.addEventListener\('focus', retryArtistSettingsPush\)/)
   assert.match(source, /if \(artistOrderMode\) syncCurrentArtistSettings\(\)/)
   assert.match(source, /if \(avatarAdjustMode\) syncCurrentArtistSettings\(\)/)
 })
@@ -832,7 +869,8 @@ test('歌曲页猫咪助手复用检索歌曲展示与弹幕功能但不包含�
   assert.match(station, /随机部分（60首，刷新重置）/)
   assert.match(station, /完全展示（全部歌曲）/)
   assert.match(station, /type SongDisplayMode = 'random' \| 'full'/)
-  assert.match(station, /const providedSongs = useMemo\(\(\) => getFeaturedSongs\(catalogSongs\), \[catalogSongs\]\)/)
+  assert.match(station, /const featured = new Set\(featuredSongIds\)/)
+  assert.match(station, /return catalogSongs\.filter\(\(song\) => featured\.has\(song\.id\)\)/)
   assert.match(station, /const shuffled = \[\.\.\.providedSongs\]/)
   assert.match(station, /return shuffled\.slice\(0, 60\)/)
   assert.match(station, /const barrageSongs = useMemo/)

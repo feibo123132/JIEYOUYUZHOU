@@ -106,6 +106,10 @@ export const filterSongs = (songs: Song[], query: string, category: string) => {
 
 export const getFeaturedSongs = (songs: Song[]) => songs.filter((song) => song.featured);
 
+export const isFeaturedSongManager = (alias: string | null | undefined) => (
+  alias?.trim().toLocaleLowerCase() === '2421415030@qq.com'
+);
+
 export const getSongSubtitle = (song: Song) => song.hotComment?.trim() || `${song.artist} · ${song.category}`;
 
 export const incrementSongVote = (counts: VoteCounts, songId: string): VoteCounts => ({

@@ -7,15 +7,15 @@ import useAppStore from '../../store/appStore';
 import { SONGS, type Song } from './songCatalog';
 import {
   addCatalogArtist, addCatalogSong, createEditableCatalog, getFeaturedSongs,
-  getPersonalRankingPodiumSize, getRankingMedalTone, getSongSubtitle, incrementSongVote,
+  getPersonalRankingPodiumSize, getRankingMedalTone, getSongSubtitle, incrementSongVote, isFeaturedSongManager,
   loadEditableCatalog, loadVoteCounts, rankSongsByVotes,
   moveCatalogArtist, removeCatalogArtist, removeCatalogSong, saveEditableCatalog, saveVoteCounts,
   type EditableCatalog, type VoteCounts,
 } from './songRequest';
 import { groupSongsByArtist } from './roadshow';
 import {
-  incrementCloudVote, mapArtistSettingsSyncError, pullArtistSettings, pullCloudVotes,
-  pullPublicPracticeRanking, pullSongRecords, pushArtistSettings,
+  incrementCloudVote, mapArtistSettingsSyncError, pullArtistSettings, pullCloudFeaturedSongIds, pullCloudVotes,
+  pullPublicPracticeRanking, pullSongRecords, pushArtistSettings, saveCloudFeaturedSongIds,
 } from './songRequestCloud';
 import RoadshowPanel from './RoadshowPanel';
 import SongDetailPanel from './SongDetailPanel';
@@ -28,7 +28,7 @@ import {
 } from './songRecords';
 import {
   clearArtistSettingsDraft, createArtistSettingsDraft, createArtistSettingsPayload,
-  hasCustomArtistSettings, loadArtistSettingsCache, loadArtistSettingsDraft, mergeArtistOrder,
+  ensureArtistSettingsRetryDraft, hasCustomArtistSettings, loadArtistSettingsCache, loadArtistSettingsDraft, mergeArtistOrder,
   parseArtistSettingsSnapshot, resolveArtistSettingsPull, resolveSuccessfulArtistSettingsPush,
   saveArtistSettingsCache, saveArtistSettingsDraft,
   type ArtistSettingsPayload,
@@ -141,6 +141,8 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     typeof window === 'undefined' ? {} : loadVoteCounts(window.localStorage, catalog.songs.map((song) => song.id))
   ));
   const [requestedId, setRequestedId] = useState<string | null>(null);
+  const [featuredSongIds, setFeaturedSongIds] = useState<string[]>(() => getFeaturedSongs(catalog.songs).map((song) => song.id));
+  const [featuredBusyId, setFeaturedBusyId] = useState<string | null>(null);
   const [syncMessage, setSyncMessage] = useState('');
   const [songRecordSession, setSongRecordSession] = useState<SongRecordSession | null>(() => (
     typeof window === 'undefined' ? null : readSongRecordSession(window.sessionStorage)
@@ -235,6 +237,20 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   }, [songRecordSession]);
 
   useEffect(() => {
+    const retryArtistSettingsPush = () => {
+      if (!artistSettingsInitializedRef.current || !artistSettingsSessionRef.current
+        || !loadArtistSettingsDraft(window.localStorage)) return;
+      void runArtistSettingsPush();
+    };
+    window.addEventListener('online', retryArtistSettingsPush);
+    window.addEventListener('focus', retryArtistSettingsPush);
+    return () => {
+      window.removeEventListener('online', retryArtistSettingsPush);
+      window.removeEventListener('focus', retryArtistSettingsPush);
+    };
+  }, []);
+
+  useEffect(() => {
     if (artistSettingsInitializedRef.current) return;
     artistSettingsInitializedRef.current = true;
     let active = true;
@@ -271,7 +287,16 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
         if (artistSettingsSessionRef.current) void runArtistSettingsPush();
         else setSyncMessage('歌手设置已保存在本地，进入私有空间后将同步全站。');
       }
-    }).catch(() => { if (active) setSyncMessage('全站歌手设置暂时未连接，当前仍使用本地设置。'); });
+    }).catch(() => {
+      if (!active) return;
+      const retryDraft = ensureArtistSettingsRetryDraft(
+        window.localStorage, local, createEditableCatalog(SONGS).artists, artistSettingsRevisionRef.current,
+      );
+      if (retryDraft && artistSettingsSessionRef.current) void runArtistSettingsPush();
+      setSyncMessage(retryDraft
+        ? '全站歌手设置暂时未连接，本地修改已排队并将在恢复后自动同步。'
+        : '全站歌手设置暂时未连接，当前仍使用本地设置。');
+    });
     return () => { active = false; };
   }, []);
 
@@ -282,6 +307,14 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
       setVotes(counts);
       try { saveVoteCounts(window.localStorage, counts); } catch {}
     }).catch(() => { if (active) setSyncMessage('云端暂时未连接，本次点歌稍后再试'); });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    pullCloudFeaturedSongIds().then((songIds) => {
+      if (active && songIds) setFeaturedSongIds(songIds);
+    }).catch(() => undefined);
     return () => { active = false; };
   }, []);
 
@@ -337,7 +370,10 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     const ids = new Set(catalog.songs.map((song) => song.id));
     return [...catalog.songs, ...recoveredSongs.filter((song) => !ids.has(song.id))];
   }, [catalog.songs, recoveredSongs]);
-  const providedSongs = useMemo(() => getFeaturedSongs(catalogSongs), [catalogSongs]);
+  const providedSongs = useMemo(() => {
+    const featured = new Set(featuredSongIds);
+    return catalogSongs.filter((song) => featured.has(song.id));
+  }, [catalogSongs, featuredSongIds]);
   const randomSongs = useMemo(() => {
     const shuffled = [...providedSongs];
     for (let index = shuffled.length - 1; index > 0; index -= 1) {
@@ -556,6 +592,37 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     window.setTimeout(() => setRequestedId((current) => current === song.id ? null : current), 1000);
   };
 
+  const canManageFeaturedSongs = isFeaturedSongManager(songRecordSession?.alias);
+  const toggleFeaturedSong = async (song: Song) => {
+    if (!songRecordSession || !canManageFeaturedSongs || featuredBusyId) return;
+    const previous = featuredSongIds;
+    const featured = previous.includes(song.id);
+    const next = featured ? previous.filter((songId) => songId !== song.id) : [...previous, song.id];
+    setFeaturedSongIds(next);
+    setFeaturedBusyId(song.id);
+    setSyncMessage('');
+    try {
+      setFeaturedSongIds(await saveCloudFeaturedSongIds(songRecordSession, next));
+    } catch {
+      setFeaturedSongIds(previous);
+      setSyncMessage('热门歌曲标记未同步，请稍后重试');
+    } finally {
+      setFeaturedBusyId(null);
+    }
+  };
+
+  const FeaturedSongControl = ({ song }: { song: Song }) => {
+    const featured = featuredSongIds.includes(song.id);
+    if (canManageFeaturedSongs) {
+      return (
+        <button type="button" aria-pressed={featured} aria-label={featured ? `取消${song.title}的热门歌曲标记` : `将${song.title}设为热门歌曲`}
+          title={featured ? '取消热门歌曲' : '设为热门歌曲'} disabled={Boolean(featuredBusyId)} onClick={(event) => { event.stopPropagation(); void toggleFeaturedSong(song); }}
+          className={`grid h-9 w-9 shrink-0 place-items-center rounded-full border text-base transition active:scale-95 disabled:opacity-45 ${featured ? 'border-amber-300/45 bg-amber-300/15 shadow-[0_0_18px_rgba(251,191,36,.16)]' : 'border-white/10 bg-black/25 grayscale opacity-45 hover:border-amber-200/30 hover:grayscale-0 hover:opacity-100'}`}>🔥</button>
+      );
+    }
+    return featured ? <span className="grid h-9 w-9 shrink-0 place-items-center text-base drop-shadow-[0_0_8px_rgba(251,191,36,.35)]" title="热门歌曲">🔥</span> : null;
+  };
+
   const RequestButton = ({ song }: { song: Song }) => {
     const done = requestedId === song.id;
     return (
@@ -573,7 +640,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
           <button type="button" onClick={() => openSongDetail(song)} className="min-w-0 flex-1 rounded-xl px-2 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-orange-300/50">
             <h3 className="truncate font-bold transition group-hover:text-orange-100">{song.title}</h3><p title={song.hotComment} className="mt-1 truncate text-xs text-white/40">{getSongSubtitle(song)}</p>
           </button>
-          <RequestButton song={song} />
+          <span className="flex shrink-0 items-center gap-2"><FeaturedSongControl song={song} /><RequestButton song={song} /></span>
         </article>
       ))}
     </div>

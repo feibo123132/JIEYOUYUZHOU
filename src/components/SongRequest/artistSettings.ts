@@ -137,6 +137,20 @@ export const createArtistSettingsDraft = (
   snapshot: ArtistSettingsPayload,
 ): ArtistSettingsDraft => ({ changeId: (previous?.changeId ?? 0) + 1, baseRevision, snapshot });
 
+export const ensureArtistSettingsRetryDraft = (
+  storage: ReadableStorage & WritableStorage,
+  local: ArtistSettingsPayload,
+  defaultArtistOrder: string[],
+  baseRevision: number | null,
+): ArtistSettingsDraft | null => {
+  const current = loadArtistSettingsDraft(storage);
+  if (current) return current;
+  if (!hasCustomArtistSettings(local, defaultArtistOrder)) return null;
+  const draft = createArtistSettingsDraft(null, baseRevision, local);
+  saveArtistSettingsDraft(storage, draft);
+  return draft;
+};
+
 export const resolveArtistSettingsPull = ({ cloud, local, draft, hasSession, defaultArtistOrder }: {
   cloud: ArtistSettingsSnapshot | null;
   local: ArtistSettingsPayload;
