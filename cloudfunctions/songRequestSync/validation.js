@@ -6,6 +6,7 @@ const ACTIONS = new Set([
   'roadshows:save',
   'roadshows:delete',
   'songRecords:pull',
+  'songRecords:publicRanking',
   'songRecords:save',
   'songRecords:saveBatch',
   'songRecords:delete',
@@ -94,7 +95,7 @@ function validateRequest(event) {
   if (!event || typeof event !== 'object' || !ACTIONS.has(event.action)) throw new Error('INVALID_ACTION');
   if (Buffer.byteLength(JSON.stringify(event), 'utf8') > 256 * 1024) throw new Error('PAYLOAD_TOO_LARGE');
 
-  if (event.action === 'votes:pull') return { action: event.action };
+  if (event.action === 'votes:pull' || event.action === 'songRecords:publicRanking') return { action: event.action };
   if (event.action === 'votes:increment') {
     const songId = cleanText(event.songId, 80, 'INVALID_SONG_ID');
     if (!/^[a-z0-9-]+$/i.test(songId)) throw new Error('INVALID_SONG_ID');

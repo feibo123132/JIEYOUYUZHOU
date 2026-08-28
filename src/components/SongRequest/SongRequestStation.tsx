@@ -12,15 +12,15 @@ import {
   type EditableCatalog, type VoteCounts,
 } from './songRequest';
 import { groupSongsByArtist } from './roadshow';
-import { incrementCloudVote, pullCloudVotes, pullSongRecords } from './songRequestCloud';
+import { incrementCloudVote, pullCloudVotes, pullPublicPracticeRanking, pullSongRecords } from './songRequestCloud';
 import RoadshowPanel from './RoadshowPanel';
 import SongDetailPanel from './SongDetailPanel';
 import PopularSongBarrage from './PopularSongBarrage';
 import { createInitialBarragePreferences, setBarragePreference } from '../StarrySky/barragePreferences';
 import {
-  getMatchQuality, loadSongRecordCache, parseSongRecords, rankSongsByPracticeMatch, readSongRecordSession, recoverSongsFromRecords,
+  getMatchQuality, loadSongRecordCache, parsePublicPracticeRanking, parseSongRecords, rankSongsByPracticeMatch, readSongRecordSession, recoverSongsFromRecords,
   saveSongRecordCache, SONG_REQUEST_SESSION_EVENT,
-  type SongRecord, type SongRecordSession,
+  type PublicPracticeRankingItem, type SongRecord, type SongRecordSession,
 } from './songRecords';
 
 interface SongRequestStationProps { onBack: () => void; }
@@ -44,19 +44,21 @@ const HUB_DIRECTIONS = [
   { id: 'playlists', label: '热门歌曲', eyebrow: 'HOT SONGS', description: '看歌名化作彩色弹幕穿过星空', icon: Library, tone: 'from-violet-400/20 to-purple-700/5' },
 ] as const;
 
+const artistAvatarUrl = (fileName: string) => `${import.meta.env.BASE_URL}images/song-request/artists/${fileName}`;
+
 const ARTIST_AVATARS: Record<string, { src: string; position: string; scale: number }> = {
-  周杰伦: { src: '/images/song-request/artists/jay-chou.png', position: '50% 24%', scale: 1.35 },
-  林俊杰: { src: '/images/song-request/artists/jj-lin.png', position: '50% 38%', scale: 1.35 },
-  孙燕姿: { src: '/images/song-request/artists/stefanie-sun.png', position: '50% 24%', scale: 1.65 },
-  邓紫棋: { src: '/images/song-request/artists/gem.png', position: '50% 34%', scale: 1.45 },
-  薛之谦: { src: '/images/song-request/artists/joker-xue.png', position: '50% 29%', scale: 1.3 },
-  汪苏泷: { src: '/images/song-request/artists/silence-wang.png', position: '50% 27%', scale: 1.35 },
-  梁静茹: { src: '/images/song-request/artists/fish-leong.png', position: '50% 30%', scale: 1.4 },
-  陶喆: { src: '/images/song-request/artists/david-tao.png', position: '67% 46%', scale: 2.7 },
-  王力宏: { src: '/images/song-request/artists/wang-leehom.png', position: '50% 34%', scale: 1.35 },
-  许嵩: { src: '/images/song-request/artists/vae.png', position: '63% 25%', scale: 1.55 },
-  陈奕迅: { src: '/images/song-request/artists/eason-chan.png', position: '50% 43%', scale: 2.45 },
-  郑润泽: { src: '/images/song-request/artists/zheng-runze.png', position: '50% 22%', scale: 1.35 },
+  周杰伦: { src: artistAvatarUrl('jay-chou.png'), position: '50% 24%', scale: 1.35 },
+  林俊杰: { src: artistAvatarUrl('jj-lin.png'), position: '50% 38%', scale: 1.35 },
+  孙燕姿: { src: artistAvatarUrl('stefanie-sun.png'), position: '50% 24%', scale: 1.65 },
+  邓紫棋: { src: artistAvatarUrl('gem.png'), position: '50% 34%', scale: 1.45 },
+  薛之谦: { src: artistAvatarUrl('joker-xue.png'), position: '50% 29%', scale: 1.3 },
+  汪苏泷: { src: artistAvatarUrl('silence-wang.png'), position: '50% 27%', scale: 1.35 },
+  梁静茹: { src: artistAvatarUrl('fish-leong.png'), position: '50% 30%', scale: 1.4 },
+  陶喆: { src: artistAvatarUrl('david-tao.png'), position: '67% 46%', scale: 2.7 },
+  王力宏: { src: artistAvatarUrl('wang-leehom.png'), position: '50% 34%', scale: 1.35 },
+  许嵩: { src: artistAvatarUrl('vae.png'), position: '63% 25%', scale: 1.55 },
+  陈奕迅: { src: artistAvatarUrl('eason-chan.png'), position: '50% 43%', scale: 2.45 },
+  郑润泽: { src: artistAvatarUrl('zheng-runze.png'), position: '50% 22%', scale: 1.35 },
 };
 
 interface ArtistAvatar { src: string; position: string; scale: number; }
@@ -129,6 +131,8 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   const [songRecords, setSongRecords] = useState<SongRecord[]>(() => (
     typeof window === 'undefined' ? [] : loadSongRecordCache(window.localStorage, readSongRecordSession(window.sessionStorage))
   ));
+  const [publicPracticeRanking, setPublicPracticeRanking] = useState<PublicPracticeRankingItem[]>([]);
+  const [publicRankingStatus, setPublicRankingStatus] = useState('正在读取公开榜单');
   const [recoveredSongs, setRecoveredSongs] = useState<Song[]>([]);
   const [recordSyncStatus, setRecordSyncStatus] = useState('');
   const [avatarAdjustMode, setAvatarAdjustMode] = useState(false);
@@ -154,6 +158,16 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
       setVotes(counts);
       try { saveVoteCounts(window.localStorage, counts); } catch {}
     }).catch(() => { if (active) setSyncMessage('云端暂时未连接，本次点歌稍后再试'); });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    pullPublicPracticeRanking().then((ranking) => {
+      if (!active) return;
+      setPublicPracticeRanking(parsePublicPracticeRanking(ranking));
+      setPublicRankingStatus('');
+    }).catch(() => { if (active) setPublicRankingStatus('公开榜单暂时未连接'); });
     return () => { active = false; };
   }, []);
 
@@ -217,7 +231,19 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     return songDisplayMode === 'full' ? providedSongs : randomSongs;
   }, [providedSongs, query, randomSongs, songDisplayMode]);
   const ranking = useMemo(() => rankSongsByVotes(catalogSongs, votes), [catalogSongs, votes]);
-  const personalRanking = useMemo(() => rankSongsByPracticeMatch(catalogSongs, songRecords), [catalogSongs, songRecords]);
+  const privatePersonalRanking = useMemo(() => rankSongsByPracticeMatch(catalogSongs, songRecords), [catalogSongs, songRecords]);
+  const publicPersonalRanking = useMemo(() => publicPracticeRanking.map((entry) => ({
+    song: catalogSongs.find((song) => song.id === entry.songId) ?? {
+      id: entry.songId,
+      title: entry.songTitle,
+      artist: entry.songArtist,
+      category: '公开练习榜',
+      featured: false,
+    },
+    score: entry.score,
+    practiceCount: 0,
+  })), [catalogSongs, publicPracticeRanking]);
+  const personalRanking = songRecordSession ? privatePersonalRanking : publicPersonalRanking;
   const visiblePersonalRanking = useMemo(() => (
     personalRankingArtist
       ? personalRanking.filter(({ song }) => song.artist === personalRankingArtist)
@@ -260,6 +286,10 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   };
 
   const openSongDetail = (song: Song) => setSelectedSong(song);
+  const canOpenPracticeDetails = Boolean(songRecordSession);
+  const openPracticeSongDetail = (song: Song) => {
+    if (canOpenPracticeDetails) setSelectedSong(song);
+  };
 
   const handleAddArtist = () => {
     const artist = window.prompt('请输入新歌手名：')?.trim();
@@ -548,14 +578,14 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                       return (
                         <li key={song.id} className="flex items-center gap-4 rounded-2xl border border-white/10 bg-white/[.035] p-4">
                           <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-full font-serif font-black ${index === 0 ? 'bg-amber-300 text-black' : 'bg-white/10 text-white/55'}`}>{index + 1}</span>
-                          <button type="button" onClick={() => openSongDetail(song)} className="min-w-0 flex-1 text-left"><p className="truncate font-bold hover:text-orange-100">{song.title}</p><p className="truncate text-xs text-white/40">{song.artist} · 练习 {practiceCount} 次</p></button>
+                          <button type="button" disabled={!canOpenPracticeDetails} onClick={() => openPracticeSongDetail(song)} title={canOpenPracticeDetails ? '查看我的私人练习档案' : '登录本人私有空间后可查看详情'} className={`min-w-0 flex-1 text-left ${canOpenPracticeDetails ? '' : 'cursor-default'}`}><p className={`truncate font-bold ${canOpenPracticeDetails ? 'hover:text-orange-100' : ''}`}>{song.title}</p><p className="truncate text-xs text-white/40">{canOpenPracticeDetails ? `${song.artist} · 练习 ${practiceCount} 次` : song.artist}</p></button>
                           <span className="flex shrink-0 items-center gap-3">
                             <em className={`practice-quality ${quality?.tone ?? 'white'}`}>{quality?.label ?? '—'}</em>
                             <strong className="font-serif text-xl text-orange-200">{score}<small className="ml-1 font-sans text-[10px] font-normal text-white/30">匹配度</small></strong>
                           </span>
                         </li>
                       );
-                    })}</ol> : <div className="grid min-h-64 place-items-center text-center text-white/40"><div><Target className="mx-auto h-9 w-9 opacity-40" /><p className="mt-3">{songRecordSession ? personalRankingArtist ? `${personalRankingArtist}还没有练习记录` : '还没有练习记录' : '请先进入私有空间查看个人练习榜'}</p></div></div>
+                    })}</ol> : <div className="grid min-h-64 place-items-center text-center text-white/40"><div><Target className="mx-auto h-9 w-9 opacity-40" /><p className="mt-3">{songRecordSession ? personalRankingArtist ? `${personalRankingArtist}还没有练习记录` : '还没有练习记录' : publicRankingStatus || (personalRankingArtist ? `${personalRankingArtist}暂无公开排行` : '暂无公开排行')}</p></div></div>
                   )}
                 </div>
                 {rankingView === 'requests' ? (

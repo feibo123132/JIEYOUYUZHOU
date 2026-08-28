@@ -1,7 +1,7 @@
 import { ensureSignIn, tcbApp } from '../../services/tcb';
 import type { VoteCounts } from './songRequest';
 import type { RoadshowRecord } from './roadshow';
-import type { SongRecord } from './songRecords';
+import type { PublicPracticeRankingItem, SongRecord } from './songRecords';
 
 export interface Credentials {
   alias: string;
@@ -46,6 +46,10 @@ export const deleteRoadshow = async (credentials: Credentials, id: string): Prom
 export const pullSongRecords = async (credentials: Credentials): Promise<SongRecord[]> => (
   await callSync<{ records: SongRecord[] }>({ action: 'songRecords:pull', ...credentials })
 ).records;
+
+export const pullPublicPracticeRanking = async (): Promise<PublicPracticeRankingItem[]> => (
+  await callSync<{ ranking: PublicPracticeRankingItem[] }>({ action: 'songRecords:publicRanking' })
+).ranking;
 
 export const saveSongRecord = async (credentials: Credentials, record: SongRecord): Promise<SongRecord> => (
   await callSync<{ record: SongRecord }>({ action: 'songRecords:save', ...credentials, record })

@@ -18,6 +18,29 @@ const buildSoftDeletedSongRecord = (current, workspaceId, deletedAt) => {
   return { ...writableRecord, deletedAt, updatedAt: deletedAt };
 };
 
+const buildPublicPracticeRanking = (records) => {
+  const groups = new Map();
+  for (const record of records) {
+    if (record.kind !== 'practice' || record.deletedAt || !Number.isInteger(record.matchScore)) continue;
+    const current = groups.get(record.songId) || {
+      songId: record.songId,
+      songTitle: record.songTitle,
+      songArtist: record.songArtist,
+      total: 0,
+      count: 0,
+    };
+    current.total += record.matchScore;
+    current.count += 1;
+    groups.set(record.songId, current);
+  }
+  return [...groups.values()].map(({ songId, songTitle, songArtist, total, count }) => ({
+    songId,
+    songTitle,
+    songArtist,
+    score: Math.round((total / count) * 10) / 10,
+  })).sort((left, right) => right.score - left.score || left.songTitle.localeCompare(right.songTitle, 'zh-CN')).slice(0, 500);
+};
+
 const authenticate = async (store, alias, password) => {
   const id = workspaceId(alias);
   const workspace = await store.getWorkspace(id);
@@ -33,6 +56,9 @@ function createHandler(store) {
     try {
       const request = validateRequest(event);
       if (request.action === 'votes:pull') return { ok: true, counts: await store.getVotes() };
+      if (request.action === 'songRecords:publicRanking') {
+        return { ok: true, ranking: buildPublicPracticeRanking(await store.getAllSongRecords()) };
+      }
       if (request.action === 'votes:increment') {
         return { ok: true, count: await store.incrementVote(request.songId) };
       }
@@ -156,6 +182,16 @@ exports.main = async (event) => {
           if (page.length < pageSize) return records;
         }
       },
+      async getAllSongRecords() {
+        const pageSize = 1000;
+        const records = [];
+        for (let offset = 0; ; offset += pageSize) {
+          const result = await songRecords.skip(offset).limit(pageSize).get();
+          const page = result.data || [];
+          records.push(...page);
+          if (page.length < pageSize) return records;
+        }
+      },
       saveSongRecordAtomically: (documentId, value) => db.runTransaction(async (transaction) => {
         const ref = transaction.collection('song_request_song_records').doc(documentId);
         let current = null;
@@ -206,3 +242,4 @@ exports.main = async (event) => {
 exports.createHandler = createHandler;
 exports.buildWritableWorkspace = buildWritableWorkspace;
 exports.buildSoftDeletedSongRecord = buildSoftDeletedSongRecord;
+exports.buildPublicPracticeRanking = buildPublicPracticeRanking;

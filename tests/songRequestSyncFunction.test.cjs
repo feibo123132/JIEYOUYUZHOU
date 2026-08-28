@@ -43,6 +43,7 @@ function memoryStore() {
     getSongRecords: async (workspaceId) => [...songRecords.values()]
       .filter((record) => record.workspaceId === workspaceId && !record.deletedAt)
       .map((record) => structuredClone(record)),
+    getAllSongRecords: async () => [...songRecords.values()].map((record) => structuredClone(record)),
     saveSongRecordAtomically: async (documentId, value) => {
       const current = songRecords.get(documentId);
       if (current?.deletedAt) throw new Error('NOT_FOUND');
@@ -82,6 +83,35 @@ test('increments and pulls public song request votes', async () => {
   assert.deepEqual(await handler({ action: 'votes:increment', songId: 'qing-tian' }), { ok: true, count: 1 });
   assert.deepEqual(await handler({ action: 'votes:increment', songId: 'qing-tian' }), { ok: true, count: 2 });
   assert.deepEqual(await handler({ action: 'votes:pull' }), { ok: true, counts: { 'qing-tian': 2 } });
+})
+
+test('publishes only sanitized practice averages to guests without credentials', async () => {
+  const store = memoryStore();
+  const { createHandler } = loadFunction();
+  const handler = createHandler(store);
+  const auth = { alias: 'JIEYOU', password: 'guitar-2026' };
+  const practice = (id, songId, songTitle, score) => ({
+    id, kind: 'practice', songId, songTitle, songArtist: '邓紫棋',
+    occurredAt: '2026-08-26T12:00:00.000Z', matchScore: score,
+    feelings: '私人感受', problems: '私人问题', improvements: '私人计划', updatedAt: '2026-08-26T12:00:00.000Z',
+  });
+
+  await handler({ action: 'roadshows:register', ...auth });
+  await handler({ action: 'songRecords:saveBatch', ...auth, records: [
+    practice('practice-1', 'guang-nian-zhi-wai', '光年之外', 86),
+    practice('practice-2', 'guang-nian-zhi-wai', '光年之外', 83),
+    practice('practice-3', 'ju-hao', '句号', 80),
+  ] });
+
+  const result = await handler({ action: 'songRecords:publicRanking' });
+  assert.deepEqual(result, {
+    ok: true,
+    ranking: [
+      { songId: 'guang-nian-zhi-wai', songTitle: '光年之外', songArtist: '邓紫棋', score: 84.5 },
+      { songId: 'ju-hao', songTitle: '句号', songArtist: '邓紫棋', score: 80 },
+    ],
+  });
+  assert.doesNotMatch(JSON.stringify(result), /occurredAt|practiceCount|feelings|problems|improvements|updatedAt|workspaceId/);
 })
 
 test('protects private roadshows with an alias and password', async () => {

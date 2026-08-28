@@ -33,6 +33,13 @@ export interface SongRoadshowRecord extends SongRecordBase {
 
 export type SongRecord = PracticeRecord | SongRoadshowRecord;
 
+export interface PublicPracticeRankingItem {
+  songId: string;
+  songTitle: string;
+  songArtist: string;
+  score: number;
+}
+
 interface ReadableStorage { getItem: (key: string) => string | null; }
 interface WritableStorage { setItem: (key: string, value: string) => void; }
 interface RemovableStorage { removeItem: (key: string) => void; }
@@ -149,6 +156,23 @@ export const rankSongsByPracticeMatch = (songs: Song[], records: SongRecord[]) =
   }).filter((item): item is typeof item & { score: number } => item.score !== null)
     .sort((left, right) => right.score - left.score || left.catalogIndex - right.catalogIndex)
     .map(({ song, score, practiceCount }) => ({ song, score, practiceCount }));
+};
+
+export const parsePublicPracticeRanking = (value: unknown): PublicPracticeRankingItem[] => {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return [];
+    const entry = item as Record<string, unknown>;
+    if (!isText(entry.songId, 100) || !isText(entry.songTitle, 100)
+      || !isText(entry.songArtist, 100, false) || typeof entry.score !== 'number'
+      || !Number.isFinite(entry.score) || entry.score < 70 || entry.score > 100) return [];
+    return [{
+      songId: String(entry.songId).trim(),
+      songTitle: String(entry.songTitle).trim(),
+      songArtist: String(entry.songArtist).trim(),
+      score: Math.round(entry.score * 10) / 10,
+    }];
+  });
 };
 
 export const getPracticeReflection = (record: Pick<PracticeRecord, 'problems' | 'improvements'>): string => (

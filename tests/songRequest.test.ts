@@ -47,6 +47,22 @@ test('点歌台返回按钮仅显示目标名称并保留左箭头', () => {
   assert.match(stationSource, /activeSection === null \? '宇宙'/)
 })
 
+test('游客能读取脱敏个人练习榜但不能进入私人歌曲档案', async () => {
+  const { parsePublicPracticeRanking } = await import(songRecordsModuleUrl.href)
+  const source = readFileSync(stationUrl, 'utf8')
+
+  assert.deepEqual(parsePublicPracticeRanking([
+    { songId: 'a', songTitle: '晴天', songArtist: '周杰伦', score: 86, occurredAt: 'private', practiceCount: 9 },
+    { songId: '', songTitle: '无效', songArtist: '', score: 88 },
+    { songId: 'b', songTitle: 'Yellow', songArtist: 'Coldplay', score: 69 },
+  ]), [{ songId: 'a', songTitle: '晴天', songArtist: '周杰伦', score: 86 }])
+  assert.match(source, /pullPublicPracticeRanking/)
+  assert.match(source, /const canOpenPracticeDetails = Boolean\(songRecordSession\)/)
+  assert.match(source, /disabled=\{!canOpenPracticeDetails\}/)
+  assert.match(source, /canOpenPracticeDetails \? `\$\{song\.artist\} · 练习 \$\{practiceCount\} 次` : song\.artist/)
+  assert.doesNotMatch(source, /请先进入私有空间查看个人练习榜/)
+})
+
 test('周杰伦歌单按指定顺序包含 30 首歌', async () => {
   const { SONGS } = await import(catalogModuleUrl.href)
   const titles = SONGS
@@ -763,7 +779,9 @@ test('歌手卡片按既定顺序使用人物照片并保留自定义歌手兜�
   ]
 
   assert.match(source, /const ARTIST_AVATARS/)
-  for (const avatar of avatars) assert.match(source, new RegExp(`/images/song-request/artists/${avatar}`))
+  assert.match(source, /const artistAvatarUrl = \(fileName: string\) => `\$\{import\.meta\.env\.BASE_URL\}images\/song-request\/artists\/\$\{fileName\}`/)
+  for (const avatar of avatars) assert.match(source, new RegExp(`artistAvatarUrl\\('${avatar}'\\)`))
+  assert.doesNotMatch(source, /src:\s*['"`]\/images\/song-request\/artists\//)
   assert.match(source, /<img[\s\S]*src=\{avatar\.src\}/)
   assert.match(source, /object-cover/)
   assert.match(source, /objectPosition: `\$\{avatarStyle\.x\}% \$\{avatarStyle\.y\}%`/)
