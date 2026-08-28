@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  ArrowLeft, CalendarDays, Check, ChevronRight, Guitar,
-  Library, Mic2, Plus, RotateCcw, Search, SlidersHorizontal, Target, Trash2, Trophy, X,
+  ArrowLeft, CalendarDays, Check, ChevronLeft, ChevronRight, Guitar,
+  Library, ListOrdered, Mic2, Plus, RotateCcw, Search, SlidersHorizontal, Target, Trash2, Trophy, Upload, X,
 } from 'lucide-react';
 import useAppStore from '../../store/appStore';
 import { SONGS, type Song } from './songCatalog';
 import {
   addCatalogArtist, addCatalogSong, createEditableCatalog, getFeaturedSongs,
   getSongSubtitle, incrementSongVote, loadEditableCatalog, loadVoteCounts, rankSongsByVotes,
-  removeCatalogArtist, removeCatalogSong, saveEditableCatalog, saveVoteCounts,
+  moveCatalogArtist, removeCatalogArtist, removeCatalogSong, saveEditableCatalog, saveVoteCounts,
   type EditableCatalog, type VoteCounts,
 } from './songRequest';
 import { groupSongsByArtist } from './roadshow';
@@ -59,8 +59,10 @@ const ARTIST_AVATARS: Record<string, { src: string; position: string; scale: num
   郑润泽: { src: '/images/song-request/artists/zheng-runze.png', position: '50% 22%', scale: 1.35 },
 };
 
+interface ArtistAvatar { src: string; position: string; scale: number; }
 interface AvatarAdjustment { x: number; y: number; scale: number; rotation: number; }
 const ARTIST_AVATAR_ADJUSTMENTS_KEY = 'jieyou-artist-avatar-adjustments-v1';
+const CUSTOM_ARTIST_AVATARS_KEY = 'jieyou-custom-artist-avatars-v1';
 
 const getDefaultAvatarAdjustment = (avatar: { position: string; scale: number }): AvatarAdjustment => {
   const [x = 50, y = 50] = avatar.position.split(' ').map((value) => Number.parseFloat(value));
@@ -70,6 +72,38 @@ const getDefaultAvatarAdjustment = (avatar: { position: string; scale: number })
 const loadAvatarAdjustments = (): Record<string, AvatarAdjustment> => {
   try { return JSON.parse(window.localStorage.getItem(ARTIST_AVATAR_ADJUSTMENTS_KEY) || '{}'); } catch { return {}; }
 };
+
+const loadCustomArtistAvatars = (): Record<string, string> => {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(CUSTOM_ARTIST_AVATARS_KEY) || '{}') as Record<string, unknown>;
+    return Object.fromEntries(Object.entries(parsed).filter((entry): entry is [string, string] => (
+      typeof entry[1] === 'string' && entry[1].startsWith('data:image/')
+    )));
+  } catch { return {}; }
+};
+
+const resizeArtistAvatar = (file: File): Promise<string> => new Promise((resolve, reject) => {
+  if (!file.type.startsWith('image/')) return reject(new Error('请选择图片文件。'));
+  const reader = new FileReader();
+  reader.onerror = () => reject(new Error('图片读取失败。'));
+  reader.onload = () => {
+    const image = new Image();
+    image.onerror = () => reject(new Error('无法识别这张图片。'));
+    image.onload = () => {
+      const canvas = document.createElement('canvas');
+      const maxSize = 512;
+      const scale = Math.min(1, maxSize / Math.max(image.naturalWidth, image.naturalHeight));
+      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+      const context = canvas.getContext('2d');
+      if (!context || !image.naturalWidth || !image.naturalHeight) return reject(new Error('图片处理失败。'));
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/webp', 0.82));
+    };
+    image.src = String(reader.result);
+  };
+  reader.readAsDataURL(file);
+});
 
 const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   const nickname = useAppStore((state) => state.user?.nickname || '');
@@ -98,7 +132,11 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   const [recoveredSongs, setRecoveredSongs] = useState<Song[]>([]);
   const [recordSyncStatus, setRecordSyncStatus] = useState('');
   const [avatarAdjustMode, setAvatarAdjustMode] = useState(false);
+  const [artistOrderMode, setArtistOrderMode] = useState(false);
   const [adjustingArtist, setAdjustingArtist] = useState<string | null>(null);
+  const [customArtistAvatars, setCustomArtistAvatars] = useState<Record<string, string>>(() => (
+    typeof window === 'undefined' ? {} : loadCustomArtistAvatars()
+  ));
   const [avatarAdjustments, setAvatarAdjustments] = useState<Record<string, AvatarAdjustment>>(() => (
     typeof window === 'undefined' ? {} : loadAvatarAdjustments()
   ));
@@ -263,13 +301,26 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     commitCatalog(removeCatalogSong(catalog, song.id));
   };
 
+  const moveVisibleArtist = (artist: string, direction: -1 | 1) => {
+    const currentIndex = artistGroups.findIndex((group) => group.artist === artist);
+    const targetArtist = artistGroups[currentIndex + direction]?.artist;
+    if (!targetArtist) return;
+    commitCatalog(moveCatalogArtist(catalog, artist, targetArtist));
+  };
+
+  const getArtistAvatar = (artist: string): ArtistAvatar | undefined => (
+    customArtistAvatars[artist]
+      ? { src: customArtistAvatars[artist], position: '50% 50%', scale: 1 }
+      : ARTIST_AVATARS[artist]
+  );
+
   const getAvatarStyle = (artist: string) => {
-    const avatar = ARTIST_AVATARS[artist];
+    const avatar = getArtistAvatar(artist);
     return avatar ? (avatarAdjustments[artist] ?? getDefaultAvatarAdjustment(avatar)) : null;
   };
 
   const updateAvatarAdjustment = (artist: string, patch: Partial<AvatarAdjustment>) => {
-    const avatar = ARTIST_AVATARS[artist];
+    const avatar = getArtistAvatar(artist);
     if (!avatar) return;
     setAvatarAdjustments((current) => {
       const next = { ...current, [artist]: { ...(current[artist] ?? getDefaultAvatarAdjustment(avatar)), ...patch } };
@@ -285,6 +336,18 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
       try { window.localStorage.setItem(ARTIST_AVATAR_ADJUSTMENTS_KEY, JSON.stringify(next)); } catch {}
       return next;
     });
+  };
+
+  const handleArtistAvatarUpload = async (artist: string, file: File) => {
+    try {
+      const src = await resizeArtistAvatar(file);
+      const next = { ...customArtistAvatars, [artist]: src };
+      window.localStorage.setItem(CUSTOM_ARTIST_AVATARS_KEY, JSON.stringify(next));
+      setCustomArtistAvatars(next);
+      resetAvatarAdjustment(artist);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : '头像保存失败，请换一张图片重试。');
+    }
   };
 
   const goBack = () => {
@@ -382,7 +445,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
           {!barrageMode && (
           <header className="pointer-events-none fixed inset-x-0 top-0 z-30 flex items-start justify-between p-4 pr-16 sm:p-6 sm:pr-20">
             <button type="button" onClick={goBack} className="pointer-events-auto inline-flex h-11 items-center gap-2 rounded-xl border border-white/10 bg-black/45 px-4 text-sm font-semibold text-white/75 shadow-2xl backdrop-blur-xl transition hover:bg-white/15 hover:text-white">
-              <ArrowLeft className="h-4 w-4" /> 返回点歌台
+              <ArrowLeft className="h-4 w-4" /> 点歌台
             </button>
             <div className="absolute left-1/2 top-4 -translate-x-1/2 whitespace-nowrap text-center sm:top-6">
               <p className="text-[9px] font-black tracking-[0.3em] text-violet-200/45 sm:text-[10px]">JIEYOU · HOT SONGS</p>
@@ -398,7 +461,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
       <div className="relative mx-auto w-full max-w-6xl">
         <header className="mb-8 flex items-center justify-between gap-4 pr-14 sm:pr-16">
           <button type="button" onClick={goBack} className="inline-flex h-11 items-center gap-2 rounded-full border border-white/10 bg-black/35 px-4 text-sm font-semibold text-white/70 backdrop-blur-xl transition hover:text-white">
-            <ArrowLeft className="h-4 w-4" /> {selectedSong ? `返回${selectedSong.artist}` : activeSection === null ? '返回宇宙' : selectedArtist ? `返回${sectionTitle}` : '返回点歌台'}
+            <ArrowLeft className="h-4 w-4" /> {selectedSong ? selectedSong.artist : activeSection === null ? '宇宙' : selectedArtist ? sectionTitle : '点歌台'}
           </button>
           <span className="text-[10px] font-bold tracking-[0.28em] text-orange-200/55">JIEYOU · SONG REQUEST</span>
         </header>
@@ -444,10 +507,15 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                 </div>
               )}
               {activeSection === 'artists' && (
-                <div className="flex shrink-0 gap-2">
-                  {!selectedArtist && <button type="button" aria-pressed={avatarAdjustMode} onClick={() => { setAvatarAdjustMode((current) => !current); setAdjustingArtist(null); }} className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-xs font-bold transition ${avatarAdjustMode ? 'border-orange-200/40 bg-orange-300 text-black' : 'border-white/10 bg-black/30 text-white/55 hover:text-white'}`}>
-                    <SlidersHorizontal className="h-4 w-4" />{avatarAdjustMode ? '退出调整' : '调整头像'}
-                  </button>}
+                <div className="flex shrink-0 flex-wrap justify-end gap-2">
+                  {!selectedArtist && <>
+                    <button type="button" aria-pressed={artistOrderMode} onClick={() => { setArtistOrderMode((current) => !current); setAvatarAdjustMode(false); setAdjustingArtist(null); }} className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-xs font-bold transition ${artistOrderMode ? 'border-orange-200/40 bg-orange-300 text-black' : 'border-white/10 bg-black/30 text-white/55 hover:text-white'}`}>
+                      <ListOrdered className="h-4 w-4" />{artistOrderMode ? '完成排序' : '调整排序'}
+                    </button>
+                    <button type="button" aria-pressed={avatarAdjustMode} onClick={() => { setAvatarAdjustMode((current) => !current); setArtistOrderMode(false); setAdjustingArtist(null); }} className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-xs font-bold transition ${avatarAdjustMode ? 'border-orange-200/40 bg-orange-300 text-black' : 'border-white/10 bg-black/30 text-white/55 hover:text-white'}`}>
+                      <SlidersHorizontal className="h-4 w-4" />{avatarAdjustMode ? '完成头像' : '调整头像'}
+                    </button>
+                  </>}
                   <button type="button" onClick={selectedArtist ? handleAddSong : handleAddArtist} className="inline-flex items-center gap-1.5 rounded-full border border-rose-200/25 bg-rose-300/10 px-3.5 py-2 text-xs font-bold text-rose-100 transition hover:bg-rose-300/20">
                     <Plus className="h-4 w-4" />{selectedArtist ? '新增歌曲' : '新增歌手'}
                   </button>
@@ -501,7 +569,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                     <button type="button" aria-pressed={personalRankingArtist === null} onClick={() => setPersonalRankingArtist(null)} className={`mt-3 w-full rounded-xl border px-4 py-3 text-left text-sm font-black transition ${personalRankingArtist === null ? 'border-orange-300/45 bg-orange-300 text-black' : 'border-white/10 bg-black/25 text-white/65 hover:border-orange-200/25 hover:text-white'}`}>总榜</button>
                     <div className="mt-3 grid max-h-[34rem] grid-cols-2 gap-2 overflow-y-auto overscroll-contain pr-1">
                       {personalRankingArtists.map(({ artist, songs }) => {
-                        const avatar = ARTIST_AVATARS[artist];
+                        const avatar = getArtistAvatar(artist);
                         const avatarStyle = getAvatarStyle(artist);
                         return (
                           <button key={artist} type="button" aria-pressed={personalRankingArtist === artist} onClick={() => setPersonalRankingArtist(artist)} className={`flex min-w-0 items-center gap-2 rounded-xl border p-2.5 text-left transition ${personalRankingArtist === artist ? 'border-orange-300/50 bg-orange-300/12' : 'border-white/10 bg-black/25 hover:border-orange-200/25'}`}>
@@ -542,25 +610,39 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                 {avatarAdjustMode && !selectedArtist && (
                   <AvatarAdjustmentPanel
                     artist={adjustingArtist}
-                    avatar={adjustingArtist ? ARTIST_AVATARS[adjustingArtist] : undefined}
+                    avatar={adjustingArtist ? getArtistAvatar(adjustingArtist) : undefined}
                     adjustment={adjustingArtist ? getAvatarStyle(adjustingArtist) : null}
+                    onUpload={(file) => { if (adjustingArtist) void handleArtistAvatarUpload(adjustingArtist, file); }}
                     onChange={(patch) => { if (adjustingArtist) updateAvatarAdjustment(adjustingArtist, patch); }}
                     onReset={() => { if (adjustingArtist) resetAvatarAdjustment(adjustingArtist); }}
                     onDone={() => setAdjustingArtist(null)}
                   />
                 )}
                 {selectedArtist ? <SongRows songs={catalogSongs.filter((song) => song.artist === selectedArtist)} /> : (
-                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{artistGroups.map(({ artist, songs }) => {
-                        const avatar = ARTIST_AVATARS[artist];
+                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{artistGroups.map(({ artist, songs }, index) => {
+                        const avatar = getArtistAvatar(artist);
                         const avatarStyle = getAvatarStyle(artist);
-                        return (
-                          <button key={artist} type="button" onClick={() => avatarAdjustMode && avatar ? setAdjustingArtist(artist) : setSelectedArtist(artist)} className={`flex items-center gap-4 rounded-2xl border bg-black/30 p-4 text-left transition ${adjustingArtist === artist ? 'border-orange-300/70 ring-2 ring-orange-300/15' : 'border-white/10 hover:border-rose-300/35'}`}>
-                            <span className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-full border border-rose-200/20 bg-rose-300/10">
-                              {avatar && avatarStyle ? (
-                                <img src={avatar.src} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" style={{ objectPosition: `${avatarStyle.x}% ${avatarStyle.y}%`, transform: `scale(${avatarStyle.scale}) rotate(${avatarStyle.rotation}deg)`, transformOrigin: `${avatarStyle.x}% ${avatarStyle.y}%` }} />
-                              ) : <Mic2 className="h-5 w-5 text-rose-200" />}
+                        const cardClass = `flex min-w-0 items-center gap-4 rounded-2xl border bg-black/30 p-4 text-left transition ${adjustingArtist === artist ? 'border-orange-300/70 ring-2 ring-orange-300/15' : 'border-white/10 hover:border-rose-300/35'}`;
+                        const cardContent = <>
+                          <span className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-full border border-rose-200/20 bg-rose-300/10">
+                            {avatar && avatarStyle ? (
+                              <img src={avatar.src} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" style={{ objectPosition: `${avatarStyle.x}% ${avatarStyle.y}%`, transform: `scale(${avatarStyle.scale}) rotate(${avatarStyle.rotation}deg)`, transformOrigin: `${avatarStyle.x}% ${avatarStyle.y}%` }} />
+                            ) : <Mic2 className="h-5 w-5 text-rose-200" />}
+                          </span>
+                          <span className="min-w-0 flex-1"><strong className="block truncate">{artist}</strong><small className="text-white/35">{songs.length} 首</small></span>
+                        </>;
+                        if (artistOrderMode) return (
+                          <article key={artist} className={cardClass}>
+                            {cardContent}
+                            <span className="flex shrink-0 gap-1">
+                              <button type="button" aria-label={`${artist}前移`} title="前移" disabled={index === 0} onClick={() => moveVisibleArtist(artist, -1)} className="grid h-8 w-8 place-items-center rounded-full border border-white/10 text-white/55 transition hover:border-orange-200/35 hover:text-orange-100 disabled:cursor-not-allowed disabled:opacity-20"><ChevronLeft className="h-4 w-4" /></button>
+                              <button type="button" aria-label={`${artist}后移`} title="后移" disabled={index === artistGroups.length - 1} onClick={() => moveVisibleArtist(artist, 1)} className="grid h-8 w-8 place-items-center rounded-full border border-white/10 text-white/55 transition hover:border-orange-200/35 hover:text-orange-100 disabled:cursor-not-allowed disabled:opacity-20"><ChevronRight className="h-4 w-4" /></button>
                             </span>
-                            <span className="min-w-0 flex-1"><strong className="block truncate">{artist}</strong><small className="text-white/35">{songs.length} 首</small></span><ChevronRight className="h-4 w-4 text-white/25" />
+                          </article>
+                        );
+                        return (
+                          <button key={artist} type="button" onClick={() => avatarAdjustMode ? setAdjustingArtist(artist) : setSelectedArtist(artist)} className={cardClass}>
+                            {cardContent}<ChevronRight className="h-4 w-4 shrink-0 text-white/25" />
                           </button>
                         );
                       })}</div>
@@ -666,38 +748,47 @@ const SongAssistant = ({ query, displayMode, barrageMode, intimateMode, fillMode
   </>
 );
 
-const AvatarAdjustmentPanel = ({ artist, avatar, adjustment, onChange, onReset, onDone }: {
+const AvatarAdjustmentPanel = ({ artist, avatar, adjustment, onUpload, onChange, onReset, onDone }: {
   artist: string | null;
-  avatar?: { src: string; position: string; scale: number };
+  avatar?: ArtistAvatar;
   adjustment: AvatarAdjustment | null;
+  onUpload: (file: File) => void;
   onChange: (patch: Partial<AvatarAdjustment>) => void;
   onReset: () => void;
   onDone: () => void;
 }) => {
-  if (!artist || !avatar || !adjustment) {
-    return <div className="rounded-2xl border border-dashed border-orange-200/20 bg-orange-950/10 px-5 py-4 text-sm text-white/45">点击任一歌手卡片，即可手动调整头像。</div>;
+  if (!artist) {
+    return <div className="rounded-2xl border border-dashed border-orange-200/20 bg-orange-950/10 px-5 py-4 text-sm text-white/45">点击任一歌手卡片，即可上传或手动调整头像。</div>;
   }
 
+  const currentAdjustment = adjustment ?? { x: 50, y: 50, scale: 1, rotation: 0 };
   const controls = [
-    { label: '左右', key: 'x', min: 0, max: 100, step: 1, value: adjustment.x },
-    { label: '上下', key: 'y', min: 0, max: 100, step: 1, value: adjustment.y },
-    { label: '缩放', key: 'scale', min: 1, max: 4, step: 0.05, value: adjustment.scale },
-    { label: '旋转', key: 'rotation', min: -30, max: 30, step: 1, value: adjustment.rotation },
+    { label: '左右', key: 'x', min: 0, max: 100, step: 1, value: currentAdjustment.x },
+    { label: '上下', key: 'y', min: 0, max: 100, step: 1, value: currentAdjustment.y },
+    { label: '缩放', key: 'scale', min: 1, max: 4, step: 0.05, value: currentAdjustment.scale },
+    { label: '旋转', key: 'rotation', min: -30, max: 30, step: 1, value: currentAdjustment.rotation },
   ] as const;
 
   return (
     <section className="rounded-[1.5rem] border border-orange-200/20 bg-black/45 p-4 sm:p-5">
       <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
         <span className="mx-auto grid h-24 w-24 shrink-0 place-items-center overflow-hidden rounded-full border border-orange-200/30 bg-black sm:mx-0">
-          <img src={avatar.src} alt={`${artist}头像预览`} className="h-full w-full object-cover" style={{ objectPosition: `${adjustment.x}% ${adjustment.y}%`, transform: `scale(${adjustment.scale}) rotate(${adjustment.rotation}deg)`, transformOrigin: `${adjustment.x}% ${adjustment.y}%` }} />
+          {avatar && adjustment ? <img src={avatar.src} alt={`${artist}头像预览`} className="h-full w-full object-cover" style={{ objectPosition: `${adjustment.x}% ${adjustment.y}%`, transform: `scale(${adjustment.scale}) rotate(${adjustment.rotation}deg)`, transformOrigin: `${adjustment.x}% ${adjustment.y}%` }} /> : <Mic2 className="h-8 w-8 text-orange-200/55" />}
         </span>
         <div className="min-w-0 flex-1">
-          <div className="mb-4 flex items-center justify-between gap-3"><div><p className="text-[10px] font-black tracking-[0.2em] text-orange-300/65">头像微调</p><h2 className="mt-1 font-bold">{artist}</h2></div><div className="flex gap-2"><button type="button" onClick={onReset} className="inline-flex items-center gap-1 rounded-full border border-white/10 px-3 py-2 text-xs text-white/55 hover:text-white"><RotateCcw className="h-3.5 w-3.5" />重置</button><button type="button" onClick={onDone} className="rounded-full bg-orange-300 px-4 py-2 text-xs font-bold text-black">完成</button></div></div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div><p className="text-[10px] font-black tracking-[0.2em] text-orange-300/65">头像设置</p><h2 className="mt-1 font-bold">{artist}</h2></div>
+            <div className="flex flex-wrap gap-2">
+              <label className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-orange-200/25 bg-orange-300/10 px-3 py-2 text-xs font-bold text-orange-100 transition hover:bg-orange-300/20"><Upload className="h-3.5 w-3.5" />{avatar ? '更换头像' : '上传头像'}<input type="file" accept="image/*" className="sr-only" onChange={(event) => { const file = event.target.files?.[0]; if (file) onUpload(file); event.target.value = ''; }} /></label>
+              {avatar && <button type="button" onClick={onReset} className="inline-flex items-center gap-1 rounded-full border border-white/10 px-3 py-2 text-xs text-white/55 hover:text-white"><RotateCcw className="h-3.5 w-3.5" />重置</button>}
+              <button type="button" onClick={onDone} className="rounded-full bg-orange-300 px-4 py-2 text-xs font-bold text-black">完成</button>
+            </div>
+          </div>
+          {avatar ? <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {controls.map(({ label, key, min, max, step, value }) => (
               <label key={key} className="text-xs text-white/50"><span className="mb-2 flex justify-between"><b className="text-white/75">{label}</b><span>{Number(value).toFixed(key === 'scale' ? 2 : 0)}</span></span><input type="range" min={min} max={max} step={step} value={value} onChange={(event) => onChange({ [key]: Number(event.target.value) })} className="w-full accent-orange-300" /></label>
             ))}
-          </div>
+          </div> : <p className="rounded-xl border border-dashed border-white/10 bg-white/[.025] px-4 py-3 text-sm text-white/40">该歌手还没有头像，请先上传图片；上传后即可调整位置、缩放和旋转。</p>}
         </div>
       </div>
     </section>

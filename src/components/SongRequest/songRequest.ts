@@ -26,6 +26,15 @@ export const addCatalogArtist = (catalog: EditableCatalog, rawArtist: string): E
   return { ...catalog, artists: [...catalog.artists, artist] };
 };
 
+export const moveCatalogArtist = (catalog: EditableCatalog, artist: string, targetArtist: string): EditableCatalog => {
+  const artistIndex = catalog.artists.indexOf(artist);
+  const targetIndex = catalog.artists.indexOf(targetArtist);
+  if (artistIndex < 0 || targetIndex < 0 || artistIndex === targetIndex) return catalog;
+  const artists = [...catalog.artists];
+  [artists[artistIndex], artists[targetIndex]] = [artists[targetIndex], artists[artistIndex]];
+  return { ...catalog, artists };
+};
+
 export const removeCatalogArtist = (catalog: EditableCatalog, artist: string): EditableCatalog => ({
   ...catalog,
   artists: catalog.artists.filter((item) => item !== artist),

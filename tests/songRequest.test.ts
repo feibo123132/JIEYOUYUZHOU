@@ -39,6 +39,14 @@ async function loadRoadshowModule() {
   return import(roadshowModuleUrl.href)
 }
 
+test('点歌台返回按钮仅显示目标名称并保留左箭头', () => {
+  const stationSource = readFileSync(stationUrl, 'utf8')
+
+  assert.doesNotMatch(stationSource, /返回(?:点歌台|宇宙)|`返回\$\{/)
+  assert.match(stationSource, /<ArrowLeft className="h-4 w-4" \/> 点歌台/)
+  assert.match(stationSource, /activeSection === null \? '宇宙'/)
+})
+
 test('周杰伦歌单按指定顺序包含 30 首歌', async () => {
   const { SONGS } = await import(catalogModuleUrl.href)
   const titles = SONGS
@@ -247,7 +255,7 @@ test('热评仅替换歌曲副标题，不覆盖分类数据', async () => {
 test('可编辑曲库支持增删歌手和歌曲并本地持久化', async () => {
   const {
     addCatalogArtist, addCatalogSong, createEditableCatalog, loadEditableCatalog,
-    removeCatalogArtist, removeCatalogSong, saveEditableCatalog,
+    moveCatalogArtist, removeCatalogArtist, removeCatalogSong, saveEditableCatalog,
   } = await loadModule()
   const storageValues = new Map<string, string>()
   const storage = {
@@ -260,6 +268,9 @@ test('可编辑曲库支持增删歌手和歌曲并本地持久化', async () =>
   catalog = addCatalogSong(catalog, { id: 'custom:1', title: '新歌', artist: '新歌手', category: '华语流行', featured: false, hotComment: '新热评' })
   assert.deepEqual(catalog.artists, ['周杰伦', 'Coldplay', '新歌手'])
   assert.equal(catalog.songs.at(-1)?.title, '新歌')
+
+  catalog = moveCatalogArtist(catalog, 'Coldplay', '周杰伦')
+  assert.deepEqual(catalog.artists, ['Coldplay', '周杰伦', '新歌手'])
 
   catalog = removeCatalogSong(catalog, 'custom:1')
   assert.equal(catalog.songs.some((song: { id: string }) => song.id === 'custom:1'), false)
@@ -569,6 +580,25 @@ test('个人练习榜在平均匹配值旁显示对应品质', () => {
   assert.match(source, /const quality = getMatchQuality\(Math\.round\(score\)\)/)
   assert.match(source, /practice-quality \$\{quality\?\.tone \?\? 'white'\}/)
   assert.match(source, /quality\?\.label \?\? '—'/)
+})
+
+test('歌手页支持持久排序及上传头像后继续微调', () => {
+  const source = readFileSync(stationUrl, 'utf8')
+
+  assert.match(source, /const \[artistOrderMode, setArtistOrderMode\] = useState\(false\)/)
+  assert.match(source, /调整排序/)
+  assert.match(source, /moveCatalogArtist\(catalog, artist, targetArtist\)/)
+  assert.match(source, /前移/)
+  assert.match(source, /后移/)
+  assert.match(source, /CUSTOM_ARTIST_AVATARS_KEY/)
+  assert.match(source, /resizeArtistAvatar/)
+  assert.match(source, /canvas\.toDataURL\('image\/webp'/)
+  assert.match(source, /const scale = Math\.min\(1, maxSize \/ Math\.max\(image\.naturalWidth, image\.naturalHeight\)\)/)
+  assert.doesNotMatch(source, /sourceSize = Math\.min/)
+  assert.match(source, /accept="image\/\*"/)
+  assert.match(source, /customArtistAvatars\[artist\]/)
+  assert.match(source, /onUpload/)
+  assert.match(source, /avatarAdjustMode \? setAdjustingArtist\(artist\)/)
 })
 
 test('groups songs by singer while preserving catalog order', async () => {
