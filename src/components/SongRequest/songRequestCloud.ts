@@ -2,6 +2,7 @@ import { ensureSignIn, tcbApp } from '../../services/tcb';
 import type { VoteCounts } from './songRequest';
 import type { RoadshowRecord } from './roadshow';
 import type { PublicPracticeRankingItem, SongRecord } from './songRecords';
+import type { ArtistSettingsPayload, ArtistSettingsSnapshot } from './artistSettings';
 
 export interface Credentials {
   alias: string;
@@ -61,6 +62,29 @@ export const saveSongRecords = async (credentials: Credentials, records: SongRec
 
 export const deleteSongRecord = async (credentials: Credentials, id: string): Promise<void> => {
   await callSync<Record<string, never>>({ action: 'songRecords:delete', ...credentials, id });
+};
+
+export const pullArtistSettings = async (): Promise<ArtistSettingsSnapshot | null> => (
+  await callSync<{ snapshot: ArtistSettingsSnapshot | null }>({ action: 'artistSettings:pull' })
+).snapshot;
+
+export const pushArtistSettings = async (
+  credentials: Credentials,
+  expectedRevision: number | null,
+  snapshot: ArtistSettingsPayload,
+): Promise<ArtistSettingsSnapshot> => (
+  await callSync<{ snapshot: ArtistSettingsSnapshot }>({
+    action: 'artistSettings:push', ...credentials, expectedRevision, snapshot,
+  })
+).snapshot;
+
+export const mapArtistSettingsSyncError = (error: unknown) => {
+  const code = error instanceof Error ? error.message : 'SYNC_FAILED';
+  if (code === 'CONFLICT') return '云端歌手设置已有更新，本地修改已保留。';
+  if (code === 'AUTH_FAILED') return '当前私有空间不能修改全站歌手设置。';
+  if (code === 'PAYLOAD_TOO_LARGE') return '头像数据过大，请换用更小的图片。';
+  if (code === 'INVALID_ARTIST_SETTINGS') return '歌手设置格式无效，未上传云端。';
+  return '全站歌手设置暂未同步，本地修改已保留。';
 };
 
 export const mapRoadshowSyncError = (error: unknown) => {

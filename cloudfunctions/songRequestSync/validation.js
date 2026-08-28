@@ -10,7 +10,13 @@ const ACTIONS = new Set([
   'songRecords:save',
   'songRecords:saveBatch',
   'songRecords:delete',
+  'artistSettings:pull',
+  'artistSettings:push',
 ]);
+
+const ARTIST_SETTINGS_REQUEST_LIMIT = 5 * 1024 * 1024;
+const DEFAULT_REQUEST_LIMIT = 256 * 1024;
+const ARTIST_AVATAR_LIMIT = 1024 * 1024;
 
 const cleanText = (value, max, error) => {
   if (typeof value !== 'string') throw new Error(error);
@@ -91,11 +97,64 @@ const validateSongRecord = (value) => {
   throw new Error('INVALID_SONG_RECORD');
 };
 
+const validateArtistName = (value) => {
+  if (typeof value !== 'string' || value.length < 1 || value.length > 100 || value.trim() !== value) throw new Error('INVALID_ARTIST_SETTINGS');
+  return value;
+};
+
+const validImageMagic = (mime, bytes) => {
+  if (mime === 'png') return bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  if (mime === 'jpeg') return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  return bytes.length >= 12 && bytes.subarray(0, 4).toString('ascii') === 'RIFF' && bytes.subarray(8, 12).toString('ascii') === 'WEBP';
+};
+
+const validateArtistAvatar = (value) => {
+  if (typeof value !== 'string') throw new Error('INVALID_ARTIST_SETTINGS');
+  const match = /^data:image\/(webp|png|jpeg);base64,([A-Za-z0-9+/]+={0,2})$/.exec(value);
+  if (!match) throw new Error('INVALID_ARTIST_SETTINGS');
+  const bytes = Buffer.from(match[2], 'base64');
+  if (!bytes.length || bytes.length > ARTIST_AVATAR_LIMIT || !validImageMagic(match[1], bytes)) throw new Error('INVALID_ARTIST_SETTINGS');
+  return value;
+};
+
+const validateAdjustment = (value) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)
+    || Object.keys(value).some((key) => !['x', 'y', 'scale', 'rotation'].includes(key))) throw new Error('INVALID_ARTIST_SETTINGS');
+  const inRange = (entry, min, max) => typeof entry === 'number' && Number.isFinite(entry) && entry >= min && entry <= max;
+  if (!inRange(value.x, 0, 100) || !inRange(value.y, 0, 100)
+    || !inRange(value.scale, 1, 4) || !inRange(value.rotation, -30, 30)) throw new Error('INVALID_ARTIST_SETTINGS');
+  return { x: value.x, y: value.y, scale: value.scale, rotation: value.rotation };
+};
+
+const validateArtistSettings = (value) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)
+    || Object.keys(value).some((key) => !['version', 'artistOrder', 'customAvatars', 'avatarAdjustments', 'revision', 'updatedAt'].includes(key))
+    || value.version !== 1 || !Array.isArray(value.artistOrder)
+    || value.artistOrder.length < 1 || value.artistOrder.length > 200) throw new Error('INVALID_ARTIST_SETTINGS');
+  const artistOrder = value.artistOrder.map(validateArtistName);
+  if (new Set(artistOrder).size !== artistOrder.length
+    || !value.customAvatars || typeof value.customAvatars !== 'object' || Array.isArray(value.customAvatars)
+    || !value.avatarAdjustments || typeof value.avatarAdjustments !== 'object' || Array.isArray(value.avatarAdjustments)) throw new Error('INVALID_ARTIST_SETTINGS');
+  const artistSet = new Set(artistOrder);
+  const avatarEntries = Object.entries(value.customAvatars);
+  const adjustmentEntries = Object.entries(value.avatarAdjustments);
+  if (avatarEntries.length > 100 || adjustmentEntries.length > 200
+    || avatarEntries.some(([artist]) => !artistSet.has(artist))
+    || adjustmentEntries.some(([artist]) => !artistSet.has(artist))) throw new Error('INVALID_ARTIST_SETTINGS');
+  return {
+    version: 1,
+    artistOrder,
+    customAvatars: Object.fromEntries(avatarEntries.map(([artist, avatar]) => [artist, validateArtistAvatar(avatar)])),
+    avatarAdjustments: Object.fromEntries(adjustmentEntries.map(([artist, adjustment]) => [artist, validateAdjustment(adjustment)])),
+  };
+};
+
 function validateRequest(event) {
   if (!event || typeof event !== 'object' || !ACTIONS.has(event.action)) throw new Error('INVALID_ACTION');
-  if (Buffer.byteLength(JSON.stringify(event), 'utf8') > 256 * 1024) throw new Error('PAYLOAD_TOO_LARGE');
+  const requestLimit = event.action === 'artistSettings:push' ? ARTIST_SETTINGS_REQUEST_LIMIT : DEFAULT_REQUEST_LIMIT;
+  if (Buffer.byteLength(JSON.stringify(event), 'utf8') > requestLimit) throw new Error('PAYLOAD_TOO_LARGE');
 
-  if (event.action === 'votes:pull' || event.action === 'songRecords:publicRanking') return { action: event.action };
+  if (event.action === 'votes:pull' || event.action === 'songRecords:publicRanking' || event.action === 'artistSettings:pull') return { action: event.action };
   if (event.action === 'votes:increment') {
     const songId = cleanText(event.songId, 80, 'INVALID_SONG_ID');
     if (!/^[a-z0-9-]+$/i.test(songId)) throw new Error('INVALID_SONG_ID');
@@ -105,6 +164,11 @@ function validateRequest(event) {
   const alias = cleanText(event.alias, 30, 'INVALID_ALIAS');
   if (typeof event.password !== 'string' || event.password.length < 6 || event.password.length > 64) throw new Error('INVALID_PASSWORD');
   const base = { action: event.action, alias, password: event.password };
+  if (event.action === 'artistSettings:push') {
+    const expectedRevision = event.expectedRevision;
+    if (!(expectedRevision === null || (Number.isInteger(expectedRevision) && expectedRevision >= 1))) throw new Error('INVALID_ARTIST_SETTINGS');
+    return { ...base, expectedRevision, snapshot: validateArtistSettings(event.snapshot) };
+  }
   if (event.action === 'roadshows:save') return { ...base, record: validateRecord(event.record) };
   if (event.action === 'roadshows:delete') return { ...base, id: cleanText(event.id, 80, 'INVALID_RECORD') };
   if (event.action === 'songRecords:save') return { ...base, record: validateSongRecord(event.record) };

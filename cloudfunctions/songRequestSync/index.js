@@ -4,13 +4,18 @@ const { validateRequest } = require('./validation');
 const PUBLIC_ERRORS = new Set([
   'INVALID_ACTION', 'PAYLOAD_TOO_LARGE', 'INVALID_SONG_ID', 'INVALID_ALIAS', 'INVALID_PASSWORD',
   'INVALID_SONG', 'INVALID_SONG_LIST', 'INVALID_RECORD', 'ALREADY_REGISTERED', 'NOT_REGISTERED',
-  'INVALID_SONG_RECORD', 'AUTH_FAILED', 'NOT_FOUND',
+  'INVALID_SONG_RECORD', 'INVALID_ARTIST_SETTINGS', 'AUTH_FAILED', 'CONFLICT', 'NOT_FOUND',
 ]);
 
 const workspaceId = (alias) => crypto.createHash('sha256').update(alias.trim().toLocaleLowerCase()).digest('hex');
 const passwordHash = (password, salt) => crypto.scryptSync(password, salt, 32).toString('hex');
 const songRecordDocumentId = (workspace, record) => crypto.createHash('sha256').update(`${workspace}:${record}`).digest('hex');
 const publicSongRecord = ({ workspaceId: _workspaceId, deletedAt: _deletedAt, _id: _documentId, ...record }) => record;
+const publicArtistSettings = (settings) => {
+  if (!settings) return null;
+  const { ownerWorkspaceId: _ownerWorkspaceId, _id: _documentId, ...snapshot } = settings;
+  return snapshot;
+};
 const buildWritableWorkspace = ({ _id: _documentId, ...workspace }) => workspace;
 const buildSoftDeletedSongRecord = (current, workspaceId, deletedAt) => {
   if (!current || current.workspaceId !== workspaceId || current.deletedAt) throw new Error('NOT_FOUND');
@@ -59,6 +64,9 @@ function createHandler(store) {
       if (request.action === 'songRecords:publicRanking') {
         return { ok: true, ranking: buildPublicPracticeRanking(await store.getAllSongRecords()) };
       }
+      if (request.action === 'artistSettings:pull') {
+        return { ok: true, snapshot: publicArtistSettings(await store.getArtistSettings()) };
+      }
       if (request.action === 'votes:increment') {
         return { ok: true, count: await store.incrementVote(request.songId) };
       }
@@ -78,7 +86,18 @@ function createHandler(store) {
         return { ok: true, records: [] };
       }
 
-      const { id, workspace } = await authenticate(store, request.alias, request.password);
+      let authenticated;
+      try {
+        authenticated = await authenticate(store, request.alias, request.password);
+      } catch (error) {
+        if (request.action === 'artistSettings:push' && error?.message === 'NOT_REGISTERED') throw new Error('AUTH_FAILED');
+        throw error;
+      }
+      const { id, workspace } = authenticated;
+      if (request.action === 'artistSettings:push') {
+        const saved = await store.saveArtistSettingsAtomically(id, request.expectedRevision, request.snapshot);
+        return { ok: true, snapshot: publicArtistSettings(saved) };
+      }
       if (request.action === 'songRecords:pull') {
         const records = await store.getSongRecords(id);
         return { ok: true, records: records.filter((record) => !record.deletedAt).map(publicSongRecord) };
@@ -144,6 +163,7 @@ exports.main = async (event) => {
     const workspaces = db.collection('song_request_workspaces');
     const votes = db.collection('song_request_votes');
     const songRecords = db.collection('song_request_song_records');
+    const artistSettings = db.collection('song_request_artist_settings');
     const command = db.command;
     defaultHandler = createHandler({
       async getWorkspace(id) {
@@ -192,6 +212,39 @@ exports.main = async (event) => {
           if (page.length < pageSize) return records;
         }
       },
+      async getArtistSettings() {
+        try {
+          const result = await artistSettings.doc('global').get();
+          return Array.isArray(result.data) ? (result.data[0] ?? null) : (result.data ?? null);
+        } catch (error) {
+          if (/not found|does not exist/i.test(String(error?.message))) return null;
+          throw error;
+        }
+      },
+      saveArtistSettingsAtomically: (ownerWorkspaceId, expectedRevision, snapshot) => db.runTransaction(async (transaction) => {
+        const ref = transaction.collection('song_request_artist_settings').doc('global');
+        let current = null;
+        try {
+          const result = await ref.get();
+          current = Array.isArray(result.data) ? (result.data[0] ?? null) : (result.data ?? null);
+        } catch (error) {
+          if (!/not found|does not exist/i.test(String(error?.message))) throw error;
+        }
+        if (!current) {
+          if (expectedRevision !== null) throw new Error('CONFLICT');
+        } else {
+          if (current.ownerWorkspaceId !== ownerWorkspaceId) throw new Error('AUTH_FAILED');
+          if (current.revision !== expectedRevision) throw new Error('CONFLICT');
+        }
+        const saved = {
+          ...snapshot,
+          ownerWorkspaceId,
+          revision: current ? current.revision + 1 : 1,
+          updatedAt: new Date().toISOString(),
+        };
+        await ref.set(saved);
+        return saved;
+      }),
       saveSongRecordAtomically: (documentId, value) => db.runTransaction(async (transaction) => {
         const ref = transaction.collection('song_request_song_records').doc(documentId);
         let current = null;
@@ -243,3 +296,4 @@ exports.createHandler = createHandler;
 exports.buildWritableWorkspace = buildWritableWorkspace;
 exports.buildSoftDeletedSongRecord = buildSoftDeletedSongRecord;
 exports.buildPublicPracticeRanking = buildPublicPracticeRanking;
+exports.publicArtistSettings = publicArtistSettings;

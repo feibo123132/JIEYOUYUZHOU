@@ -595,6 +595,28 @@ test('ranks requested songs by count and keeps catalog order for ties', async ()
   assert.deepEqual(rankSongsByVotes(songs, {}), [])
 })
 
+test('榜单按总榜与歌手曲库数量决定金银铜名次数量', async () => {
+  const module = await loadModule() as Record<string, unknown>
+  assert.equal(typeof module.getRankingMedalTone, 'function')
+  assert.equal(typeof module.getPersonalRankingPodiumSize, 'function')
+
+  const getRankingMedalTone = module.getRankingMedalTone as (index: number, podiumSize: number) => string
+  const getPersonalRankingPodiumSize = module.getPersonalRankingPodiumSize as (artistSongCount: number | null) => number
+  assert.deepEqual([0, 1, 2, 3].map((index) => getRankingMedalTone(index, 3)), ['gold', 'silver', 'bronze', 'neutral'])
+  assert.deepEqual([0, 1, 2].map((index) => getRankingMedalTone(index, 1)), ['gold', 'neutral', 'neutral'])
+  assert.equal(getPersonalRankingPodiumSize(null), 3)
+  assert.equal(getPersonalRankingPodiumSize(4), 1)
+  assert.equal(getPersonalRankingPodiumSize(5), 3)
+
+  const station = readFileSync(stationUrl, 'utf8')
+  assert.match(station, /getRankingMedalTone\(index, 3\)/)
+  assert.match(station, /getRankingMedalTone\(index, personalRankingPodiumSize\)/)
+  assert.match(station, /getPersonalRankingPodiumSize\(personalRankingArtist \? artistSongCount : null\)/)
+  assert.match(station, /gold: 'bg-amber-300/)
+  assert.match(station, /silver: 'bg-slate-200/)
+  assert.match(station, /bronze: 'bg-orange-700/)
+})
+
 test('loads only valid cumulative counts from the current storage schema', async () => {
   const { loadVoteCounts, VOTE_STORAGE_KEY } = await loadModule()
   const values = new Map<string, string>()
@@ -687,6 +709,13 @@ test('歌手页支持持久排序及上传头像后继续微调', () => {
   assert.match(source, /customArtistAvatars\[artist\]/)
   assert.match(source, /onUpload/)
   assert.match(source, /avatarAdjustMode \? setAdjustingArtist\(artist\)/)
+  assert.match(source, /pullArtistSettings/)
+  assert.match(source, /pushArtistSettings/)
+  assert.match(source, /artistSettingsInitializedRef/)
+  assert.match(source, /resolveArtistSettingsPull/)
+  assert.match(source, /runArtistSettingsPush/)
+  assert.match(source, /if \(artistOrderMode\) syncCurrentArtistSettings\(\)/)
+  assert.match(source, /if \(avatarAdjustMode\) syncCurrentArtistSettings\(\)/)
 })
 
 test('groups songs by singer while preserving catalog order', async () => {
@@ -736,7 +765,7 @@ test('station home is a four-direction guide and details are separate', () => {
   assert.match(source, /const HUB_DIRECTIONS/)
   assert.match(source, /id: 'ranking'.*label: '排行榜'/s)
   assert.match(source, /id: 'artists'.*label: '歌手'/s)
-  assert.match(source, /id: 'roadshows'.*label: '记录'/s)
+  assert.match(source, /id: 'roadshows'.*label: '私人记录'/s)
   assert.match(source, /id: 'playlists'.*label: '热门歌曲'.*eyebrow: 'HOT SONGS'.*description: '看歌名化作彩色弹幕穿过星空'/s)
   assert.match(source, /activeSection === null/)
   assert.doesNotMatch(source, /id: 'languages'/)
@@ -963,10 +992,14 @@ test('browser adapter routes public and private sync through the existing CloudB
   assert.match(source, /export const saveSongRecord/)
   assert.match(source, /export const saveSongRecords/)
   assert.match(source, /export const deleteSongRecord/)
+  assert.match(source, /export const pullArtistSettings/)
+  assert.match(source, /export const pushArtistSettings/)
   assert.match(source, /action: 'songRecords:pull'/)
   assert.match(source, /action: 'songRecords:save'/)
   assert.match(source, /action: 'songRecords:saveBatch'/)
   assert.match(source, /action: 'songRecords:delete'/)
+  assert.match(source, /action: 'artistSettings:pull'/)
+  assert.match(source, /action: 'artistSettings:push'/)
 })
 
 test('歌曲详情页提供练习与路演记录并保留点歌按钮的独立行为', () => {

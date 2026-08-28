@@ -119,6 +119,17 @@ export const rankSongsByVotes = (songs: Song[], counts: VoteCounts) => songs
   .sort((left, right) => right.count - left.count || left.catalogIndex - right.catalogIndex)
   .map(({ song, count }) => ({ song, count }));
 
+export type RankingMedalTone = 'gold' | 'silver' | 'bronze' | 'neutral';
+
+export const getRankingMedalTone = (index: number, podiumSize: number): RankingMedalTone => {
+  if (!Number.isInteger(index) || index < 0 || index >= podiumSize || index >= 3) return 'neutral';
+  return (['gold', 'silver', 'bronze'] as const)[index];
+};
+
+export const getPersonalRankingPodiumSize = (artistSongCount: number | null) => (
+  artistSongCount === null || artistSongCount >= 5 ? 3 : 1
+);
+
 export const loadVoteCounts = (storage: ReadableStorage, validSongIds: string[]): VoteCounts => {
   try {
     const raw = storage.getItem(VOTE_STORAGE_KEY);

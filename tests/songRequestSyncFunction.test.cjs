@@ -28,10 +28,12 @@ function memoryStore() {
   const workspaces = new Map();
   const votes = new Map();
   const songRecords = new Map();
+  let artistSettings = null;
   return {
     workspaces,
     votes,
     songRecords,
+    get artistSettings() { return artistSettings; },
     getWorkspace: async (id) => workspaces.get(id) ?? null,
     setWorkspace: async (id, value) => { workspaces.set(id, structuredClone(value)); },
     getVotes: async () => Object.fromEntries(votes),
@@ -61,9 +63,28 @@ function memoryStore() {
       if (!current || current.workspaceId !== workspaceId || current.deletedAt) throw new Error('NOT_FOUND');
       songRecords.set(documentId, { ...current, deletedAt, updatedAt: deletedAt });
     },
+    getArtistSettings: async () => artistSettings ? structuredClone(artistSettings) : null,
+    saveArtistSettingsAtomically: async (ownerWorkspaceId, expectedRevision, snapshot) => {
+      if (!artistSettings) {
+        if (expectedRevision !== null) throw new Error('CONFLICT');
+        artistSettings = { ...structuredClone(snapshot), ownerWorkspaceId, revision: 1, updatedAt: '2026-08-25T12:00:00.000Z' };
+        return structuredClone(artistSettings);
+      }
+      if (artistSettings.ownerWorkspaceId !== ownerWorkspaceId) throw new Error('AUTH_FAILED');
+      if (expectedRevision !== artistSettings.revision) throw new Error('CONFLICT');
+      artistSettings = { ...structuredClone(snapshot), ownerWorkspaceId, revision: artistSettings.revision + 1, updatedAt: '2026-08-25T12:00:00.000Z' };
+      return structuredClone(artistSettings);
+    },
     now: () => '2026-08-25T12:00:00.000Z',
   };
 }
+
+const artistSettingsPayload = () => ({
+  version: 1,
+  artistOrder: ['周杰伦', '林俊杰'],
+  customAvatars: { 周杰伦: 'data:image/png;base64,iVBORw0KGgo=' },
+  avatarAdjustments: { 周杰伦: { x: 50, y: 28, scale: 1.4, rotation: 0 } },
+});
 
 test('validates public and private actions without rejecting platform metadata', () => {
   assert.ok(existsSync(validationPath), 'songRequestSync validation must exist');
@@ -74,6 +95,87 @@ test('validates public and private actions without rejecting platform metadata',
   });
   assert.throws(() => validateRequest({ action: 'roadshows:register', alias: '', password: '123456' }), /INVALID_ALIAS/);
   assert.throws(() => validateRequest({ action: 'roadshows:register', alias: 'JIEYOU', password: '123' }), /INVALID_PASSWORD/);
+})
+
+test('validates global artist settings actions, revisions, images, and payload limits', () => {
+  const { validateRequest } = require(validationPath);
+  const auth = { alias: 'JIEYOU', password: 'guitar-2026' };
+
+  assert.deepEqual(validateRequest({ action: 'artistSettings:pull', userInfo: { uid: 'u1' } }), { action: 'artistSettings:pull' });
+  assert.deepEqual(validateRequest({
+    action: 'artistSettings:push', ...auth, expectedRevision: null,
+    snapshot: { ...artistSettingsPayload(), revision: 999, updatedAt: 'client-time' },
+  }), { action: 'artistSettings:push', ...auth, expectedRevision: null, snapshot: artistSettingsPayload() });
+  assert.throws(() => validateRequest({ action: 'artistSettings:push', ...auth, expectedRevision: 0, snapshot: artistSettingsPayload() }), /INVALID_ARTIST_SETTINGS/);
+  assert.throws(() => validateRequest({
+    action: 'artistSettings:push', ...auth, expectedRevision: null,
+    snapshot: { ...artistSettingsPayload(), customAvatars: { 周杰伦: 'data:image/png;base64,SGVsbG8=' } },
+  }), /INVALID_ARTIST_SETTINGS/);
+  const oversizedImage = `data:image/png;base64,${Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(1024 * 1024)]).toString('base64')}`;
+  assert.throws(() => validateRequest({
+    action: 'artistSettings:push', ...auth, expectedRevision: null,
+    snapshot: { ...artistSettingsPayload(), customAvatars: { 周杰伦: oversizedImage } },
+  }), /INVALID_ARTIST_SETTINGS/);
+  assert.throws(() => validateRequest({ action: 'artistSettings:pull', padding: 'x'.repeat(5 * 1024 * 1024) }), /PAYLOAD_TOO_LARGE/);
+})
+
+test('publishes and transactionally protects one global artist settings snapshot', async () => {
+  const store = memoryStore();
+  const { createHandler } = loadFunction();
+  const handler = createHandler(store);
+  const owner = { alias: 'JIEYOU', password: 'guitar-2026' };
+  const other = { alias: 'OTHER', password: 'guitar-2026' };
+  await handler({ action: 'roadshows:register', ...owner });
+  await handler({ action: 'roadshows:register', ...other });
+
+  assert.deepEqual(await handler({ action: 'artistSettings:pull' }), { ok: true, snapshot: null });
+  const first = await handler({ action: 'artistSettings:push', ...owner, expectedRevision: null, snapshot: artistSettingsPayload() });
+  assert.equal(first.ok, true);
+  assert.equal(first.snapshot.revision, 1);
+  assert.equal(first.snapshot.updatedAt, '2026-08-25T12:00:00.000Z');
+  assert.equal('ownerWorkspaceId' in first.snapshot, false);
+  assert.deepEqual(await handler({ action: 'artistSettings:pull' }), { ok: true, snapshot: first.snapshot });
+
+  assert.deepEqual(await handler({ action: 'artistSettings:push', ...owner, expectedRevision: null, snapshot: artistSettingsPayload() }), { ok: false, error: 'CONFLICT' });
+  assert.deepEqual(await handler({ action: 'artistSettings:push', ...other, expectedRevision: 1, snapshot: artistSettingsPayload() }), { ok: false, error: 'AUTH_FAILED' });
+  const second = await handler({ action: 'artistSettings:push', ...owner, expectedRevision: 1, snapshot: { ...artistSettingsPayload(), artistOrder: ['林俊杰', '周杰伦'], revision: 888, updatedAt: 'client-time' } });
+  assert.equal(second.snapshot.revision, 2);
+  assert.deepEqual(second.snapshot.artistOrder, ['林俊杰', '周杰伦']);
+  assert.notEqual(second.snapshot.updatedAt, 'client-time');
+  assert.deepEqual(await handler({ action: 'artistSettings:push', ...owner, expectedRevision: 1, snapshot: artistSettingsPayload() }), { ok: false, error: 'CONFLICT' });
+})
+
+test('artist settings writes hide whether a private workspace exists', async () => {
+  const { createHandler } = loadFunction();
+  const handler = createHandler(memoryStore());
+
+  assert.deepEqual(await handler({
+    action: 'artistSettings:push',
+    alias: 'MISSING',
+    password: 'guitar-2026',
+    expectedRevision: null,
+    snapshot: artistSettingsPayload(),
+  }), { ok: false, error: 'AUTH_FAILED' });
+})
+
+test('production artist settings storage uses the fixed global document transactionally', () => {
+  const source = readFileSync(functionPath, 'utf8');
+
+  assert.match(source, /db\.collection\('song_request_artist_settings'\)/);
+  assert.match(source, /transaction\.collection\('song_request_artist_settings'\)\.doc\('global'\)/);
+  assert.match(source, /saveArtistSettingsAtomically/);
+})
+
+test('artist settings datastore failures remain sync failures and never look empty', async () => {
+  const readStore = memoryStore();
+  readStore.getArtistSettings = async () => { throw new Error('database offline'); };
+  const writeStore = memoryStore();
+  writeStore.saveArtistSettingsAtomically = async () => { throw new Error('database offline'); };
+  const { createHandler } = loadFunction();
+  assert.deepEqual(await createHandler(readStore)({ action: 'artistSettings:pull' }), { ok: false, error: 'SYNC_FAILED' });
+  const writeHandler = createHandler(writeStore);
+  await writeHandler({ action: 'roadshows:register', alias: 'JIEYOU', password: 'guitar-2026' });
+  assert.deepEqual(await writeHandler({ action: 'artistSettings:push', alias: 'JIEYOU', password: 'guitar-2026', expectedRevision: null, snapshot: artistSettingsPayload() }), { ok: false, error: 'SYNC_FAILED' });
 })
 
 test('increments and pulls public song request votes', async () => {
