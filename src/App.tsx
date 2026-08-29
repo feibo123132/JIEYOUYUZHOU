@@ -23,6 +23,7 @@ function App() {
   const isPlayingRef = useRef(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [starrySkyInitialView, setStarrySkyInitialView] = useState<'stars' | 'my-messages'>('stars');
   const {
     activeTheme,
     currentView,
@@ -143,24 +144,18 @@ function App() {
     enterTheme(themeId);
   };
 
-  const handleWelcomeEnter = () => {
-    if (user) {
-      enterStarrySky();
-      return;
-    }
-    toast.info('请输入你的别称');
-    document.getElementById('nickname-input')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  };
-
-  const handleNicknameSubmit = async (nickname: string) => {
+  const handleNicknameSubmit = async (nickname: string, destination: 'stars' | 'my-messages') => {
     setIsLoading(true);
     try {
-      const userData = await userService.createUser(nickname);
-      setUser({
-        id: userData.id,
-        nickname: userData.nickname,
-        isAuthenticated: false,
-      });
+      if (!user || user.nickname !== nickname) {
+        const userData = await userService.createUser(nickname);
+        setUser({
+          id: userData.id,
+          nickname: userData.nickname,
+          isAuthenticated: false,
+        });
+      }
+      setStarrySkyInitialView(destination);
       enterStarrySky();
     } catch (error) {
       console.error('创建用户失败:', error);
@@ -194,16 +189,18 @@ function App() {
         <div className="relative z-10 min-h-screen">
           <WelcomeScreen
             theme={theme}
-            onEnter={handleWelcomeEnter}
             onSwitchTheme={returnToThemeHub}
             onToggleMusic={toggleMusic}
             isPlaying={isPlaying}
           />
-          {!user && (
-            <div id="nickname-input" className="relative z-20 mx-auto -mt-36 w-full max-w-md px-4 pb-20 md:-mt-40">
-              <NicknameInput theme={theme} onSubmit={handleNicknameSubmit} isLoading={isLoading} />
-            </div>
-          )}
+          <div id="nickname-input" className="relative z-20 mx-auto -mt-48 w-full max-w-md px-4 pb-20 md:-mt-52">
+            <NicknameInput
+              theme={theme}
+              onSubmit={handleNicknameSubmit}
+              isLoading={isLoading}
+              initialNickname={user?.nickname}
+            />
+          </div>
         </div>
       )}
 
@@ -213,6 +210,7 @@ function App() {
             theme={theme}
             userNickname={user.nickname}
             userId={user.id}
+            initialView={starrySkyInitialView}
             onBack={returnToWelcome}
           />
         </div>

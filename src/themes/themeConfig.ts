@@ -80,7 +80,7 @@ const THEME_CONFIGS: Record<ThemeId, ThemeConfig> = {
     },
     nickname: {
       placeholder: '请输入星星的别称（1-30个字符）',
-      submitLabel: '点亮我的星星 ✨',
+      submitLabel: '点亮星星',
       loadingLabel: '正在进入宇宙...',
       tip: '别称将显示在你的星星旁边',
     },
@@ -146,7 +146,7 @@ const THEME_CONFIGS: Record<ThemeId, ThemeConfig> = {
     },
     nickname: {
       placeholder: '留下你的别称（1-30个字符）',
-      submitLabel: '开启宇宙之旅 ✨',
+      submitLabel: '点亮星星',
       loadingLabel: '正在进入幸福星空...',
       tip: '别称会陪伴你记录每一个幸福时刻',
     },

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowLeft, CalendarDays, Check, ChevronLeft, ChevronRight, Guitar,
+  ArrowLeft, CalendarDays, Check, ChevronLeft, ChevronRight, Disc3, Guitar,
   Library, ListOrdered, Mic2, Plus, RotateCcw, Search, SlidersHorizontal, Target, Trash2, Trophy, Upload, X,
 } from 'lucide-react';
 import useAppStore from '../../store/appStore';
@@ -12,10 +12,11 @@ import {
   moveCatalogArtist, removeCatalogArtist, removeCatalogSong, saveEditableCatalog, saveVoteCounts,
   type EditableCatalog, type VoteCounts,
 } from './songRequest';
-import { groupSongsByArtist } from './roadshow';
+import { groupSongsByArtist, prepareLatestRoadshowRecognitionSong, ROADSHOW_CACHE_KEY } from './roadshow';
 import {
   incrementCloudVote, mapArtistSettingsSyncError, pullArtistSettings, pullCloudFeaturedSongIds, pullCloudVotes,
-  pullPublicPracticeRanking, pullSongRecords, pushArtistSettings, saveCloudFeaturedSongIds,
+  pullCloudQuizAssignments, pullPublicPracticeRanking, pullRoadshows, pullSongRecords, pushArtistSettings,
+  saveCloudFeaturedSongIds, saveCloudQuizAssignments, saveRoadshow,
 } from './songRequestCloud';
 import RoadshowPanel from './RoadshowPanel';
 import SongDetailPanel from './SongDetailPanel';
@@ -33,9 +34,13 @@ import {
   saveArtistSettingsCache, saveArtistSettingsDraft,
   type ArtistSettingsPayload,
 } from './artistSettings';
+import {
+  countQuizSongs, groupQuizSongs, parseQuizAssignments, QUIZ_LEVELS, setQuizLevel,
+  type QuizAssignments, type QuizLevel,
+} from './songQuizLibrary';
 
 interface SongRequestStationProps { onBack: () => void; }
-type SectionId = 'ranking' | 'artists' | 'roadshows' | 'playlists';
+type SectionId = 'ranking' | 'artists' | 'roadshows' | 'playlists' | 'quiz';
 type RankingView = 'requests' | 'personal';
 type ArtistLanguageFilter = 'chinese' | 'foreign' | 'single';
 type SongDisplayMode = 'random' | 'full';
@@ -53,6 +58,13 @@ const RANKING_MEDAL_CLASSES = {
   bronze: 'bg-orange-700 text-orange-50 ring-1 ring-orange-300/55 shadow-[0_0_14px_rgba(194,65,12,0.18)]',
   neutral: 'bg-white/10 text-white/55',
 } as const;
+
+const QUIZ_LEVEL_STYLES: Record<QuizLevel, { accent: string; panel: string; badge: string }> = {
+  warmup: { accent: 'text-emerald-200', panel: 'border-emerald-300/20 bg-emerald-400/[.055]', badge: 'border-emerald-300/35 bg-emerald-300/15 text-emerald-100' },
+  standard: { accent: 'text-sky-200', panel: 'border-sky-300/20 bg-sky-400/[.055]', badge: 'border-sky-300/35 bg-sky-300/15 text-sky-100' },
+  hard: { accent: 'text-violet-200', panel: 'border-violet-300/20 bg-violet-400/[.055]', badge: 'border-violet-300/35 bg-violet-300/15 text-violet-100' },
+  hell: { accent: 'text-rose-200', panel: 'border-rose-300/20 bg-rose-400/[.055]', badge: 'border-rose-300/35 bg-rose-300/15 text-rose-100' },
+};
 
 const HUB_DIRECTIONS = [
   { id: 'ranking', label: '排行榜', eyebrow: 'RANKINGS', description: '切换查看点歌榜和吉他练习榜', icon: Trophy, tone: 'from-amber-400/20 to-orange-600/5' },
@@ -144,6 +156,10 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   const [requestedId, setRequestedId] = useState<string | null>(null);
   const [featuredSongIds, setFeaturedSongIds] = useState<string[]>(() => getFeaturedSongs(catalog.songs).map((song) => song.id));
   const [featuredBusyId, setFeaturedBusyId] = useState<string | null>(null);
+  const [quizAssignments, setQuizAssignments] = useState<QuizAssignments>({});
+  const [quizBusyId, setQuizBusyId] = useState<string | null>(null);
+  const [roadshowQuizBusyId, setRoadshowQuizBusyId] = useState<string | null>(null);
+  const [quizMenuSongId, setQuizMenuSongId] = useState<string | null>(null);
   const [syncMessage, setSyncMessage] = useState('');
   const [songRecordSession, setSongRecordSession] = useState<SongRecordSession | null>(() => (
     typeof window === 'undefined' ? null : readSongRecordSession(window.sessionStorage)
@@ -321,6 +337,15 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
 
   useEffect(() => {
     let active = true;
+    pullCloudQuizAssignments().then((assignments) => {
+      const parsed = parseQuizAssignments(assignments);
+      if (active && parsed) setQuizAssignments(parsed);
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
     pullPublicPracticeRanking().then((ranking) => {
       if (!active) return;
       setPublicPracticeRanking(parsePublicPracticeRanking(ranking));
@@ -375,6 +400,8 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     const featured = new Set(featuredSongIds);
     return catalogSongs.filter((song) => featured.has(song.id));
   }, [catalogSongs, featuredSongIds]);
+  const quizGroups = useMemo(() => groupQuizSongs(catalogSongs, quizAssignments), [catalogSongs, quizAssignments]);
+  const quizCounts = useMemo(() => countQuizSongs(quizAssignments), [quizAssignments]);
   const randomSongs = useMemo(() => {
     const shuffled = [...providedSongs];
     for (let index = shuffled.length - 1; index > 0; index -= 1) {
@@ -569,6 +596,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
       const song = selectedSong;
       setSelectedSong(null);
       if (activeSection === 'playlists') return;
+      if (activeSection === 'quiz') return;
       setActiveSection('artists');
       setSelectedArtist(song.artist);
       return;
@@ -603,6 +631,84 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   };
 
   const canManageFeaturedSongs = isFeaturedSongManager(songRecordSession?.alias);
+  const updateQuizLevel = async (song: Song, level: QuizLevel) => {
+    if (!songRecordSession || !canManageFeaturedSongs || quizBusyId) return;
+    const next = setQuizLevel(quizAssignments, song.id, level);
+    setQuizAssignments(next);
+    setQuizMenuSongId(null);
+    setQuizBusyId(song.id);
+    setSyncMessage('');
+    try {
+      const saved = parseQuizAssignments(await saveCloudQuizAssignments(songRecordSession, next));
+      if (!saved) throw new Error('INVALID_QUIZ_LIBRARY');
+      setQuizAssignments(saved);
+    } catch {
+      setSyncMessage('识曲歌库尚未同步，当前选择已保留');
+    } finally {
+      setQuizBusyId(null);
+    }
+  };
+
+  const addSongToLatestRoadshow = async (song: Song) => {
+    if (!songRecordSession || roadshowQuizBusyId) return;
+    setRoadshowQuizBusyId(song.id);
+    setSyncMessage('');
+    try {
+      const records = await pullRoadshows(songRecordSession);
+      const prepared = prepareLatestRoadshowRecognitionSong(records, song);
+      if (prepared.kind === 'missing') {
+        setSyncMessage('还没有路演，请先在私人记录中创建一场路演');
+        return;
+      }
+      if (prepared.kind === 'duplicate') {
+        setSyncMessage(`${song.title}已在最新路演的听歌识曲中`);
+        return;
+      }
+      const saved = await saveRoadshow(songRecordSession, prepared.record);
+      const nextRecords = records
+        .map((record) => record.id === saved.id ? saved : record)
+        .sort((left, right) => right.date.localeCompare(left.date) || right.updatedAt.localeCompare(left.updatedAt));
+      try {
+        window.localStorage.setItem(ROADSHOW_CACHE_KEY, JSON.stringify({ version: 1, records: nextRecords }));
+      } catch {}
+      setSyncMessage(`${song.title}已加入“${saved.title}”的听歌识曲`);
+    } catch {
+      setSyncMessage('加入最新路演失败，请检查网络后重试');
+    } finally {
+      setRoadshowQuizBusyId(null);
+    }
+  };
+
+  const QuizLevelControl = ({ song }: { song: Song }) => {
+    const currentLevel = quizAssignments[song.id];
+    const current = QUIZ_LEVELS.find((level) => level.id === currentLevel);
+    if (!canManageFeaturedSongs) {
+      return current ? <span title={`识曲歌库 · ${current.label}`} className={`inline-flex h-9 min-w-9 shrink-0 items-center justify-center rounded-full border px-2 text-[10px] font-black ${QUIZ_LEVEL_STYLES[current.id].badge}`}>{current.symbol}</span> : null;
+    }
+    const menuOpen = quizMenuSongId === song.id;
+    return (
+      <span className="relative shrink-0">
+        <button type="button" aria-expanded={menuOpen} aria-label={`选择${song.title}的识曲难度`} title={current ? `识曲歌库 · ${current.label}` : '加入识曲歌库'} disabled={Boolean(quizBusyId)}
+          onClick={(event) => { event.stopPropagation(); setQuizMenuSongId(menuOpen ? null : song.id); }}
+          className={`grid h-9 min-w-9 place-items-center rounded-full border px-2 text-[10px] font-black transition active:scale-95 disabled:opacity-45 ${current ? QUIZ_LEVEL_STYLES[current.id].badge : 'border-white/10 bg-black/25 text-white/35 hover:border-sky-200/35 hover:text-sky-100'}`}>
+          {current?.symbol ?? <Disc3 className="h-4 w-4" />}
+        </button>
+        {menuOpen && (
+          <span role="menu" aria-label={`${song.title}识曲难度`} className="absolute bottom-full right-0 z-40 mb-2 grid w-40 gap-1 rounded-2xl border border-white/15 bg-[#100d16]/95 p-2 shadow-2xl backdrop-blur-xl">
+            {QUIZ_LEVELS.map((level) => (
+              <button key={level.id} type="button" role="menuitemradio" aria-checked={currentLevel === level.id}
+                onClick={(event) => { event.stopPropagation(); void updateQuizLevel(song, level.id); }}
+                className={`flex items-center gap-3 rounded-xl px-3 py-2 text-left text-xs font-bold transition hover:bg-white/10 ${currentLevel === level.id ? QUIZ_LEVEL_STYLES[level.id].accent : 'text-white/65'}`}>
+                <span className={`grid h-6 w-6 place-items-center rounded-full border ${QUIZ_LEVEL_STYLES[level.id].badge}`}>{level.symbol}</span>{level.label}
+              </button>
+            ))}
+            <small className="px-2 pt-1 text-[9px] leading-4 text-white/30">再次选择可移出歌库</small>
+          </span>
+        )}
+      </span>
+    );
+  };
+
   const toggleFeaturedSong = async (song: Song) => {
     if (!songRecordSession || !canManageFeaturedSongs || featuredBusyId) return;
     const previous = featuredSongIds;
@@ -650,13 +756,13 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
           <button type="button" onClick={() => openSongDetail(song)} className="min-w-0 flex-1 rounded-xl px-2 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-orange-300/50">
             <h3 className="truncate font-bold transition group-hover:text-orange-100">{song.title}</h3><p title={song.hotComment} className="mt-1 truncate text-xs text-white/40">{getSongSubtitle(song)}</p>
           </button>
-          <span className="flex shrink-0 items-center gap-2"><FeaturedSongControl song={song} /><RequestButton song={song} /></span>
+          <span className="flex shrink-0 items-center gap-2"><QuizLevelControl song={song} /><FeaturedSongControl song={song} /><RequestButton song={song} /></span>
         </article>
       ))}
     </div>
   );
 
-  const sectionTitle = HUB_DIRECTIONS.find((item) => item.id === activeSection)?.label;
+  const sectionTitle = activeSection === 'quiz' ? '识曲歌库' : HUB_DIRECTIONS.find((item) => item.id === activeSection)?.label;
   const popularImmersive = activeSection === 'playlists' && !selectedSong;
 
   return (
@@ -730,6 +836,21 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                   <p className="mt-2 text-sm text-white/45">{description}</p>
                 </button>
               ))}
+              <button type="button" onClick={() => setActiveSection('quiz')}
+                className="group relative min-h-36 overflow-hidden rounded-[2rem] border border-sky-200/15 bg-[radial-gradient(circle_at_12%_50%,rgba(56,189,248,.18),transparent_32%),linear-gradient(105deg,rgba(14,116,144,.16),rgba(88,28,135,.10),rgba(159,18,57,.10))] p-7 text-left backdrop-blur-xl transition duration-300 hover:-translate-y-1 hover:border-sky-100/30 sm:col-span-2 sm:p-8">
+                <div className="relative flex flex-col gap-6 sm:flex-row sm:items-center">
+                  <span className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl border border-sky-100/20 bg-black/25 text-sky-100"><Disc3 className="h-7 w-7 transition duration-500 group-hover:rotate-180" /></span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[10px] font-black tracking-[0.28em] text-sky-100/45">QUIZ LIBRARY</span>
+                    <h2 className="mt-1 font-serif text-3xl font-black">识曲歌库</h2>
+                    <span className="mt-2 block text-sm text-white/45">四档题库 · 已采购 {quizCounts.total} 首</span>
+                  </span>
+                  <span className="flex flex-wrap gap-2 sm:justify-end">
+                    {QUIZ_LEVELS.map((level) => <span key={level.id} className={`rounded-full border px-3 py-1.5 text-[10px] font-black ${QUIZ_LEVEL_STYLES[level.id].badge}`}>{level.symbol} {quizCounts[level.id]}</span>)}
+                  </span>
+                  <ChevronRight className="absolute right-0 top-0 h-5 w-5 text-white/25 transition group-hover:translate-x-1 group-hover:text-white/70" />
+                </div>
+              </button>
             </nav>
           </>
         ) : (
@@ -833,6 +954,43 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                     </div>
                   </aside>
                 )}
+              </div>
+            )}
+
+            {activeSection === 'quiz' && (
+              <div className="grid gap-4 lg:grid-cols-2">
+                {QUIZ_LEVELS.map((level) => {
+                  const levelSongs = quizGroups[level.id];
+                  return (
+                    <section key={level.id} className={`flex h-[22rem] flex-col rounded-[1.75rem] border p-5 sm:p-6 ${QUIZ_LEVEL_STYLES[level.id].panel}`}>
+                      <header className="mb-4 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <span className={`grid h-10 w-10 place-items-center rounded-full border font-serif font-black ${QUIZ_LEVEL_STYLES[level.id].badge}`}>{level.symbol}</span>
+                          <div><p className={`text-[10px] font-black tracking-[0.22em] ${QUIZ_LEVEL_STYLES[level.id].accent}`}>LEVEL {level.symbol}</p><h2 className="font-serif text-2xl font-black">{level.label}</h2></div>
+                        </div>
+                        <strong className="text-sm text-white/45">{levelSongs.length} 首</strong>
+                      </header>
+                      {levelSongs.length ? (
+                        <div className="min-h-0 flex-1 grid grid-cols-1 gap-2 overflow-y-auto overscroll-contain sm:grid-cols-2 pr-1 content-start">
+                          {levelSongs.map((song) => (
+                            <article key={song.id} className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/25 p-3">
+                              <button type="button" onClick={() => openSongDetail(song)} className="min-w-0 flex-1 text-left">
+                                <strong className="block truncate text-sm">{song.title}</strong><small className="mt-1 block truncate text-white/35">{song.artist}</small>
+                              </button>
+                              {songRecordSession && (
+                                <button type="button" aria-label={`将${song.title}加入最新路演听歌识曲`} title="加入最新路演 · 听歌识曲"
+                                  disabled={Boolean(roadshowQuizBusyId)} onClick={() => { void addSongToLatestRoadshow(song); }}
+                                  className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-orange-200/20 bg-orange-300/10 text-orange-100 transition hover:bg-orange-300/20 disabled:opacity-40">
+                                  <Plus className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                            </article>
+                          ))}
+                        </div>
+                      ) : <div className="grid min-h-0 flex-1 place-items-center rounded-2xl border border-dashed border-white/10 bg-black/15 px-4 text-center text-xs leading-6 text-white/30">这个档位还没有歌曲<br />去歌手页点击唱片按钮采购</div>}
+                    </section>
+                  );
+                })}
               </div>
             )}
 

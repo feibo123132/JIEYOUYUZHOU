@@ -3,6 +3,7 @@ import type { VoteCounts } from './songRequest';
 import type { RoadshowRecord } from './roadshow';
 import type { PublicPracticeRankingItem, SongRecord } from './songRecords';
 import type { ArtistSettingsPayload, ArtistSettingsSnapshot } from './artistSettings';
+import type { QuizAssignments } from './songQuizLibrary';
 
 export interface Credentials {
   alias: string;
@@ -35,6 +36,17 @@ export const pullCloudFeaturedSongIds = async (): Promise<string[] | null> => (
 export const saveCloudFeaturedSongIds = async (credentials: Credentials, songIds: string[]): Promise<string[]> => (
   await callSync<{ songIds: string[] }>({ action: 'featuredSongs:set', ...credentials, songIds })
 ).songIds;
+
+export const pullCloudQuizAssignments = async (): Promise<QuizAssignments | null> => (
+  await callSync<{ assignments: QuizAssignments | null }>({ action: 'quizLibrary:pull' })
+).assignments;
+
+export const saveCloudQuizAssignments = async (
+  credentials: Credentials,
+  assignments: QuizAssignments,
+): Promise<QuizAssignments> => (
+  await callSync<{ assignments: QuizAssignments }>({ action: 'quizLibrary:set', ...credentials, assignments })
+).assignments;
 
 export const registerRoadshowWorkspace = async (credentials: Credentials): Promise<RoadshowRecord[]> => (
   await callSync<{ records: RoadshowRecord[] }>({ action: 'roadshows:register', ...credentials })

@@ -14,6 +14,8 @@ const ACTIONS = new Set([
   'artistSettings:push',
   'featuredSongs:pull',
   'featuredSongs:set',
+  'quizLibrary:pull',
+  'quizLibrary:set',
 ]);
 
 const ARTIST_SETTINGS_REQUEST_LIMIT = 5 * 1024 * 1024;
@@ -157,7 +159,8 @@ function validateRequest(event) {
   if (Buffer.byteLength(JSON.stringify(event), 'utf8') > requestLimit) throw new Error('PAYLOAD_TOO_LARGE');
 
   if (event.action === 'votes:pull' || event.action === 'songRecords:publicRanking'
-    || event.action === 'artistSettings:pull' || event.action === 'featuredSongs:pull') return { action: event.action };
+    || event.action === 'artistSettings:pull' || event.action === 'featuredSongs:pull'
+    || event.action === 'quizLibrary:pull') return { action: event.action };
   if (event.action === 'votes:increment') {
     const songId = cleanText(event.songId, 80, 'INVALID_SONG_ID');
     if (!/^[a-z0-9-]+$/i.test(songId)) throw new Error('INVALID_SONG_ID');
@@ -171,6 +174,19 @@ function validateRequest(event) {
     if (!Array.isArray(event.songIds) || event.songIds.length > 500) throw new Error('INVALID_FEATURED_SONGS');
     const songIds = event.songIds.map((songId) => cleanText(songId, 100, 'INVALID_FEATURED_SONGS'));
     return { ...base, songIds: [...new Set(songIds)] };
+  }
+  if (event.action === 'quizLibrary:set') {
+    if (!event.assignments || typeof event.assignments !== 'object' || Array.isArray(event.assignments)) throw new Error('INVALID_QUIZ_LIBRARY');
+    const entries = Object.entries(event.assignments);
+    if (entries.length > 500) throw new Error('INVALID_QUIZ_LIBRARY');
+    const levels = new Set(['warmup', 'standard', 'hard', 'hell']);
+    const assignments = {};
+    for (const [rawSongId, level] of entries) {
+      const songId = cleanText(rawSongId, 100, 'INVALID_QUIZ_LIBRARY');
+      if (!levels.has(level)) throw new Error('INVALID_QUIZ_LIBRARY');
+      assignments[songId] = level;
+    }
+    return { ...base, assignments };
   }
   if (event.action === 'artistSettings:push') {
     const expectedRevision = event.expectedRevision;

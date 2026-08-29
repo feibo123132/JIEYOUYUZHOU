@@ -14,6 +14,7 @@ const dailyPracticePanelUrl = new URL('../src/components/SongRequest/DailyPracti
 const popularSongBarrageUrl = new URL('../src/components/SongRequest/PopularSongBarrage.tsx', import.meta.url)
 const messageBarrageUrl = new URL('../src/components/StarrySky/MessageBarrage.tsx', import.meta.url)
 const artistSettingsUrl = new URL('../src/components/SongRequest/artistSettings.ts', import.meta.url)
+const songQuizLibraryUrl = new URL('../src/components/SongRequest/songQuizLibrary.ts', import.meta.url)
 const indexCssUrl = new URL('../src/index.css', import.meta.url)
 const appUrl = new URL('../src/App.tsx', import.meta.url)
 
@@ -676,6 +677,30 @@ test('featured songs remain an unranked catalog subset', async () => {
   assert.equal(isFeaturedSongManager('visitor@example.com'), false)
 })
 
+test('识曲歌库按四档解析、切换、取消并分组计数', async () => {
+  const {
+    QUIZ_LEVELS, parseQuizAssignments, setQuizLevel, groupQuizSongs, countQuizSongs,
+  } = await import(songQuizLibraryUrl.href)
+  assert.deepEqual(QUIZ_LEVELS.map((level: { id: string, label: string }) => [level.id, level.label]), [
+    ['warmup', '简单'], ['standard', '常规'], ['hard', '较难'], ['hell', '很难'],
+  ])
+  assert.deepEqual(parseQuizAssignments({ a: 'warmup', b: 'hell' }), { a: 'warmup', b: 'hell' })
+  assert.equal(parseQuizAssignments({ a: 'unknown' }), null)
+  assert.equal(parseQuizAssignments(Array(3).fill('warmup')), null)
+
+  const assigned = setQuizLevel({}, 'a', 'standard')
+  assert.deepEqual(assigned, { a: 'standard' })
+  assert.deepEqual(setQuizLevel(assigned, 'a', 'standard'), {})
+  assert.deepEqual(setQuizLevel(assigned, 'a', 'hard'), { a: 'hard' })
+
+  const grouped = groupQuizSongs(songs, { a: 'warmup', b: 'hell', missing: 'hard' })
+  assert.deepEqual(grouped.warmup.map((song: { id: string }) => song.id), ['a'])
+  assert.deepEqual(grouped.hell.map((song: { id: string }) => song.id), ['b'])
+  assert.deepEqual(countQuizSongs({ a: 'warmup', b: 'hell', missing: 'hard' }), {
+    total: 3, warmup: 1, standard: 0, hard: 1, hell: 1,
+  })
+})
+
 test('热门歌曲火焰标记公开可见且仅本人登录后可操作', () => {
   const station = readFileSync(stationUrl, 'utf8')
   const cloud = readFileSync(cloudAdapterUrl, 'utf8')
@@ -688,6 +713,42 @@ test('热门歌曲火焰标记公开可见且仅本人登录后可操作', () =>
   assert.match(cloud, /export const saveCloudFeaturedSongIds/)
   assert.match(cloud, /action: 'featuredSongs:pull'/)
   assert.match(cloud, /action: 'featuredSongs:set'/)
+})
+
+test('识曲歌库公开加载、管理员保存且失败时保留当前选择', () => {
+  const station = readFileSync(stationUrl, 'utf8')
+  const cloud = readFileSync(cloudAdapterUrl, 'utf8')
+
+  assert.match(cloud, /export const pullCloudQuizAssignments/)
+  assert.match(cloud, /export const saveCloudQuizAssignments/)
+  assert.match(station, /pullCloudQuizAssignments\(\)/)
+  assert.match(station, /saveCloudQuizAssignments\(songRecordSession, next\)/)
+  assert.match(station, /识曲歌库尚未同步/)
+  assert.doesNotMatch(station, /catch\s*\{[^}]*setQuizAssignments\(previous\)/s)
+})
+
+test('歌曲行在热门火焰左侧提供四档采购且访客只看等级', () => {
+  const station = readFileSync(stationUrl, 'utf8')
+
+  assert.match(station, /const QuizLevelControl = \(\{ song \}: \{ song: Song \}\)/)
+  assert.match(station, /选择\$\{song\.title\}的识曲难度/)
+  assert.match(station, /QUIZ_LEVELS\.map/)
+  assert.match(station, /再次选择可移出歌库/)
+  assert.match(station, /<QuizLevelControl song=\{song\} \/>\s*<FeaturedSongControl song=\{song\} \/>/)
+})
+
+test('点歌台四宫格下方提供横向识曲歌库总部和四档面板', () => {
+  const station = readFileSync(stationUrl, 'utf8')
+
+  assert.match(station, /QUIZ LIBRARY/)
+  assert.match(station, />识曲歌库</)
+  assert.match(station, /sm:col-span-2/)
+  assert.match(station, /quizCounts\.total/)
+  assert.match(station, /levelSongs\.length/)
+  assert.match(station, /flex h-\[22rem\] flex-col/)
+  assert.match(station, /min-h-0 flex-1 grid grid-cols-1 gap-2 overflow-y-auto overscroll-contain sm:grid-cols-2/)
+  assert.match(station, /这个档位还没有歌曲/)
+  assert.doesNotMatch(station, /从识曲歌库移除/)
 })
 
 test('increments cumulative votes without mutating the prior state', async () => {
@@ -842,6 +903,37 @@ test('groups songs by singer while preserving catalog order', async () => {
     ['周杰伦', ['a', 'c']],
     ['Coldplay', ['b']],
   ])
+})
+
+test('识曲歌库歌曲只加入日期最新的路演听歌识曲并自动去重', async () => {
+  const { prepareLatestRoadshowRecognitionSong } = await loadRoadshowModule()
+  const records = [
+    {
+      id: 'older', title: '旧路演', date: '2026-08-20', updatedAt: '2026-08-20T12:00:00.000Z',
+      performanceSongs: [], recognitionSongs: [],
+    },
+    {
+      id: 'latest', title: '最新路演', date: '2026-08-28', updatedAt: '2026-08-28T12:00:00.000Z',
+      performanceSongs: [], recognitionSongs: [],
+    },
+  ]
+  const first = prepareLatestRoadshowRecognitionSong(records, songs[0])
+  assert.equal(first.kind, 'updated')
+  assert.equal(first.record.id, 'latest')
+  assert.deepEqual(first.record.recognitionSongs.map((song: { catalogId?: string }) => song.catalogId), ['a'])
+  assert.deepEqual(records[1].recognitionSongs, [])
+  assert.equal(prepareLatestRoadshowRecognitionSong([first.record], songs[0]).kind, 'duplicate')
+  assert.deepEqual(prepareLatestRoadshowRecognitionSong([], songs[0]), { kind: 'missing' })
+})
+
+test('识曲歌库歌曲卡提供加入最新路演听歌识曲按钮', () => {
+  const station = readFileSync(stationUrl, 'utf8')
+
+  assert.match(station, /prepareLatestRoadshowRecognitionSong/)
+  assert.match(station, /pullRoadshows\(songRecordSession\)/)
+  assert.match(station, /saveRoadshow\(songRecordSession, prepared\.record\)/)
+  assert.match(station, /将\$\{song\.title\}加入最新路演听歌识曲/)
+  assert.match(station, /已加入.*听歌识曲/)
 })
 
 test('finds prior roadshows containing the same catalog or manual song', async () => {

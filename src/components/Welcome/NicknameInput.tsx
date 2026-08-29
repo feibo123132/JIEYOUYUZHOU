@@ -4,17 +4,17 @@ import type { ThemeConfig } from '../../themes/themeConfig';
 
 interface NicknameInputProps {
   theme: ThemeConfig;
-  onSubmit: (nickname: string) => void;
+  onSubmit: (nickname: string, target: 'stars' | 'my-messages') => void;
   isLoading?: boolean;
+  initialNickname?: string;
 }
 
-const NicknameInput: React.FC<NicknameInputProps> = ({ theme, onSubmit, isLoading = false }) => {
-  const [nickname, setNickname] = useState('');
+const NicknameInput: React.FC<NicknameInputProps> = ({ theme, onSubmit, isLoading = false, initialNickname = '' }) => {
+  const [nickname, setNickname] = useState(initialNickname);
   const [error, setError] = useState('');
   const isLife = theme.id === 'life';
 
-  const handleSubmit = (event: React.FormEvent) => {
-    event.preventDefault();
+  const submitNickname = (target: 'stars' | 'my-messages') => {
     (window as any).playClickSound?.();
     const value = nickname.trim();
     if (!value) {
@@ -30,7 +30,12 @@ const NicknameInput: React.FC<NicknameInputProps> = ({ theme, onSubmit, isLoadin
       return;
     }
     setError('');
-    onSubmit(value);
+    onSubmit(value, target);
+  };
+
+  const handleSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    submitNickname('stars');
   };
 
   return (
@@ -64,17 +69,31 @@ const NicknameInput: React.FC<NicknameInputProps> = ({ theme, onSubmit, isLoadin
           {error && <span className="text-red-300">{error}</span>}
         </div>
 
-        <button
-          type="submit"
-          disabled={isLoading || !nickname.trim()}
-          className={`w-full rounded-xl px-4 py-3 font-semibold transition duration-200 ${
-            isLoading || !nickname.trim()
-              ? 'cursor-not-allowed bg-gray-300 text-gray-500'
-              : `bg-gradient-to-r ${theme.visual.buttonGradientClass} ${theme.visual.buttonHoverClass} text-white shadow-lg hover:scale-[1.02] ${theme.visual.glowClass} active:scale-[.98]`
-          }`}
-        >
-          {isLoading ? theme.nickname.loadingLabel : theme.nickname.submitLabel}
-        </button>
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            type="submit"
+            disabled={isLoading || !nickname.trim()}
+            className={`w-full rounded-xl px-3 py-3 font-semibold transition duration-200 ${
+              isLoading || !nickname.trim()
+                ? 'cursor-not-allowed bg-gray-300 text-gray-500'
+                : `bg-gradient-to-r ${theme.visual.buttonGradientClass} ${theme.visual.buttonHoverClass} text-white shadow-lg hover:scale-[1.02] ${theme.visual.glowClass} active:scale-[.98]`
+            }`}
+          >
+            {isLoading ? theme.nickname.loadingLabel : theme.nickname.submitLabel}
+          </button>
+          <button
+            type="button"
+            disabled={isLoading || !nickname.trim()}
+            onClick={() => submitNickname('my-messages')}
+            className={`w-full rounded-xl border px-3 py-3 font-semibold transition duration-200 ${
+              isLoading || !nickname.trim()
+                ? 'cursor-not-allowed border-gray-300 bg-gray-300 text-gray-500'
+                : 'border-white/25 bg-white/10 text-white shadow-lg backdrop-blur-xl hover:scale-[1.02] hover:border-white/45 hover:bg-white/15 active:scale-[.98]'
+            }`}
+          >
+            我的星星
+          </button>
+        </div>
       </form>
 
       <div className="mt-3 space-y-1 text-center text-xs text-white/45">

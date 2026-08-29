@@ -22,6 +22,18 @@ test('只返回当前用户的非空留言并按时间倒序', () => {
   assert.deepEqual(getMyMessages(stars, 'me').map((star) => star.id), ['new', 'old'])
 })
 
+test('同一昵称在新会话中仍能看到旧 userId 留下的历史留言', () => {
+  const stars = [
+    { id: 'legacy', userId: 'old-session', nickname: '肆无忌惮的薰衣草', message: '历史留言', createdAt: '2025-11-30T00:15:00.000Z' },
+    { id: 'other', userId: 'other-session', nickname: '另一个人', message: '别人的留言', createdAt: '2025-12-01T00:15:00.000Z' },
+  ]
+
+  assert.deepEqual(
+    getMyMessages(stars, 'new-session', '肆无忌惮的薰衣草').map((star) => star.id),
+    ['legacy'],
+  )
+})
+
 test('星星详情提供我的入口并接入全屏留言页', () => {
   const starrySky = readFileSync(starrySkyUrl, 'utf8')
   const page = readFileSync(pageUrl, 'utf8')
@@ -29,8 +41,41 @@ test('星星详情提供我的入口并接入全屏留言页', () => {
   assert.match(starrySky, /import MyMessagesPage from '\.\/MyMessagesPage'/)
   assert.match(starrySky, />\s*我的\s*</)
   assert.match(starrySky, /<MyMessagesPage[\s\S]*stars=\{stars\}[\s\S]*userId=\{userId\}[\s\S]*onBack=/)
-  assert.match(page, /getMyMessages\(stars, userId\)/)
-  assert.match(page, /我的留言/)
+  assert.match(page, /getMyMessages\(stars, userId, nickname\)/)
+  assert.match(page, /\{nickname\}的留言/)
   assert.match(page, /还没有留下留言/)
-  assert.match(page, /返回星空/)
+  assert.match(page, />\s*星空\s*</)
+})
+
+test('我的留言页透出全局动态星空并仅保留轻暗渐变', () => {
+  const page = readFileSync(pageUrl, 'utf8')
+  const sectionClass = page.match(/<section className="([^"]+)"/)?.[1] ?? ''
+
+  assert.match(sectionClass, /\bbg-transparent\b/)
+  assert.doesNotMatch(sectionClass, /backdrop-blur/)
+  assert.doesNotMatch(sectionClass, /bg-\[#050506\]\/90/)
+  assert.match(page, /linear-gradient\(rgba\(2, 2, 7, \.10\), rgba\(2, 2, 7, \.22\)\)/)
+})
+
+test('我的留言作为独立页面互斥渲染，不叠加星空主界面', () => {
+  const starrySky = readFileSync(starrySkyUrl, 'utf8')
+  const page = readFileSync(pageUrl, 'utf8')
+  const sectionClass = page.match(/<section className="([^"]+)"/)?.[1] ?? ''
+
+  assert.match(starrySky, /if \(isMyMessagesOpen\) \{[\s\S]*?return \([\s\S]*?<MyMessagesPage/)
+  assert.doesNotMatch(starrySky, /\{isMyMessagesOpen && \(\s*<MyMessagesPage/)
+  assert.match(starrySky, /\[barrageMode,\s*isMyMessagesOpen,\s*loadState,\s*sidebarOpen,\s*skyView\]/)
+  assert.match(sectionClass, /\bmin-h-screen\b/)
+  assert.doesNotMatch(sectionClass, /\bfixed\b/)
+})
+
+test('我的留言页使用用户名标题、精简返回文案和留言计数', () => {
+  const page = readFileSync(pageUrl, 'utf8')
+
+  assert.match(page, />\s*星空\s*</)
+  assert.match(page, /\{nickname\}的留言/)
+  assert.match(page, /那些在星空留下的思绪或记忆，我不曾忘记/)
+  assert.match(page, /\{messages\.length\}<span[^>]*>条<\/span>/)
+  assert.doesNotMatch(page, />\s*返回星空\s*</)
+  assert.doesNotMatch(page, /条留言/)
 })

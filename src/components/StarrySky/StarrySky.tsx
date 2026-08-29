@@ -38,9 +38,10 @@ interface StarrySkyProps {
   userNickname: string;
   onBack: () => void;
   userId: string;
+  initialView?: 'stars' | 'my-messages';
 }
 
-const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, userId }) => {
+const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, userId, initialView = 'stars' }) => {
   const rootRef = useRef<HTMLDivElement>(null);
   const starFieldRef = useRef<HTMLDivElement>(null);
   const [stars, setStars] = useState<StarData[]>([]);
@@ -59,7 +60,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
   const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [skyView, setSkyView] = useState<'stars' | 'messages'>('stars');
-  const [isMyMessagesOpen, setIsMyMessagesOpen] = useState(false);
+  const [isMyMessagesOpen, setIsMyMessagesOpen] = useState(initialView === 'my-messages');
   const [barragePreferences, setBarragePreferences] = useState(createInitialBarragePreferences);
   const barrageMode = barragePreferences.immersive;
   const intimateMode = barragePreferences.intimate;
@@ -99,7 +100,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
       setSearchName('');
       setSearchDate('');
       setSkyView('stars');
-      setIsMyMessagesOpen(false);
+      setIsMyMessagesOpen(initialView === 'my-messages');
       setBarragePreferences(createInitialBarragePreferences());
       setLoadState('loading');
       try {
@@ -129,7 +130,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
 
     loadStars();
     return () => { active = false; };
-  }, [loadAttempt, theme.id, theme.sky.unavailableMessage]);
+  }, [initialView, loadAttempt, theme.id, theme.sky.unavailableMessage]);
 
   useEffect(() => {
     try {
@@ -397,7 +398,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
       resizeObserver?.disconnect();
       window.removeEventListener('resize', scheduleMeasurement);
     };
-  }, [barrageMode, loadState, sidebarOpen, skyView]);
+  }, [barrageMode, isMyMessagesOpen, loadState, sidebarOpen, skyView]);
 
   const layoutPositions = useMemo(() => {
     if (loadState !== 'ready' || skyView !== 'stars') return new Map<string, { x: number; y: number }>();
@@ -476,17 +477,20 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
     setBarragePreferences((current) => setBarragePreference(current, 'fill', enabled));
   };
 
+  if (isMyMessagesOpen) {
+    return (
+      <MyMessagesPage
+        stars={stars}
+        userId={userId}
+        nickname={userNickname}
+        accentColor={theme.visual.defaultStarColor}
+        onBack={() => { (window as any).playClickSound?.(); setIsMyMessagesOpen(false); }}
+      />
+    );
+  }
+
   return (
     <div ref={rootRef} className="min-h-screen relative overflow-hidden">
-      {isMyMessagesOpen && (
-        <MyMessagesPage
-          stars={stars}
-          userId={userId}
-          nickname={userNickname}
-          accentColor={theme.visual.defaultStarColor}
-          onBack={() => { (window as any).playClickSound?.(); setIsMyMessagesOpen(false); }}
-        />
-      )}
       {!barrageMode && (
         <div data-star-safe-zone className="absolute top-4 left-1/2 -translate-x-1/2 z-20 text-center pointer-events-none">
           <div className="flex items-center justify-center gap-3">

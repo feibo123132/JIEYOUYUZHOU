@@ -6,6 +6,7 @@ const PUBLIC_ERRORS = new Set([
   'INVALID_SONG', 'INVALID_SONG_LIST', 'INVALID_RECORD', 'ALREADY_REGISTERED', 'NOT_REGISTERED',
   'INVALID_SONG_RECORD', 'INVALID_ARTIST_SETTINGS', 'AUTH_FAILED', 'CONFLICT', 'NOT_FOUND',
   'INVALID_FEATURED_SONGS',
+  'INVALID_QUIZ_LIBRARY',
 ]);
 
 const FEATURED_SONGS_OWNER_ALIAS = '2421415030@qq.com';
@@ -73,6 +74,11 @@ function createHandler(store) {
         const owner = await store.getWorkspace(workspaceId(FEATURED_SONGS_OWNER_ALIAS));
         return { ok: true, songIds: Array.isArray(owner?.featuredSongIds) ? owner.featuredSongIds : null };
       }
+      if (request.action === 'quizLibrary:pull') {
+        const owner = await store.getWorkspace(workspaceId(FEATURED_SONGS_OWNER_ALIAS));
+        const assignments = owner?.quizLibraryAssignments;
+        return { ok: true, assignments: assignments && typeof assignments === 'object' && !Array.isArray(assignments) ? assignments : null };
+      }
       if (request.action === 'votes:increment') {
         return { ok: true, count: await store.incrementVote(request.songId) };
       }
@@ -96,7 +102,7 @@ function createHandler(store) {
       try {
         authenticated = await authenticate(store, request.alias, request.password);
       } catch (error) {
-        if ((request.action === 'artistSettings:push' || request.action === 'featuredSongs:set')
+        if ((request.action === 'artistSettings:push' || request.action === 'featuredSongs:set' || request.action === 'quizLibrary:set')
           && error?.message === 'NOT_REGISTERED') throw new Error('AUTH_FAILED');
         throw error;
       }
@@ -105,6 +111,11 @@ function createHandler(store) {
         if (id !== workspaceId(FEATURED_SONGS_OWNER_ALIAS)) throw new Error('AUTH_FAILED');
         await store.setFeaturedSongIds(id, request.songIds, store.now());
         return { ok: true, songIds: request.songIds };
+      }
+      if (request.action === 'quizLibrary:set') {
+        if (id !== workspaceId(FEATURED_SONGS_OWNER_ALIAS)) throw new Error('AUTH_FAILED');
+        await store.setQuizLibraryAssignments(id, request.assignments, store.now());
+        return { ok: true, assignments: request.assignments };
       }
       if (request.action === 'artistSettings:push') {
         const saved = await store.saveArtistSettingsAtomically(id, request.expectedRevision, request.snapshot);
@@ -189,6 +200,7 @@ exports.main = async (event) => {
       },
       setWorkspace: (id, value) => workspaces.doc(id).set(buildWritableWorkspace(value)),
       setFeaturedSongIds: (id, songIds, updatedAt) => workspaces.doc(id).update({ featuredSongIds: songIds, updatedAt }),
+      setQuizLibraryAssignments: (id, assignments, updatedAt) => workspaces.doc(id).update({ quizLibraryAssignments: assignments, updatedAt }),
       async getVotes() {
         const result = await votes.limit(100).get();
         return Object.fromEntries((result.data || []).map((item) => [item._id, Number(item.count) || 0]));

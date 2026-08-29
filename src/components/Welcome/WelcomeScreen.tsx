@@ -7,7 +7,6 @@ const { starService } = services;
 
 interface WelcomeScreenProps {
   theme: ThemeConfig;
-  onEnter: () => void;
   onSwitchTheme: () => void;
   onToggleMusic?: () => void;
   isPlaying?: boolean;
@@ -15,7 +14,6 @@ interface WelcomeScreenProps {
 
 const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
   theme,
-  onEnter,
   onSwitchTheme,
   onToggleMusic,
   isPlaying = false,
@@ -109,16 +107,6 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
         </div>
       </section>
 
-      <button
-        type="button"
-        onClick={() => { (window as any).playClickSound?.(); onEnter(); }}
-        className={`group relative rounded-full bg-gradient-to-r ${theme.visual.buttonGradientClass} ${theme.visual.buttonHoverClass} px-8 py-4 text-lg font-semibold text-white shadow-2xl transition duration-300 hover:scale-105 ${theme.visual.glowClass} active:scale-95`}
-      >
-        <span className="flex items-center justify-center">
-          <span className="mr-3">{theme.welcome.enterLabel}</span>
-          <Star className="h-5 w-5 transition-transform duration-500 group-hover:rotate-180" />
-        </span>
-      </button>
     </div>
   );
 };

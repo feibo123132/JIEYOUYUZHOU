@@ -39,6 +39,9 @@ function memoryStore() {
     setFeaturedSongIds: async (id, songIds, updatedAt) => {
       workspaces.set(id, { ...workspaces.get(id), featuredSongIds: structuredClone(songIds), updatedAt });
     },
+    setQuizLibraryAssignments: async (id, assignments, updatedAt) => {
+      workspaces.set(id, { ...workspaces.get(id), quizLibraryAssignments: structuredClone(assignments), updatedAt });
+    },
     getVotes: async () => Object.fromEntries(votes),
     incrementVote: async (songId) => {
       const count = (votes.get(songId) ?? 0) + 1;
@@ -216,6 +219,38 @@ test('validates featured song ids and keeps the pull action public', () => {
   });
   assert.throws(() => validateRequest({ action: 'featuredSongs:set', ...owner, songIds: Array(501).fill('a') }), /INVALID_FEATURED_SONGS/);
 })
+
+test('识曲歌库仅允许固定管理员发布并可公开读取', async () => {
+  const store = memoryStore();
+  const { createHandler } = loadFunction();
+  const handler = createHandler(store);
+  const owner = { alias: '2421415030@qq.com', password: 'guitar-2026' };
+  const visitor = { alias: 'visitor@example.com', password: 'guitar-2026' };
+  await handler({ action: 'roadshows:register', ...owner });
+  await handler({ action: 'roadshows:register', ...visitor });
+
+  assert.deepEqual(await handler({ action: 'quizLibrary:pull' }), { ok: true, assignments: null });
+  assert.deepEqual(await handler({ action: 'quizLibrary:set', ...visitor, assignments: { a: 'warmup' } }), { ok: false, error: 'AUTH_FAILED' });
+  assert.deepEqual(await handler({
+    action: 'quizLibrary:set', ...owner, assignments: { a: 'warmup', b: 'hell' },
+  }), { ok: true, assignments: { a: 'warmup', b: 'hell' } });
+  assert.deepEqual(await handler({ action: 'quizLibrary:pull' }), { ok: true, assignments: { a: 'warmup', b: 'hell' } });
+});
+
+test('识曲歌库校验四档、数量并合并清理后的重复歌曲编号', () => {
+  const { validateRequest } = require(validationPath);
+  const owner = { alias: '2421415030@qq.com', password: 'guitar-2026' };
+
+  assert.deepEqual(validateRequest({ action: 'quizLibrary:pull' }), { action: 'quizLibrary:pull' });
+  assert.deepEqual(validateRequest({
+    action: 'quizLibrary:set', ...owner, assignments: { a: 'warmup', ' a ': 'hard', b: 'hell' },
+  }), { action: 'quizLibrary:set', ...owner, assignments: { a: 'hard', b: 'hell' } });
+  assert.throws(() => validateRequest({ action: 'quizLibrary:set', ...owner, assignments: { a: 'unknown' } }), /INVALID_QUIZ_LIBRARY/);
+  assert.throws(() => validateRequest({
+    action: 'quizLibrary:set', ...owner,
+    assignments: Object.fromEntries(Array.from({ length: 501 }, (_, index) => [`song-${index}`, 'warmup'])),
+  }), /INVALID_QUIZ_LIBRARY/);
+});
 
 test('publishes only sanitized practice averages to guests without credentials', async () => {
   const store = memoryStore();

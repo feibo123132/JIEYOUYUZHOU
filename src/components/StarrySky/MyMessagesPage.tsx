@@ -31,13 +31,13 @@ const formatTime = (dateString: string) => {
 };
 
 const MyMessagesPage = ({ stars, userId, nickname, accentColor, onBack }: MyMessagesPageProps) => {
-  const messages = useMemo(() => getMyMessages(stars, userId), [stars, userId]);
+  const messages = useMemo(() => getMyMessages(stars, userId, nickname), [nickname, stars, userId]);
 
   return (
-    <section className="fixed inset-0 z-[60] overflow-y-auto bg-[#050506]/90 text-white backdrop-blur-md">
+    <section className="relative z-10 min-h-screen overflow-y-auto bg-transparent text-white">
       <div
-        className="pointer-events-none fixed inset-0 opacity-80"
-        style={{ background: `radial-gradient(circle at 78% 8%, ${accentColor}24, transparent 34%), radial-gradient(circle at 12% 80%, ${accentColor}12, transparent 30%)` }}
+        className="pointer-events-none fixed inset-0"
+        style={{ background: `linear-gradient(rgba(2, 2, 7, .10), rgba(2, 2, 7, .22)), radial-gradient(circle at 78% 8%, ${accentColor}24, transparent 34%), radial-gradient(circle at 12% 80%, ${accentColor}12, transparent 30%)` }}
       />
 
       <div className="relative mx-auto min-h-screen w-full max-w-5xl px-5 pb-16 pt-5 sm:px-8 sm:pt-8">
@@ -48,7 +48,7 @@ const MyMessagesPage = ({ stars, userId, nickname, accentColor, onBack }: MyMess
           className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm font-semibold text-white/85 backdrop-blur-xl transition hover:-translate-x-0.5 hover:border-white/35 hover:bg-white/15 hover:text-white focus:outline-none focus:ring-2 focus:ring-white/60"
         >
           <ArrowLeft className="h-4 w-4" />
-          返回星空
+          星空
         </button>
 
         <header className="pb-9 pt-10 sm:pb-12 sm:pt-14">
@@ -58,12 +58,13 @@ const MyMessagesPage = ({ stars, userId, nickname, accentColor, onBack }: MyMess
           </div>
           <div className="flex flex-col justify-between gap-6 sm:flex-row sm:items-end">
             <div>
-              <h1 className="text-4xl font-black tracking-tight sm:text-6xl">我的留言</h1>
-              <p className="mt-3 text-sm text-white/55 sm:text-base">{nickname} 在这片星空留下的心事</p>
+              <h1 className="text-4xl font-black tracking-tight sm:text-6xl">{nickname}的留言</h1>
+              <p className="mt-3 text-sm text-white/55 sm:text-base">那些在星空留下的思绪或记忆，我不曾忘记</p>
             </div>
-            <div className="flex items-baseline gap-2 sm:text-right">
-              <span className="text-5xl font-black tabular-nums" style={{ color: accentColor }}>{messages.length}</span>
-              <span className="text-sm font-semibold text-white/45">条留言</span>
+            <div className="sm:text-right">
+              <span className="text-5xl font-black tabular-nums" style={{ color: accentColor }}>
+                {messages.length}<span className="ml-1 text-sm font-semibold text-white/45">条</span>
+              </span>
             </div>
           </div>
         </header>

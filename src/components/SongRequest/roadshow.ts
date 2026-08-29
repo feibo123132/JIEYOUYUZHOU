@@ -93,6 +93,33 @@ export const createRoadshowSong = (song: Song): RoadshowSong => ({
   source: 'catalog',
 });
 
+export type LatestRoadshowRecognitionResult =
+  | { kind: 'missing' }
+  | { kind: 'duplicate'; record: RoadshowRecord }
+  | { kind: 'updated'; record: RoadshowRecord };
+
+export const prepareLatestRoadshowRecognitionSong = (
+  records: RoadshowRecord[],
+  song: Song,
+): LatestRoadshowRecognitionResult => {
+  if (!records.length) return { kind: 'missing' };
+  const latest = [...records].sort((left, right) => (
+    right.date.localeCompare(left.date) || right.updatedAt.localeCompare(left.updatedAt)
+  ))[0];
+  const duplicate = latest.recognitionSongs.some((item) => (
+    item.catalogId === song.id
+    || (normalize(item.title) === normalize(song.title) && normalize(item.artist) === normalize(song.artist))
+  ));
+  if (duplicate) return { kind: 'duplicate', record: latest };
+  return {
+    kind: 'updated',
+    record: {
+      ...latest,
+      recognitionSongs: [...latest.recognitionSongs, createRoadshowSong(song)],
+    },
+  };
+};
+
 export const createManualRoadshowSong = (title: string, artist: string): RoadshowSong => ({
   id: `manual:${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
   title: title.trim(),
