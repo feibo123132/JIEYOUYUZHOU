@@ -38,7 +38,7 @@ export interface BarrageFillRepeatOptions {
 const DEFAULT_BARRAGE_LAYOUT: BarrageLayout = {
   desktopLaneCount: 8,
   mobileLaneCount: 6,
-  horizontalGap: 'clamp(5rem, 12vw, 14rem)',
+  horizontalGap: 'clamp(2.8125rem, 6.75vw, 7.875rem)',
   staticGap: '.75rem',
   minimumVerticalGap: 0,
 }
@@ -46,7 +46,7 @@ const DEFAULT_BARRAGE_LAYOUT: BarrageLayout = {
 const INTIMATE_BARRAGE_LAYOUT: BarrageLayout = {
   desktopLaneCount: 16,
   mobileLaneCount: 12,
-  horizontalGap: 'clamp(1.25rem, 3vw, 3.5rem)',
+  horizontalGap: 'clamp(0.9375rem, 2.25vw, 2.625rem)',
   staticGap: '.375rem',
   minimumVerticalGap: 10,
 }

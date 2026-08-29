@@ -15,6 +15,7 @@ const popularSongBarrageUrl = new URL('../src/components/SongRequest/PopularSong
 const messageBarrageUrl = new URL('../src/components/StarrySky/MessageBarrage.tsx', import.meta.url)
 const artistSettingsUrl = new URL('../src/components/SongRequest/artistSettings.ts', import.meta.url)
 const indexCssUrl = new URL('../src/index.css', import.meta.url)
+const appUrl = new URL('../src/App.tsx', import.meta.url)
 
 const songs = [
   { id: 'a', title: '晴天', artist: '周杰伦', category: '华语', featured: true },
@@ -240,7 +241,7 @@ test('曲库按指定歌手与歌曲顺序保存，且每首歌均有独立文�
     陶喆: ['就是爱你', '爱很简单', '蝴蝶', '找自己', '小镇姑娘', '爱我还是他', '普通朋友', '流沙'],
     王力宏: ['爱错', '你不知道的事', '依然爱你', '需要人陪', '大城小爱'],
     许嵩: ['素颜', '有何不可', '宿敌', '如果当时', '清明雨上', '最佳歌手', '庐州月'],
-    陈奕迅: ['富士山下', '爱情转移'],
+    陈奕迅: ['富士山下', '爱情转移', '最佳损友', '淘汰', '好久不见', '葡萄成熟时', '阴天快乐'],
     郑润泽: ['如果呢', '于是', '瞬', '遐想'],
     陈粒: ['小半', '奇妙能力歌', '虚拟'],
     蔡健雅: ['红色高跟鞋', 'letting go', '别找我麻烦', '思念是一种病', '停格', '达尔文'],
@@ -279,6 +280,15 @@ test('曲库按指定歌手与歌曲顺序保存，且每首歌均有独立文�
     莫文蔚: ['这世界有那么多人', '慢慢喜欢你', '忽然之间', '当你老了', '阴天'],
     胡歌: ['指纹', '忘记时间'],
     林宥嘉: ['说谎', '想自由', '浪费'],
+    张韶涵: ['欧若拉', '亲爱的，那不是爱情', '有形的翅膀', '隐形的翅膀', '如果的事'],
+    买辣椒也用券: ['起风了', '第三人称'],
+    毛不易: ['一荤一素', '平凡的一天', '二零三', '像我这样的人', '一程山路', '给你给我', '问', '消愁'],
+    李荣浩: ['慢冷', '不将就', '不遗憾', '走走', '年少有为', '戒烟', '麻雀', '李白', '乌梅子酱'],
+    方大同: ['特别的人', '三人游'],
+    薛凯琪: ['苏州河', '奇洛李维斯回信'],
+    'Garath.T': ['玻璃', '颜色', '去北极忘记你'],
+    杨千嬅: ['可惜我是水瓶座', '勇'],
+    谢安琪: ['喜帖街', '钟无艳', '我们都被忘了', '年度之歌'],
   }
 
   assert.deepEqual([...new Set(SONGS.map((song: { artist: string }) => song.artist))], Object.keys(expectedByArtist))
@@ -325,7 +335,32 @@ test('新增十五位歌手的六十首歌曲均带热评并正确区分中外�
   assert.ok(requestedSongs.filter((song: { artist?: string } | undefined) => !['Taylor Swift', 'Justin Bieber'].includes(song?.artist ?? '')).every((song: { category?: string } | undefined) => song?.category === '华语流行'))
 })
 
-test('第三版曲库缓存会补齐新默认歌曲并升级到第六版', async () => {
+test('新增九位歌手及陈奕迅的四十二首歌曲均带独立热评', async () => {
+  const { SONGS } = await import(catalogModuleUrl.href)
+  const requested: Record<string, string[]> = {
+    张韶涵: ['欧若拉', '亲爱的，那不是爱情', '有形的翅膀', '隐形的翅膀', '如果的事'],
+    买辣椒也用券: ['起风了', '第三人称'],
+    毛不易: ['一荤一素', '平凡的一天', '二零三', '像我这样的人', '一程山路', '给你给我', '问', '消愁'],
+    李荣浩: ['慢冷', '不将就', '不遗憾', '走走', '年少有为', '戒烟', '麻雀', '李白', '乌梅子酱'],
+    方大同: ['特别的人', '三人游'],
+    薛凯琪: ['苏州河', '奇洛李维斯回信'],
+    'Garath.T': ['玻璃', '颜色', '去北极忘记你'],
+    杨千嬅: ['可惜我是水瓶座', '勇'],
+    谢安琪: ['喜帖街', '钟无艳', '我们都被忘了', '年度之歌'],
+    陈奕迅: ['最佳损友', '淘汰', '好久不见', '葡萄成熟时', '阴天快乐'],
+  }
+  const requestedSongs = Object.entries(requested).flatMap(([artist, titles]) => titles.map((title) => (
+    SONGS.find((song: { artist: string, title: string }) => song.artist === artist && song.title === title)
+  )))
+
+  assert.equal(requestedSongs.length, 42)
+  assert.ok(requestedSongs.every(Boolean))
+  assert.ok(requestedSongs.every((song: { category?: string } | undefined) => song?.category === '华语流行'))
+  assert.ok(requestedSongs.every((song: { hotComment?: string } | undefined) => Boolean(song?.hotComment?.trim())))
+  assert.equal(new Set(requestedSongs.map((song: { hotComment?: string } | undefined) => song?.hotComment)).size, 42)
+})
+
+test('第三版曲库缓存会补齐新默认歌曲并升级到第七版', async () => {
   const { CATALOG_STORAGE_KEY, loadEditableCatalog } = await loadModule()
   const newDefaultSong = { id: 'default:new-v4', title: '新增默认歌', artist: '新增歌手', category: '华语流行', featured: false, hotComment: '新增热评' }
   const storage = {
@@ -336,7 +371,7 @@ test('第三版曲库缓存会补齐新默认歌曲并升级到第六版', async
 
   const catalog = loadEditableCatalog(storage, [...songs, newDefaultSong])
 
-  assert.equal(catalog.version, 6)
+  assert.equal(catalog.version, 7)
   assert.ok(catalog.artists.includes('新增歌手'))
   assert.equal(catalog.songs.find((song: { id: string }) => song.id === newDefaultSong.id)?.title, '新增默认歌')
 })
@@ -408,7 +443,7 @@ test('旧版曲库快照会补齐新版默认歌手并保留自定义歌曲', as
 
   const catalog = loadEditableCatalog(storage, [...songs, newDefaultSong])
 
-  assert.equal(catalog.version, 6)
+  assert.equal(catalog.version, 7)
   assert.deepEqual(catalog.artists, ['周杰伦', 'Coldplay', '新默认歌手', '自定义歌手'])
   assert.deepEqual(catalog.songs.map((song: { id: string }) => song.id), ['a', 'b', 'c', 'default:new', 'custom:legacy'])
 })
@@ -426,7 +461,7 @@ test('第四版曲库快照会补齐默认歌曲、同步热门标记并保留�
 
   const catalog = loadEditableCatalog(storage, [...songs, newDefaultSong])
 
-  assert.equal(catalog.version, 6)
+  assert.equal(catalog.version, 7)
   assert.equal(catalog.songs.find((song: { id: string }) => song.id === 'a')?.featured, true)
   assert.equal(catalog.songs.find((song: { id: string }) => song.id === 'default:new')?.title, '新版热门歌')
   assert.equal(catalog.songs.find((song: { id: string }) => song.id === 'custom:kept')?.title, '保留的自定义歌曲')
@@ -453,11 +488,29 @@ test('第五版曲库缓存会同步默认歌曲的歌手更正并保留自定�
 
   const catalog = loadEditableCatalog(storage, correctedSongs)
 
-  assert.equal(catalog.version, 6)
+  assert.equal(catalog.version, 7)
   assert.equal(catalog.songs.find((song: { id: string }) => song.id === songs[0].id)?.artist, '李佳薇')
   assert.equal(catalog.songs.find((song: { id: string }) => song.id === songs[1].id)?.artist, '王唯旖')
   assert.ok(catalog.songs.some((song: { id: string }) => song.id === 'custom:kept'))
   assert.deepEqual(catalog.artists, ['李佳薇', '王唯旖', '自定义歌手'])
+})
+
+test('第六版曲库缓存会补齐第七版新增歌手歌曲并保留自定义歌曲', async () => {
+  const { CATALOG_STORAGE_KEY, loadEditableCatalog } = await loadModule()
+  const newDefaultSong = { id: 'default:new-v7', title: '新增歌曲', artist: '新增歌手', category: '华语流行', featured: false, hotComment: '新增热评' }
+  const customSong = { id: 'custom:kept-v7', title: '自定义歌曲', artist: '自定义歌手', category: '华语流行', featured: false }
+  const storage = {
+    getItem: (key: string) => key === CATALOG_STORAGE_KEY
+      ? JSON.stringify({ version: 6, artists: ['周杰伦', 'Coldplay', '自定义歌手'], songs: [...songs, customSong] })
+      : null,
+  }
+
+  const catalog = loadEditableCatalog(storage, [...songs, newDefaultSong])
+
+  assert.equal(catalog.version, 7)
+  assert.ok(catalog.artists.includes('新增歌手'))
+  assert.ok(catalog.songs.some((song: { id: string }) => song.id === newDefaultSong.id))
+  assert.ok(catalog.songs.some((song: { id: string }) => song.id === customSong.id))
 })
 
 test('歌曲记录支持同一首歌多次练习并按时间倒序过滤无效云端数据', async () => {
@@ -860,6 +913,19 @@ test('热门歌曲使用浅色描边且背景没有紫色光晕', () => {
   assert.doesNotMatch(barrage, /popular-song-board__glow/)
   assert.doesNotMatch(css, /\.popular-song-board__glow/)
   assert.doesNotMatch(css, /rgba\((?:91, 33, 182|124, 58, 237)/)
+})
+
+test('热门歌曲透出全站动态星辰且弹幕仍位于星空上方', () => {
+  const app = readFileSync(appUrl, 'utf8')
+  const station = readFileSync(stationUrl, 'utf8')
+  const css = readFileSync(indexCssUrl, 'utf8')
+  const immersiveBoard = css.match(/\.popular-song-board--immersive\s*\{[^}]*\}/s)?.[0] ?? ''
+
+  assert.match(app, /<StarryCanvas \/>/)
+  assert.match(station, /popularImmersive \? 'h-screen overflow-hidden bg-transparent'/)
+  assert.match(station, /data-popular-immersive className="fixed inset-0 z-10 overflow-hidden bg-transparent"/)
+  assert.match(immersiveBoard, /background:\s*rgba\(2, 2, 7, \.22\)/)
+  assert.doesNotMatch(immersiveBoard, /#020207/)
 })
 
 test('热门歌曲页拆除搜索与完整曲库并让弹幕覆盖整个可视区域', () => {

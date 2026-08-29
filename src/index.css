@@ -35,9 +35,7 @@
   height: 100%;
   border: 0;
   border-radius: 0;
-  background:
-    radial-gradient(circle at 72% 58%, rgba(8, 145, 178, .06), transparent 28%),
-    #020207;
+  background: rgba(2, 2, 7, .22);
 }
 
 .popular-song-board::before {

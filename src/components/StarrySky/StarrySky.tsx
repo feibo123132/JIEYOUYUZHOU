@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import CreateStarModal from './CreateStarModal';
 import AssistantSidebar from './AssistantSidebar';
 import MessageBarrage, { type BarrageMessage } from './MessageBarrage';
+import MyMessagesPage from './MyMessagesPage';
 import type { ThemeConfig } from '../../themes/themeConfig';
 import { resolveStarLayout, type LayoutRect } from '../../utils/starLayout';
 import { createInitialBarragePreferences, setBarragePreference } from './barragePreferences';
@@ -58,6 +59,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
   const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [skyView, setSkyView] = useState<'stars' | 'messages'>('stars');
+  const [isMyMessagesOpen, setIsMyMessagesOpen] = useState(false);
   const [barragePreferences, setBarragePreferences] = useState(createInitialBarragePreferences);
   const barrageMode = barragePreferences.immersive;
   const intimateMode = barragePreferences.intimate;
@@ -97,6 +99,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
       setSearchName('');
       setSearchDate('');
       setSkyView('stars');
+      setIsMyMessagesOpen(false);
       setBarragePreferences(createInitialBarragePreferences());
       setLoadState('loading');
       try {
@@ -284,7 +287,14 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
     return true;
   };
 
+  const canDeleteStar = (star: StarData) => star.userId === userId || isAdminDevice;
+
   const handleDeleteStar = async (starId: string) => {
+    const starToDelete = stars.find(star => star.id === starId);
+    if (!starToDelete || !canDeleteStar(starToDelete)) {
+      toast.error('无权删除这颗星星');
+      return;
+    }
     const ok = await starService.deleteStar(theme.id, starId);
     if (ok) {
       setStars(prev => prev.filter(s => s.id !== starId));
@@ -433,13 +443,22 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
   };
 
   const handleFindJiebao = () => {
-    if (!selectedStar || theme.id !== 'life') return;
+    if (!selectedStar) return;
     (window as any).playClickSound?.();
     openHappinessMeowGenerator({
       message: selectedStar.message,
       createdAt: selectedStar.createdAt,
       nickname: selectedStar.nickname,
     });
+  };
+
+  const handleOpenMyMessages = () => {
+    (window as any).playClickSound?.();
+    setSelectedStar(null);
+    setSidebarOpen(false);
+    setWelcomeInfo(null);
+    setIsCreateModalOpen(false);
+    setIsMyMessagesOpen(true);
   };
 
   const handleBarrageSelect = (starId: string) => {
@@ -459,6 +478,15 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
 
   return (
     <div ref={rootRef} className="min-h-screen relative overflow-hidden">
+      {isMyMessagesOpen && (
+        <MyMessagesPage
+          stars={stars}
+          userId={userId}
+          nickname={userNickname}
+          accentColor={theme.visual.defaultStarColor}
+          onBack={() => { (window as any).playClickSound?.(); setIsMyMessagesOpen(false); }}
+        />
+      )}
       {!barrageMode && (
         <div data-star-safe-zone className="absolute top-4 left-1/2 -translate-x-1/2 z-20 text-center pointer-events-none">
           <div className="flex items-center justify-center gap-3">
@@ -548,7 +576,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
             size={star.size}
             shape={star.shape}
             message={star.message}
-            canDelete={star.userId === userId}
+            canDelete={canDeleteStar(star)}
             onDelete={() => handleDeleteStar(star.id)}
             />
           );
@@ -611,16 +639,14 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
       {selectedStar && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="relative bg-white/95 backdrop-blur-sm rounded-2xl p-6 max-w-sm w-full border border-white/20 shadow-2xl">
-            {theme.id === 'life' && (
-              <button
-                type="button"
-                aria-label="关闭幸福星详情"
-                onClick={() => { (window as any).playClickSound?.(); setSelectedStar(null); }}
-                className="absolute right-4 top-4 z-10 rounded-full p-1.5 text-gray-500 transition-colors hover:bg-gray-200 hover:text-gray-800"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            )}
+            <button
+              type="button"
+              aria-label="关闭星星详情"
+              onClick={() => { (window as any).playClickSound?.(); setSelectedStar(null); }}
+              className="absolute right-4 top-4 z-10 rounded-full p-1.5 text-gray-500 transition-colors hover:bg-gray-200 hover:text-gray-800"
+            >
+              <X className="h-5 w-5" />
+            </button>
             <div className="text-center space-y-4">
               <div className="flex justify-center">
                 {(() => {
@@ -684,21 +710,22 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
                 <p className="text-gray-600 text-sm">点亮时间: {formatTime(selectedStar.createdAt)}</p>
                 {selectedStar.message && (<p className="text-gray-700 text-sm mt-2">{selectedStar.message}</p>)}
               </div>
-              <div className="flex space-x-3">
-                {theme.id === 'life' ? (
-                  <button
-                    type="button"
-                    onClick={handleFindJiebao}
-                    className={`flex-1 bg-gradient-to-r ${theme.visual.buttonGradientClass} ${theme.visual.buttonHoverClass} text-white font-bold py-2 px-4 rounded-lg transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]`}
-                  >
-                    找杰宝
-                  </button>
-                ) : (
-                  <button onClick={() => { (window as any).playClickSound?.(); setSelectedStar(null); }} className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 py-2 px-4 rounded-lg transition-colors duration-200">
-                    关闭
-                  </button>
-                )}
-                {selectedStar.userId === userId && (
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={handleFindJiebao}
+                  className={`flex-1 bg-gradient-to-r ${theme.visual.buttonGradientClass} ${theme.visual.buttonHoverClass} text-white font-bold py-2 px-4 rounded-lg transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]`}
+                >
+                  找杰宝
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenMyMessages}
+                  className="flex-1 rounded-lg border border-gray-300 bg-white px-4 py-2 font-bold text-gray-800 transition-all duration-200 hover:scale-[1.02] hover:bg-gray-100 active:scale-[0.98]"
+                >
+                  我的
+                </button>
+                {canDeleteStar(selectedStar) && (
                   <button onClick={() => { (window as any).playClickSound?.(); handleDeleteStar(selectedStar.id); }} className="flex-1 bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center space-x-2">
                     <Trash2 className="w-4 h-4" />
                     <span>删除</span>

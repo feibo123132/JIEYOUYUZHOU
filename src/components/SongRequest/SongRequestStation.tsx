@@ -55,7 +55,7 @@ const RANKING_MEDAL_CLASSES = {
 } as const;
 
 const HUB_DIRECTIONS = [
-  { id: 'ranking', label: '排行榜', eyebrow: 'RANKINGS', description: '切换查看点歌榜和个人练习榜', icon: Trophy, tone: 'from-amber-400/20 to-orange-600/5' },
+  { id: 'ranking', label: '排行榜', eyebrow: 'RANKINGS', description: '切换查看点歌榜和吉他练习榜', icon: Trophy, tone: 'from-amber-400/20 to-orange-600/5' },
   { id: 'artists', label: '歌手', eyebrow: 'ARTISTS', description: '按歌手找到我会唱的歌', icon: Mic2, tone: 'from-rose-400/20 to-pink-700/5' },
   { id: 'roadshows', label: '私人记录', eyebrow: 'PRIVATE ARCHIVE', description: '日常练习与路演记录', icon: CalendarDays, tone: 'from-cyan-400/20 to-blue-700/5' },
   { id: 'playlists', label: '热门歌曲', eyebrow: 'HOT SONGS', description: '看歌名化作彩色弹幕穿过星空', icon: Library, tone: 'from-violet-400/20 to-purple-700/5' },
@@ -129,6 +129,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   const [activeSection, setActiveSection] = useState<SectionId | null>(null);
   const [rankingView, setRankingView] = useState<RankingView>('requests');
   const [personalRankingArtist, setPersonalRankingArtist] = useState<string | null>(null);
+  const [isPersonalRankingRandom, setIsPersonalRankingRandom] = useState(false);
   const [rankingArtistQuery, setRankingArtistQuery] = useState('');
   const [selectedArtist, setSelectedArtist] = useState<string | null>(null);
   const [selectedSong, setSelectedSong] = useState<Song | null>(null);
@@ -404,11 +405,20 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     practiceCount: 0,
   })), [catalogSongs, publicPracticeRanking]);
   const personalRanking = songRecordSession ? privatePersonalRanking : publicPersonalRanking;
-  const visiblePersonalRanking = useMemo(() => (
-    personalRankingArtist
+  const visiblePersonalRanking = useMemo(() => {
+    const base = personalRankingArtist
       ? personalRanking.filter(({ song }) => song.artist === personalRankingArtist)
-      : personalRanking
-  ), [personalRanking, personalRankingArtist]);
+      : personalRanking;
+    const withRank = base.map((item, idx) => ({ ...item, originalRank: idx + 1 }));
+    if (!isPersonalRankingRandom || withRank.length <= 3) return withRank;
+    const top3 = withRank.slice(0, 3);
+    const rest = withRank.slice(3);
+    for (let i = rest.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [rest[i], rest[j]] = [rest[j], rest[i]];
+    }
+    return [...top3, ...rest];
+  }, [personalRanking, personalRankingArtist, isPersonalRankingRandom]);
   const artistSongCount = personalRankingArtist
     ? catalogSongs.filter((song) => song.artist === personalRankingArtist).length
     : 0;
@@ -650,7 +660,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   const popularImmersive = activeSection === 'playlists' && !selectedSong;
 
   return (
-    <main className={`relative z-20 min-h-screen bg-[radial-gradient(circle_at_15%_0%,rgba(249,115,22,.14),transparent_30%),radial-gradient(circle_at_88%_18%,rgba(124,58,237,.12),transparent_28%)] text-white ${popularImmersive ? 'h-screen overflow-hidden' : 'overflow-y-auto px-4 py-5 sm:px-7 lg:px-10 lg:py-8'}`}>
+    <main className={`relative z-20 min-h-screen text-white ${popularImmersive ? 'h-screen overflow-hidden bg-transparent' : 'overflow-y-auto bg-[radial-gradient(circle_at_15%_0%,rgba(249,115,22,.14),transparent_30%),radial-gradient(circle_at_88%_18%,rgba(124,58,237,.12),transparent_28%)] px-4 py-5 sm:px-7 lg:px-10 lg:py-8'}`}>
       <div className="pointer-events-none fixed inset-0 opacity-[.16] [background-image:linear-gradient(rgba(255,255,255,.035)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.035)_1px,transparent_1px)] [background-size:42px_42px]" />
       {popularImmersive && !songAssistantOpen && (
         <button type="button" aria-label="打开歌曲助手" onClick={() => { (window as any).playClickSound?.(); setSongAssistantOpen(true); }} className="fixed right-4 top-4 z-40 bg-transparent text-3xl drop-shadow-[0_0_14px_rgba(251,191,36,.35)]">
@@ -675,7 +685,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
         />
       )}
       {popularImmersive ? (
-        <section data-popular-immersive className="fixed inset-0 z-10 overflow-hidden bg-[#020207]">
+        <section data-popular-immersive className="fixed inset-0 z-10 overflow-hidden bg-transparent">
           <PopularSongBarrage songs={barrageSongs} intimate={intimateMode} fill={fillMode} onSelectSong={openSongDetail} immersive />
           {!barrageMode && (
           <header className="pointer-events-none fixed inset-x-0 top-0 z-30 flex items-start justify-between p-4 pr-16 sm:p-6 sm:pr-20">
@@ -727,7 +737,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
             {activeSection !== 'roadshows' && (
             <div className="mb-7 flex items-end justify-between gap-4">
               <div><p className="text-[10px] font-black tracking-[0.28em] text-orange-300/65">SONG REQUEST</p>
-                <h1 className="mt-1 font-serif text-4xl font-black sm:text-5xl">{selectedArtist || (activeSection === 'ranking' ? rankingView === 'requests' ? '点歌榜' : personalRankingArtist ? `${personalRankingArtist} · 个人练习榜` : '个人练习榜' : sectionTitle)}</h1>
+                <h1 className="mt-1 font-serif text-4xl font-black sm:text-5xl">{selectedArtist || (activeSection === 'ranking' ? rankingView === 'requests' ? '点歌榜' : personalRankingArtist ? `${personalRankingArtist} · 吉他练习榜` : '吉他练习榜' : sectionTitle)}</h1>
               </div>
               {activeSection === 'ranking' && (
                 <div role="tablist" aria-label="排行榜切换" className="flex shrink-0 gap-1 rounded-full border border-white/10 bg-black/35 p-1">
@@ -735,7 +745,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                     className={`grid h-10 w-10 place-items-center rounded-full transition ${rankingView === 'requests' ? 'bg-orange-300 text-black' : 'text-white/45 hover:text-white'}`}>
                     <Trophy className="h-4 w-4" />
                   </button>
-                  <button type="button" aria-label="切换到个人练习榜" aria-pressed={rankingView === 'personal'} onClick={() => setRankingView('personal')}
+                  <button type="button" aria-label="切换到吉他练习榜" aria-pressed={rankingView === 'personal'} onClick={() => setRankingView('personal')}
                     className={`grid h-10 w-10 place-items-center rounded-full transition ${rankingView === 'personal' ? 'bg-orange-300 text-black' : 'text-white/45 hover:text-white'}`}>
                     <Target className="h-4 w-4" />
                   </button>
@@ -776,13 +786,13 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                   ) : (
                     visiblePersonalRanking.length ? <ol
                       tabIndex={visiblePersonalRanking.length > PERSONAL_RANKING_SCROLL_THRESHOLD ? 0 : undefined}
-                      aria-label={visiblePersonalRanking.length > PERSONAL_RANKING_SCROLL_THRESHOLD ? `${personalRankingArtist ?? '总榜'}匹配度排行，可上下滚动` : undefined}
+                      aria-label={visiblePersonalRanking.length > PERSONAL_RANKING_SCROLL_THRESHOLD ? `${personalRankingArtist ?? '总榜'}${isPersonalRankingRandom ? '随机' : '匹配度'}排行，可上下滚动` : undefined}
                       className={`space-y-3 ${visiblePersonalRanking.length > PERSONAL_RANKING_SCROLL_THRESHOLD ? 'max-h-[42rem] overflow-y-auto overscroll-contain pr-2' : ''}`}
-                    >{visiblePersonalRanking.map(({ song, score, practiceCount }, index) => {
+                    >{visiblePersonalRanking.map(({ song, score, practiceCount, originalRank }, index) => {
                       const quality = getMatchQuality(Math.round(score));
                       return (
                         <li key={song.id} className="flex items-center gap-4 rounded-2xl border border-white/10 bg-white/[.035] p-4">
-                          <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-full font-serif font-black ${RANKING_MEDAL_CLASSES[getRankingMedalTone(index, personalRankingPodiumSize)]}`}>{index + 1}</span>
+                          <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-full font-serif font-black ${RANKING_MEDAL_CLASSES[getRankingMedalTone(index, personalRankingPodiumSize)]}`}>{originalRank}</span>
                           <button type="button" disabled={!canOpenPracticeDetails} onClick={() => openPracticeSongDetail(song)} title={canOpenPracticeDetails ? '查看我的私人练习档案' : '登录本人私有空间后可查看详情'} className={`min-w-0 flex-1 text-left ${canOpenPracticeDetails ? '' : 'cursor-default'}`}><p className={`truncate font-bold ${canOpenPracticeDetails ? 'hover:text-orange-100' : ''}`}>{song.title}</p><p className="truncate text-xs text-white/40">{canOpenPracticeDetails ? `${song.artist} · 练习 ${practiceCount} 次` : song.artist}</p></button>
                           <span className="flex shrink-0 items-center gap-3">
                             <em className={`practice-quality ${quality?.tone ?? 'white'}`}>{quality?.label ?? '—'}</em>
@@ -796,12 +806,15 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                 {rankingView === 'requests' ? (
                   <aside className="h-fit rounded-[1.75rem] border border-orange-200/15 bg-orange-950/20 p-6 text-sm leading-7 text-white/45">点歌榜会汇总所有设备上的累计点歌次数。</aside>
                 ) : (
-                  <aside aria-label="个人练习榜歌手筛选" className="h-fit overflow-hidden rounded-[1.75rem] border border-orange-200/15 bg-orange-950/20 p-4 sm:p-5">
+                  <aside aria-label="吉他练习榜歌手筛选" className="h-fit overflow-hidden rounded-[1.75rem] border border-orange-200/15 bg-orange-950/20 p-4 sm:p-5">
                     <label className="flex h-11 items-center gap-2.5 rounded-xl border border-white/10 bg-black/35 px-3.5 focus-within:border-orange-300/45">
                       <Search className="h-4 w-4 shrink-0 text-orange-200/55" />
                       <input value={rankingArtistQuery} onChange={(event) => setRankingArtistQuery(event.target.value)} placeholder="搜索歌手或歌曲" className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/28" />
                     </label>
-                    <button type="button" aria-pressed={personalRankingArtist === null} onClick={() => setPersonalRankingArtist(null)} className={`mt-3 w-full rounded-xl border px-4 py-3 text-left text-sm font-black transition ${personalRankingArtist === null ? 'border-orange-300/45 bg-orange-300 text-black' : 'border-white/10 bg-black/25 text-white/65 hover:border-orange-200/25 hover:text-white'}`}>总榜</button>
+                    <div className="mt-3 flex gap-2">
+                      <button type="button" aria-pressed={personalRankingArtist === null} onClick={() => setPersonalRankingArtist(null)} className={`flex-1 rounded-xl border px-4 py-3 text-left text-sm font-black transition ${personalRankingArtist === null ? 'border-orange-300/45 bg-orange-300 text-black' : 'border-white/10 bg-black/25 text-white/65 hover:border-orange-200/25 hover:text-white'}`}>总榜</button>
+                      <button type="button" aria-pressed={isPersonalRankingRandom} onClick={() => setIsPersonalRankingRandom((prev) => !prev)} className={`flex-1 rounded-xl border px-4 py-3 text-sm font-black transition ${isPersonalRankingRandom ? 'border-orange-300/45 bg-orange-300 text-black' : 'border-white/10 bg-black/25 text-white/65 hover:border-orange-200/25 hover:text-white'}`}>随机</button>
+                    </div>
                     <div className="mt-3 grid max-h-[34rem] grid-cols-2 gap-2 overflow-y-auto overscroll-contain pr-1">
                       {personalRankingArtists.map(({ artist, songs }) => {
                         const avatar = getArtistAvatar(artist);
