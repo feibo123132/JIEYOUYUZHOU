@@ -35,6 +35,21 @@ export const moveCatalogArtist = (catalog: EditableCatalog, artist: string, targ
   return { ...catalog, artists };
 };
 
+export type ArtistDropPlacement = 'before' | 'after';
+
+export const insertCatalogArtist = (
+  catalog: EditableCatalog,
+  artist: string,
+  targetArtist: string,
+  placement: ArtistDropPlacement,
+): EditableCatalog => {
+  if (artist === targetArtist || !catalog.artists.includes(artist) || !catalog.artists.includes(targetArtist)) return catalog;
+  const artists = catalog.artists.filter((item) => item !== artist);
+  const targetIndex = artists.indexOf(targetArtist);
+  artists.splice(targetIndex + (placement === 'after' ? 1 : 0), 0, artist);
+  return artists.every((item, index) => item === catalog.artists[index]) ? catalog : { ...catalog, artists };
+};
+
 export const removeCatalogArtist = (catalog: EditableCatalog, artist: string): EditableCatalog => ({
   ...catalog,
   artists: catalog.artists.filter((item) => item !== artist),
@@ -51,6 +66,31 @@ export const removeCatalogSong = (catalog: EditableCatalog, songId: string): Edi
   ...catalog,
   songs: catalog.songs.filter((song) => song.id !== songId),
 });
+
+export const moveCatalogSong = (catalog: EditableCatalog, songId: string, targetSongId: string): EditableCatalog => {
+  const songIndex = catalog.songs.findIndex((song) => song.id === songId);
+  const targetIndex = catalog.songs.findIndex((song) => song.id === targetSongId);
+  if (songIndex < 0 || targetIndex < 0 || songIndex === targetIndex
+    || catalog.songs[songIndex].artist !== catalog.songs[targetIndex].artist) return catalog;
+  const songs = [...catalog.songs];
+  [songs[songIndex], songs[targetIndex]] = [songs[targetIndex], songs[songIndex]];
+  return { ...catalog, songs };
+};
+
+export const insertCatalogSong = (
+  catalog: EditableCatalog,
+  songId: string,
+  targetSongId: string,
+  placement: ArtistDropPlacement,
+): EditableCatalog => {
+  const song = catalog.songs.find((item) => item.id === songId);
+  const target = catalog.songs.find((item) => item.id === targetSongId);
+  if (!song || !target || song.id === target.id || song.artist !== target.artist) return catalog;
+  const songs = catalog.songs.filter((item) => item.id !== songId);
+  const targetIndex = songs.findIndex((item) => item.id === targetSongId);
+  songs.splice(targetIndex + (placement === 'after' ? 1 : 0), 0, song);
+  return songs.every((item, index) => item.id === catalog.songs[index]?.id) ? catalog : { ...catalog, songs };
+};
 
 const isSong = (value: unknown): value is Song => {
   if (!value || typeof value !== 'object') return false;

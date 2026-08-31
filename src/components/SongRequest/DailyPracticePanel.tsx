@@ -42,16 +42,6 @@ interface PracticeDraft {
   reflection: string;
 }
 
-const PRACTICE_SCROLL_THRESHOLD = 8;
-
-const scrollRegionProps = (baseClass: string, recordCount: number, label: string) => {
-  const scrollable = recordCount > PRACTICE_SCROLL_THRESHOLD;
-  return {
-    className: `${baseClass}${scrollable ? ' practice-scroll-region' : ''}`,
-    ...(scrollable ? { tabIndex: 0, 'aria-label': label } : {}),
-  };
-};
-
 const pad = (value: number) => String(value).padStart(2, '0');
 
 const currentTime = () => {
@@ -317,7 +307,7 @@ export default function DailyPracticePanel({
           {message && <p className="practice-message">{message}</p>}
         </div>
 
-        <aside className="practice-history">
+        <aside className="practice-history practice-history-scroll" tabIndex={0} aria-label="练习日历">
           <div className="practice-card-title">
             <span className="practice-card-icon"><Cloud size={18} /></span>
             <div><h3>练习日历</h3><p>按月、周、日折叠。</p></div>
@@ -328,11 +318,7 @@ export default function DailyPracticePanel({
             return (
               <details className="practice-month" key={month.key} open={month.key === today.slice(0, 7)}>
                 <summary><span>{monthLabel(month.key)}</span><small>{month.weeks.flatMap((week) => week.days).length} 天 · {monthRecords.length} 首</small><ChevronDown size={15} /></summary>
-                <div {...scrollRegionProps(
-                  'practice-month-content',
-                  monthRecords.length,
-                  `${monthLabel(month.key)}练习记录`,
-                )}>
+                <div className="practice-month-content">
                   {month.weeks.map((week) => {
                     const weekDays = week.days;
                     const weekRecords = weekDays.flatMap((day) => day.records);
@@ -342,11 +328,7 @@ export default function DailyPracticePanel({
                     return (
                       <details className="practice-week" key={week.key} open={containsToday}>
                         <summary><span>{visibleWeekLabel}</span><small>{weekRecords.length} 首</small><ChevronDown size={14} /></summary>
-                        <div {...scrollRegionProps(
-                          'practice-week-content',
-                          weekRecords.length,
-                          `${visibleWeekLabel}练习记录`,
-                        )}>
+                        <div className="practice-week-content">
                           {weekDays.map((day) => (
                             <details className="practice-day" key={day.key} open={day.key === today}>
                               <summary>
@@ -354,11 +336,7 @@ export default function DailyPracticePanel({
                                 <small>{day.count} 首{day.averageScore === null ? '' : ` · 均分 ${day.averageScore}`}</small>
                                 <ChevronDown size={14} />
                               </summary>
-                              <div {...scrollRegionProps(
-                                'practice-day-records',
-                                day.records.length,
-                                `${dayLabel(day.key)}练习记录`,
-                              )}>
+                              <div className="practice-day-records">
                                 {day.records.map((record) => {
                                   const quality = qualityOf(record.matchScore);
                                   return (

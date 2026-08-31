@@ -1,12 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { CalendarDays, Check, ChevronRight, Cloud, Guitar, Lock, Plus, Save, Trash2, X } from 'lucide-react';
 import { SONGS } from './songCatalog';
 import type { Song } from './songCatalog';
 import DailyPracticePanel from './DailyPracticePanel';
 import {
-  createManualRoadshowSong,
-  createRoadshowSong,
   findSongAppearances,
+  groupRoadshowRecognitionSongs,
   parseRoadshowCache,
   ROADSHOW_CACHE_KEY,
   ROADSHOW_SESSION_KEY,
@@ -26,6 +25,7 @@ import {
   SONG_REQUEST_SESSION_EVENT,
   type SongRecord,
 } from './songRecords';
+import { QUIZ_LEVELS, type QuizAssignments, type QuizLevel } from './songQuizLibrary';
 
 interface Credentials {
   alias: string;
@@ -37,6 +37,7 @@ interface RoadshowPanelProps {
   songs?: Song[];
   records?: SongRecord[];
   syncStatus?: string;
+  quizAssignments?: QuizAssignments;
   onRecordsChange?: (records: SongRecord[]) => void;
 }
 
@@ -70,6 +71,7 @@ const RoadshowPanel = ({
   songs = SONGS,
   records: songRecords = [],
   syncStatus = '已同步',
+  quizAssignments = {},
   onRecordsChange = () => undefined,
 }: RoadshowPanelProps) => {
   const [credentials, setCredentials] = useState<Credentials | null>(() => readSession());
@@ -192,6 +194,7 @@ const RoadshowPanel = ({
         allRecords={records}
         busy={busy}
         message={message}
+        quizAssignments={quizAssignments}
         onChange={setEditing}
         onBack={() => { setEditing(null); setMessage(''); }}
         onSave={() => void persistRecord()}
@@ -256,6 +259,7 @@ interface EditorProps {
   allRecords: RoadshowRecord[];
   busy: boolean;
   message: string;
+  quizAssignments: QuizAssignments;
   onChange: (record: RoadshowRecord) => void;
   onBack: () => void;
   onSave: () => void;
@@ -263,7 +267,7 @@ interface EditorProps {
   onLock: () => void;
 }
 
-const RoadshowEditor = ({ record, allRecords, busy, message, onChange, onBack, onSave, onDelete, onLock }: EditorProps) => {
+const RoadshowEditor = ({ record, allRecords, busy, message, quizAssignments, onChange, onBack, onSave, onDelete, onLock }: EditorProps) => {
   const updateList = (key: 'performanceSongs' | 'recognitionSongs', songs: RoadshowSong[]) => onChange({ ...record, [key]: songs });
   return (
     <section className="space-y-5">
@@ -279,7 +283,7 @@ const RoadshowEditor = ({ record, allRecords, busy, message, onChange, onBack, o
       </div>
 
       <SongListEditor title="路演歌曲" description="本次准备演唱的歌曲" songs={record.performanceSongs} allRecords={allRecords} recordId={record.id} onChange={(songs) => updateList('performanceSongs', songs)} />
-      <SongListEditor title="听歌识曲" description="互动游戏准备的题目歌曲" songs={record.recognitionSongs} allRecords={allRecords} recordId={record.id} onChange={(songs) => updateList('recognitionSongs', songs)} />
+      <RecognitionSongListEditor songs={record.recognitionSongs} assignments={quizAssignments} allRecords={allRecords} recordId={record.id} onChange={(songs) => updateList('recognitionSongs', songs)} />
 
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-black/25 p-4">
         <button type="button" disabled={busy} onClick={onDelete} className="inline-flex items-center gap-2 text-sm font-bold text-red-300/70 hover:text-red-200 disabled:opacity-40"><Trash2 className="h-4 w-4" />删除这场路演</button>
@@ -299,35 +303,54 @@ interface SongListEditorProps {
 }
 
 const SongListEditor = ({ title, description, songs, allRecords, recordId, onChange }: SongListEditorProps) => {
-  const [catalogId, setCatalogId] = useState(SONGS[0]?.id || '');
-  const [manualTitle, setManualTitle] = useState('');
-  const [manualArtist, setManualArtist] = useState('');
-  const selected = useMemo(() => SONGS.find((song) => song.id === catalogId), [catalogId]);
-
-  const addCatalog = () => {
-    if (!selected || songs.some((song) => song.catalogId === selected.id)) return;
-    onChange([...songs, createRoadshowSong(selected)]);
-  };
-  const addManual = () => {
-    if (!manualTitle.trim()) return;
-    onChange([...songs, createManualRoadshowSong(manualTitle, manualArtist)]);
-    setManualTitle(''); setManualArtist('');
-  };
-
   return (
     <section className="rounded-[1.75rem] border border-white/10 bg-[#09090c]/85 p-5 backdrop-blur-xl sm:p-7">
-      <div><h3 className="font-serif text-2xl font-black">{title}</h3><p className="mt-1 text-xs text-white/35">{description}</p></div>
-      <div className="mt-5 grid gap-3 lg:grid-cols-2">
-        <div className="rounded-2xl border border-white/8 bg-white/[.03] p-4"><p className="mb-3 text-xs font-bold text-orange-200/65">从曲库添加</p><div className="flex gap-2"><select value={catalogId} onChange={(event) => setCatalogId(event.target.value)} className="h-10 min-w-0 flex-1 rounded-lg border border-white/10 bg-[#111] px-3 text-sm outline-none">{SONGS.map((song) => <option key={song.id} value={song.id}>{song.title} · {song.artist}</option>)}</select><button type="button" onClick={addCatalog} className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-orange-400 text-black"><Plus className="h-4 w-4" /></button></div></div>
-        <div className="rounded-2xl border border-white/8 bg-white/[.03] p-4"><p className="mb-3 text-xs font-bold text-orange-200/65">手动添加曲库外歌曲</p><div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]"><input value={manualTitle} onChange={(event) => setManualTitle(event.target.value)} placeholder="歌名" maxLength={100} className="h-10 min-w-0 rounded-lg border border-white/10 bg-black/30 px-3 text-sm outline-none" /><input value={manualArtist} onChange={(event) => setManualArtist(event.target.value)} placeholder="歌手（可选）" maxLength={100} className="h-10 min-w-0 rounded-lg border border-white/10 bg-black/30 px-3 text-sm outline-none" /><button type="button" onClick={addManual} className="grid h-10 w-10 place-items-center rounded-lg bg-orange-400 text-black"><Plus className="h-4 w-4" /></button></div></div>
-      </div>
-
-      <div className="mt-4 space-y-2">
+      <div className="flex items-end justify-between gap-4"><div><h3 className="font-serif text-2xl font-black">{title}</h3><p className="mt-1 text-xs text-white/35">{description}</p></div><strong className="text-xs text-white/30">{songs.length} 首</strong></div>
+      <div className="mt-5 grid gap-2 sm:grid-cols-2">
         {songs.map((song) => {
           const appearances = findSongAppearances(allRecords, song, recordId);
-          return <div key={song.id} className="flex items-center gap-3 rounded-xl border border-white/8 bg-black/25 p-3"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-orange-300/10 text-orange-200"><Check className="h-4 w-4" /></span><span className="min-w-0 flex-1"><strong className="block truncate text-sm">{song.title}</strong><small className="block truncate text-white/35">{song.artist || '未填写歌手'}{appearances.length ? ` · 曾用于：${appearances.join('、')}` : ''}</small></span><button type="button" onClick={() => onChange(songs.filter((item) => item.id !== song.id))} aria-label={`移除${song.title}`} className="grid h-8 w-8 place-items-center rounded-full text-white/30 hover:bg-red-300/10 hover:text-red-200"><X className="h-4 w-4" /></button></div>;
+          return <div key={song.id} className="flex items-center gap-3 rounded-xl border border-white/10 bg-black/25 p-3"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-orange-300/10 text-orange-200"><Check className="h-4 w-4" /></span><span className="min-w-0 flex-1"><strong className="block truncate text-sm">{song.title}</strong><small className="block truncate text-white/35">{song.artist || '未填写歌手'}{appearances.length ? ` · 曾用于：${appearances.join('、')}` : ''}</small></span><button type="button" onClick={() => onChange(songs.filter((item) => item.id !== song.id))} aria-label={`移除${song.title}`} className="grid h-8 w-8 place-items-center rounded-full text-white/30 hover:bg-red-300/10 hover:text-red-200"><X className="h-4 w-4" /></button></div>;
         })}
-        {!songs.length && <div className="grid min-h-24 place-items-center rounded-xl border border-dashed border-white/10 text-xs text-white/25">还没有添加歌曲</div>}
+        {!songs.length && <div className="grid min-h-24 place-items-center rounded-xl border border-dashed border-white/10 text-xs text-white/25 sm:col-span-2">还没有歌曲</div>}
+      </div>
+    </section>
+  );
+};
+
+const RECOGNITION_LEVEL_STYLES: Record<QuizLevel, string> = {
+  warmup: 'border-emerald-300/20 bg-emerald-400/[.045] text-emerald-100',
+  standard: 'border-sky-300/20 bg-sky-400/[.045] text-sky-100',
+  hard: 'border-violet-300/20 bg-violet-400/[.045] text-violet-100',
+  hell: 'border-rose-300/20 bg-rose-400/[.045] text-rose-100',
+};
+
+const RecognitionSongListEditor = ({ songs, assignments, allRecords, recordId, onChange }: {
+  songs: RoadshowSong[];
+  assignments: QuizAssignments;
+  allRecords: RoadshowRecord[];
+  recordId: string;
+  onChange: (songs: RoadshowSong[]) => void;
+}) => {
+  const groups = groupRoadshowRecognitionSongs(songs, assignments);
+  return (
+    <section className="rounded-[1.75rem] border border-white/10 bg-[#09090c]/85 p-5 backdrop-blur-xl sm:p-7">
+      <div className="flex items-end justify-between gap-4"><div><h3 className="font-serif text-2xl font-black">听歌识曲</h3><p className="mt-1 text-xs text-white/35">互动游戏准备的题目歌曲</p></div><strong className="text-xs text-white/30">{songs.length} 首</strong></div>
+      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {QUIZ_LEVELS.map((level) => (
+          <section key={level.id} className={`min-h-36 rounded-2xl border p-3 ${RECOGNITION_LEVEL_STYLES[level.id]}`}>
+            <header className="mb-3 flex items-center justify-between gap-2 border-b border-white/10 pb-3">
+              <span className="flex items-center gap-2"><b className="grid h-7 w-7 place-items-center rounded-full border border-current/30 bg-black/20 font-serif text-xs">{level.symbol}</b><strong className="text-sm">{level.label}</strong></span>
+              <small className="text-white/35">{groups[level.id].length} 首</small>
+            </header>
+            <div className="space-y-2">
+              {groups[level.id].map((song) => {
+                const appearances = findSongAppearances(allRecords, song, recordId);
+                return <div key={song.id} className="group flex items-center gap-2 rounded-xl border border-white/10 bg-black/25 p-2.5"><span className="min-w-0 flex-1"><strong className="block truncate text-xs text-white/90">{song.title}</strong><small className="block truncate text-[10px] text-white/35">{song.artist || '未填写歌手'}{appearances.length ? ` · 曾用于：${appearances.join('、')}` : ''}</small></span><button type="button" onClick={() => onChange(songs.filter((item) => item.id !== song.id))} aria-label={`移除${song.title}`} className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-white/25 transition hover:bg-red-300/10 hover:text-red-200"><X className="h-3.5 w-3.5" /></button></div>;
+              })}
+              {!groups[level.id].length && <p className="py-5 text-center text-[10px] text-white/20">暂无歌曲</p>}
+            </div>
+          </section>
+        ))}
       </div>
     </section>
   );

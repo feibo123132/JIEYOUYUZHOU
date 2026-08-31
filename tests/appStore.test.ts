@@ -91,6 +91,7 @@ test('homepage exposes a first-class song request entry', () => {
   assert.match(hubSource, /onOpenSongRequest/)
   assert.match(hubSource, /SONG REQUEST/)
   assert.match(hubSource, />点歌台</)
+  assert.match(hubSource, /翻翻JIEYOU会唱的歌，把最想听的那一首送上点歌榜。/)
   assert.match(appSource, /currentView === 'song-request'/)
 })
 

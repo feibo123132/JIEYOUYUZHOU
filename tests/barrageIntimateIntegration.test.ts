@@ -153,11 +153,11 @@ test('sidebar and starry sky wire intimate and fill modes independently', () => 
   assert.match(sidebar, /循环补齐弹幕，减少屏幕空白/)
   assert.match(sidebar, /onClick=\{\(\) => onChangeFillMode\(!fillMode\)\}/)
 
-  assert.match(starrySky, /useState\(createInitialBarragePreferences\)/)
+  assert.match(starrySky, /useState\(createInitialStarrySkyBarragePreferences\)/)
   assert.match(starrySky, /const barrageMode = barragePreferences\.immersive/)
   assert.match(starrySky, /const intimateMode = barragePreferences\.intimate/)
   assert.match(starrySky, /const fillMode = barragePreferences\.fill/)
-  assert.match(starrySky, /setBarragePreferences\(createInitialBarragePreferences\(\)\)/)
+  assert.match(starrySky, /setBarragePreferences\(createInitialStarrySkyBarragePreferences\(\)\)/)
   assert.match(starrySky, /setBarragePreference\(current, 'immersive', enabled\)/)
   assert.match(starrySky, /setBarragePreference\(current, 'intimate', enabled\)/)
   assert.match(starrySky, /setBarragePreference\(current, 'fill', enabled\)/)

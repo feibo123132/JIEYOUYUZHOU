@@ -54,11 +54,11 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
 
       <header className="mb-9 text-center md:mb-11">
         <div className="mb-4 flex items-center justify-center">
-          <Sparkles className={`mr-3 h-7 w-7 animate-pulse ${isLife ? 'text-amber-200' : 'text-yellow-300'}`} />
-          <h1 className={`bg-gradient-to-r ${theme.visual.titleGradientClass} bg-clip-text text-4xl font-black tracking-[-0.04em] text-transparent md:text-6xl`}>
+          <Sparkles className={`mr-3 h-7 w-7 animate-pulse ${isLife ? 'text-amber-200' : 'text-purple-500'}`} />
+          <h1 className={`${theme.visual.titleClass} text-4xl font-black tracking-[-0.04em] md:text-6xl`}>
             {theme.welcome.title}
           </h1>
-          <Sparkles className={`ml-3 h-7 w-7 animate-pulse ${isLife ? 'text-orange-300' : 'text-yellow-300'}`} />
+          <Sparkles className={`ml-3 h-7 w-7 animate-pulse ${isLife ? 'text-orange-300' : 'text-purple-500'}`} />
         </div>
         <p className="mx-auto max-w-2xl text-base leading-relaxed text-gray-300 md:text-xl">
           {theme.welcome.intro[0]}

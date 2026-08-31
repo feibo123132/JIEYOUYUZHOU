@@ -35,3 +35,13 @@ test('删除旧入口后，两个主题共用的昵称操作区向上填补空�
   assert.match(app, /id="nickname-input" className="[^"]*-mt-48[^"]*md:-mt-52/)
   assert.doesNotMatch(app, /id="nickname-input" className="[^"]*-mt-36/)
 })
+
+test('JIEYOU 欢迎页标题与两侧星星使用紫色系', () => {
+  const welcome = readSource('src/components/Welcome/WelcomeScreen.tsx')
+  const themeConfig = readSource('src/themes/themeConfig.ts')
+
+  assert.match(themeConfig, /titleClass: 'text-purple-500'/)
+  assert.match(welcome, /theme\.visual\.titleClass/)
+  assert.match(welcome, /isLife \? 'text-amber-200' : 'text-purple-500'/)
+  assert.match(welcome, /isLife \? 'text-orange-300' : 'text-purple-500'/)
+})

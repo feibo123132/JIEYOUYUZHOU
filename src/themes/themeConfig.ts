@@ -5,7 +5,7 @@ export type ThemeId = (typeof THEME_IDS)[number]
 export interface ThemeVisualConfig {
   accent: 'purple' | 'gold'
   defaultStarColor: string
-  titleGradientClass: string
+  titleClass: string
   buttonGradientClass: string
   buttonHoverClass: string
   glowClass: string
@@ -64,17 +64,17 @@ const THEME_CONFIGS: Record<ThemeId, ThemeConfig> = {
   jieyou: {
     id: 'jieyou',
     hub: {
-      name: 'JIEYOU宇宙',
-      eyebrow: '烦恼也值得被温柔接住',
+      name: '星空树洞',
+      eyebrow: 'GENTLE RELIEF',
       description: '在星空下许愿，把难以言说的心事交给宇宙。',
       invitation: '进入解忧星域',
     },
     welcome: {
-      title: 'JIEYOU宇宙',
-      intro: ['我们在此刻相遇，你抬起手', '在宇宙中点亮了一颗，独属于自己的星星'],
-      countPrefix: '欢迎JIEYOU宇宙的',
+      title: '星空树洞',
+      intro: ['我们在此刻相遇，你抬起手', '在天空中点亮了一颗，独属于自己的星星'],
+      countPrefix: '欢迎星空树洞的',
       countNoun: '星星',
-      description: ['在宇宙中点亮一颗独属于你自己的星星', '让每一次相遇都成为永恒的纪念'],
+      description: ['在天空中点亮一颗独属于你自己的星星', '让每一次相遇都成为永恒的纪念'],
       features: ['在星空下许愿', '宇宙版烦恼树洞', '分享生活小美满'],
       enterLabel: '遨游宇宙',
     },
@@ -85,7 +85,7 @@ const THEME_CONFIGS: Record<ThemeId, ThemeConfig> = {
       tip: '别称将显示在你的星星旁边',
     },
     sky: {
-      title: '我们的JIEYOU宇宙',
+      title: '星空树洞',
       createLabel: '点亮星星',
       creatingLabel: '正在点亮...',
       hint: '点击按钮，在星空中点亮属于你的星星 ✨',
@@ -94,12 +94,12 @@ const THEME_CONFIGS: Record<ThemeId, ThemeConfig> = {
       modalPrompt: '想对这片宇宙说些什么？',
       modalPlaceholder: '写下此刻的心情或愿望（可选）',
       modalConfirmLabel: '点亮',
-      unavailableMessage: 'JIEYOU宇宙暂时无法抵达',
+      unavailableMessage: '星空树洞暂时无法抵达',
     },
     visual: {
       accent: 'purple',
       defaultStarColor: '#FFD700',
-      titleGradientClass: 'from-yellow-300 via-yellow-400 to-orange-400',
+      titleClass: 'text-purple-500',
       buttonGradientClass: 'from-purple-600 via-purple-700 to-indigo-700',
       buttonHoverClass: 'hover:from-purple-500 hover:via-purple-600 hover:to-indigo-600',
       glowClass: 'hover:shadow-purple-500/25',
@@ -131,8 +131,8 @@ const THEME_CONFIGS: Record<ThemeId, ThemeConfig> = {
     id: 'life',
     hub: {
       name: '生命万岁企划',
-      eyebrow: '把值得幸福的瞬间留在星空',
-      description: '压力与焦虑之外，认真收藏那些微小却真实的幸福。',
+      eyebrow: 'HAPPY MOMENTS',
+      description: '那些无比真实的幸福瞬间，无论大小，都同样值得被看见',
       invitation: '进入幸福星域',
     },
     welcome: {
@@ -165,7 +165,7 @@ const THEME_CONFIGS: Record<ThemeId, ThemeConfig> = {
     visual: {
       accent: 'gold',
       defaultStarColor: '#FFC857',
-      titleGradientClass: 'from-amber-200 via-yellow-300 to-orange-400',
+      titleClass: 'bg-gradient-to-r from-amber-200 via-yellow-300 to-orange-400 bg-clip-text text-transparent',
       buttonGradientClass: 'from-amber-400 via-orange-500 to-rose-500',
       buttonHoverClass: 'hover:from-amber-300 hover:via-orange-400 hover:to-rose-400',
       glowClass: 'hover:shadow-orange-400/30',

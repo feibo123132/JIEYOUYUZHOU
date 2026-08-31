@@ -45,6 +45,7 @@ async function loadRoadshowModule() {
 const sampleArtistSettingsPayload = {
   version: 1 as const,
   artistOrder: ['周杰伦', '林俊杰'],
+  songOrder: ['a', 'b', 'c'],
   customAvatars: { 周杰伦: 'data:image/webp;base64,UklGRgAAAABXRUJQ' },
   avatarAdjustments: { 周杰伦: { x: 48, y: 32, scale: 1.4, rotation: 2 } },
 }
@@ -61,6 +62,7 @@ test('artist settings parse snapshots and merge cloud order without hiding new a
     ['周杰伦'],
     { 周杰伦: sampleArtistSettingsPayload.customAvatars.周杰伦, 已删除歌手: 'data:image/webp;base64,UklGRgAAAABXRUJQ' },
     { 周杰伦: sampleArtistSettingsPayload.avatarAdjustments.周杰伦, 已删除歌手: { x: 50, y: 50, scale: 1, rotation: 0 } },
+    sampleArtistSettingsPayload.songOrder,
   ), {
     ...sampleArtistSettingsPayload,
     artistOrder: ['周杰伦'],
@@ -86,26 +88,26 @@ test('artist settings draft is validated and survives pull conflicts or failures
   saveArtistSettingsDraft(storage, draft)
 
   const cloud = { ...sampleArtistSettingsPayload, revision: 3, updatedAt: '2026-08-28T08:00:00.000Z' }
-  assert.equal(resolveArtistSettingsPull({ cloud, local: sampleArtistSettingsPayload, draft, hasSession: true, defaultArtistOrder: sampleArtistSettingsPayload.artistOrder }).kind, 'conflict')
-  assert.equal(resolveArtistSettingsPull({ cloud: { ...cloud, revision: 2 }, local: sampleArtistSettingsPayload, draft, hasSession: true, defaultArtistOrder: sampleArtistSettingsPayload.artistOrder }).kind, 'push-draft')
-  assert.equal(resolveArtistSettingsPull({ cloud: null, local: sampleArtistSettingsPayload, draft: null, hasSession: true, defaultArtistOrder: ['周杰伦', '林俊杰', '孙燕姿'] }).kind, 'seed-cloud')
+  assert.equal(resolveArtistSettingsPull({ cloud, local: sampleArtistSettingsPayload, draft, hasSession: true, defaultArtistOrder: sampleArtistSettingsPayload.artistOrder, defaultSongOrder: sampleArtistSettingsPayload.songOrder }).kind, 'conflict')
+  assert.equal(resolveArtistSettingsPull({ cloud: { ...cloud, revision: 2 }, local: sampleArtistSettingsPayload, draft, hasSession: true, defaultArtistOrder: sampleArtistSettingsPayload.artistOrder, defaultSongOrder: sampleArtistSettingsPayload.songOrder }).kind, 'push-draft')
+  assert.equal(resolveArtistSettingsPull({ cloud: null, local: sampleArtistSettingsPayload, draft: null, hasSession: true, defaultArtistOrder: ['周杰伦', '林俊杰', '孙燕姿'], defaultSongOrder: sampleArtistSettingsPayload.songOrder }).kind, 'seed-cloud')
   assert.throws(() => { throw new Error('SYNC_FAILED') }, /SYNC_FAILED/)
   assert.deepEqual(loadArtistSettingsDraft(storage), draft, 'pull failure must preserve the local draft')
 
   values.delete(ARTIST_SETTINGS_DRAFT_KEY)
   const retryDraft = ensureArtistSettingsRetryDraft(
-    storage, sampleArtistSettingsPayload, ['周杰伦', '林俊杰', '孙燕姿'], null,
+    storage, sampleArtistSettingsPayload, ['周杰伦', '林俊杰', '孙燕姿'], null, sampleArtistSettingsPayload.songOrder,
   )
   assert.deepEqual(loadArtistSettingsDraft(storage), retryDraft, 'a first pull failure must create a retryable draft')
   assert.deepEqual(
-    ensureArtistSettingsRetryDraft(storage, sampleArtistSettingsPayload, ['周杰伦', '林俊杰', '孙燕姿'], null),
+    ensureArtistSettingsRetryDraft(storage, sampleArtistSettingsPayload, ['周杰伦', '林俊杰', '孙燕姿'], null, sampleArtistSettingsPayload.songOrder),
     retryDraft,
     'repeated retries must not replace the pending draft',
   )
   values.delete(ARTIST_SETTINGS_DRAFT_KEY)
   const defaultPayload = { ...sampleArtistSettingsPayload, customAvatars: {}, avatarAdjustments: {} }
   assert.equal(
-    ensureArtistSettingsRetryDraft(storage, defaultPayload, defaultPayload.artistOrder, null),
+    ensureArtistSettingsRetryDraft(storage, defaultPayload, defaultPayload.artistOrder, null, defaultPayload.songOrder),
     null,
     'default settings must not create an unnecessary cloud draft',
   )
@@ -397,7 +399,7 @@ test('热评仅替换歌曲副标题，不覆盖分类数据', async () => {
 test('可编辑曲库支持增删歌手和歌曲并本地持久化', async () => {
   const {
     addCatalogArtist, addCatalogSong, createEditableCatalog, loadEditableCatalog,
-    moveCatalogArtist, removeCatalogArtist, removeCatalogSong, saveEditableCatalog,
+    insertCatalogArtist, moveCatalogArtist, removeCatalogArtist, removeCatalogSong, saveEditableCatalog,
   } = await loadModule()
   const storageValues = new Map<string, string>()
   const storage = {
@@ -412,6 +414,11 @@ test('可编辑曲库支持增删歌手和歌曲并本地持久化', async () =>
   assert.equal(catalog.songs.at(-1)?.title, '新歌')
 
   catalog = moveCatalogArtist(catalog, 'Coldplay', '周杰伦')
+  assert.deepEqual(catalog.artists, ['Coldplay', '周杰伦', '新歌手'])
+
+  catalog = insertCatalogArtist(catalog, 'Coldplay', '新歌手', 'after')
+  assert.deepEqual(catalog.artists, ['周杰伦', '新歌手', 'Coldplay'])
+  catalog = insertCatalogArtist(catalog, 'Coldplay', '周杰伦', 'before')
   assert.deepEqual(catalog.artists, ['Coldplay', '周杰伦', '新歌手'])
 
   catalog = removeCatalogSong(catalog, 'custom:1')
@@ -895,6 +902,20 @@ test('歌手页支持持久排序及上传头像后继续微调', () => {
   assert.match(source, /if \(avatarAdjustMode\) syncCurrentArtistSettings\(\)/)
 })
 
+test('调整排序时可拖拽歌手并插入任意位置', () => {
+  const source = readFileSync(stationUrl, 'utf8')
+
+  assert.match(source, /GripVertical/)
+  assert.match(source, /const \[draggedArtist, setDraggedArtist\] = useState<string \| null>\(null\)/)
+  assert.match(source, /const \[artistDropTarget, setArtistDropTarget\]/)
+  assert.match(source, /draggable=\{artistOrderMode\}/)
+  assert.match(source, /onDragStart=\{\(event\) => handleArtistDragStart\(event, artist\)\}/)
+  assert.match(source, /onDragOver=\{\(event\) => handleArtistDragOver\(event, artist\)\}/)
+  assert.match(source, /onDrop=\{\(event\) => handleArtistDrop\(event, artist\)\}/)
+  assert.match(source, /insertCatalogArtist\(catalog, sourceArtist, targetArtist, placement\)/)
+  assert.match(source, /拖拽到任意位置/)
+})
+
 test('groups songs by singer while preserving catalog order', async () => {
   const { groupSongsByArtist } = await loadRoadshowModule()
   const groups = groupSongsByArtist(songs)
@@ -924,6 +945,94 @@ test('识曲歌库歌曲只加入日期最新的路演听歌识曲并自动去�
   assert.deepEqual(records[1].recognitionSongs, [])
   assert.equal(prepareLatestRoadshowRecognitionSong([first.record], songs[0]).kind, 'duplicate')
   assert.deepEqual(prepareLatestRoadshowRecognitionSong([], songs[0]), { kind: 'missing' })
+})
+
+test('歌曲只加入日期最新的路演歌曲并自动去重', async () => {
+  const { prepareLatestRoadshowPerformanceSong } = await loadRoadshowModule()
+  const records = [
+    {
+      id: 'older', title: '旧路演', date: '2026-08-20', updatedAt: '2026-08-20T12:00:00.000Z',
+      performanceSongs: [], recognitionSongs: [],
+    },
+    {
+      id: 'latest', title: '最新路演', date: '2026-08-28', updatedAt: '2026-08-28T12:00:00.000Z',
+      performanceSongs: [], recognitionSongs: [{ id: 'catalog:a', catalogId: 'a', title: '晴天', artist: '周杰伦', source: 'catalog' }],
+    },
+  ]
+
+  const first = prepareLatestRoadshowPerformanceSong(records, songs[0])
+
+  assert.equal(first.kind, 'updated')
+  assert.equal(first.record.id, 'latest')
+  assert.deepEqual(first.record.performanceSongs.map((song: { catalogId?: string }) => song.catalogId), ['a'])
+  assert.equal(first.record.recognitionSongs.length, 1)
+  assert.deepEqual(records[1].performanceSongs, [])
+  assert.equal(prepareLatestRoadshowPerformanceSong([first.record], songs[0]).kind, 'duplicate')
+  assert.deepEqual(prepareLatestRoadshowPerformanceSong([], songs[0]), { kind: 'missing' })
+})
+
+test('歌曲路演历史只统计路演歌曲并按日期倒序排列', async () => {
+  const { findSongRoadshowHistory } = await loadRoadshowModule()
+  const records = [
+    {
+      id: 'first', title: '第一次路演', date: '2026-08-01', updatedAt: '2026-08-01T12:00:00.000Z',
+      performanceSongs: [{ id: 'catalog:a', catalogId: 'a', title: '晴天', artist: '周杰伦', source: 'catalog' }], recognitionSongs: [],
+    },
+    {
+      id: 'quiz-only', title: '识曲专场', date: '2026-08-20', updatedAt: '2026-08-20T12:00:00.000Z',
+      performanceSongs: [], recognitionSongs: [{ id: 'catalog:a', catalogId: 'a', title: '晴天', artist: '周杰伦', source: 'catalog' }],
+    },
+    {
+      id: 'latest', title: '最近一次路演', date: '2026-08-31', updatedAt: '2026-08-31T12:00:00.000Z',
+      performanceSongs: [{ id: 'manual:sunny', title: ' 晴天 ', artist: '周杰伦', source: 'manual' }], recognitionSongs: [],
+    },
+  ]
+
+  assert.deepEqual(findSongRoadshowHistory(records, songs[0]).map((record: { id: string }) => record.id), ['latest', 'first'])
+})
+
+test('歌曲详情路演页展示次数最近日期和参与路演时间轴', () => {
+  const detail = readFileSync(songDetailPanelUrl, 'utf8')
+  const station = readFileSync(stationUrl, 'utf8')
+
+  assert.match(detail, /findSongRoadshowHistory/)
+  assert.match(detail, /参与路演/)
+  assert.match(detail, /尚未参与路演/)
+  assert.match(detail, /label="路演"/)
+  assert.match(detail, /label="最近"/)
+  assert.match(detail, /roadshowHistory\.length/)
+  assert.match(detail, /<ol className="grid gap-2 sm:grid-cols-2">/)
+  assert.doesNotMatch(detail, /index === 0.*最近/)
+  assert.match(station, /roadshows=\{roadshowArchives\}/)
+})
+
+test('歌手歌曲行使用单一编排弹窗同时承载识曲难度和最新路演', () => {
+  const station = readFileSync(stationUrl, 'utf8')
+
+  assert.match(station, /prepareLatestRoadshowPerformanceSong/)
+  assert.match(station, /最新路演 · 路演歌曲/)
+  assert.match(station, /加入“\$\{latestRoadshow\.title\}”/)
+  assert.match(station, /已加入最新路演/)
+  assert.match(station, /latestRoadshow\?\.performanceSongs\.some/)
+  assert.match(station, /max-h-\[calc\(100vh-2rem\)\] overflow-y-auto/)
+  assert.match(station, /grid grid-cols-2 gap-1/)
+  assert.match(station, /<QuizLevelControl song=\{song\} \/><FeaturedSongControl song=\{song\} \/><RequestButton song=\{song\} \/>/)
+})
+
+test('路演听歌识曲按识曲歌库四档分组且旧歌曲默认归入常规', async () => {
+  const { groupRoadshowRecognitionSongs } = await loadRoadshowModule()
+  const recognitionSongs = [
+    { id: 'catalog:a', catalogId: 'a', title: '晴天', artist: '周杰伦', source: 'catalog' },
+    { id: 'catalog:b', catalogId: 'b', title: 'Yellow', artist: 'Coldplay', source: 'catalog' },
+    { id: 'manual:old', title: '旧题目', artist: '未知', source: 'manual' },
+  ]
+
+  const grouped = groupRoadshowRecognitionSongs(recognitionSongs, { a: 'warmup', b: 'hell' })
+
+  assert.deepEqual(grouped.warmup.map((song: { id: string }) => song.id), ['catalog:a'])
+  assert.deepEqual(grouped.standard.map((song: { id: string }) => song.id), ['manual:old'])
+  assert.deepEqual(grouped.hard, [])
+  assert.deepEqual(grouped.hell.map((song: { id: string }) => song.id), ['catalog:b'])
 })
 
 test('识曲歌库歌曲卡提供加入最新路演听歌识曲按钮', () => {
@@ -1074,7 +1183,7 @@ test('歌曲页猫咪助手复用检索歌曲展示与弹幕功能但不包含�
   assert.match(station, /aria-label="填充模式"/)
   assert.match(station, /循环补齐弹幕，减少屏幕空白/)
   assert.doesNotMatch(station, /暂停弹幕|继续弹幕|慢速|标准|快速/)
-  assert.match(station, /useState\(createInitialBarragePreferences\)/)
+  assert.match(station, /useState\(createInitialSongBarragePreferences\)/)
   assert.doesNotMatch(station, /immersive: true/)
   assert.doesNotMatch(station, /<PopularSongBarrage[^>]*active=/)
   assert.match(station, /\{!barrageMode && \(\s*<header/)
@@ -1091,6 +1200,14 @@ test('歌曲页猫咪助手复用检索歌曲展示与弹幕功能但不包含�
   assert.match(messageBarrage, /className="barrage-fill-probe"/)
   assert.match(messageBarrage, /Array\.from\(\{ length: 2 \}/)
   assert.match(css, /@keyframes barrage-fill-travel[\s\S]*translate3d\(-50%, -50%, 0\)/)
+})
+
+test('歌曲助手默认完全展示并开启填充模式', () => {
+  const station = readFileSync(stationUrl, 'utf8')
+
+  assert.match(station, /const createInitialSongBarragePreferences = \(\) => \(\{[\s\S]*fill: true/)
+  assert.match(station, /useState\(createInitialSongBarragePreferences\)/)
+  assert.match(station, /useState<SongDisplayMode>\('full'\)/)
 })
 
 test('歌手卡片按既定顺序使用人物照片并保留自定义歌手兜底图标', () => {
@@ -1147,17 +1264,32 @@ test('歌手头像支持本机手动微调和重置', () => {
   assert.match(source, /rotate\(\$\{avatarStyle\.rotation\}deg\)/)
 })
 
-test('roadshow panel keeps performance and recognition songs distinct', () => {
+test('roadshow editor removes both add forms and shows recognition songs in four levels', () => {
   assert.ok(existsSync(roadshowPanelUrl), 'roadshow panel must exist')
   const source = readFileSync(roadshowPanelUrl, 'utf8')
+  const levels = readFileSync(songQuizLibraryUrl, 'utf8')
 
   assert.match(source, /路演歌曲/)
   assert.match(source, /本次准备演唱的歌曲/)
   assert.match(source, /听歌识曲/)
   assert.match(source, /互动游戏准备的题目歌曲/)
-  assert.match(source, /从曲库添加/)
-  assert.match(source, /手动添加曲库外歌曲/)
+  assert.doesNotMatch(source, /从曲库添加/)
+  assert.doesNotMatch(source, /手动添加曲库外歌曲/)
+  assert.match(source, /groupRoadshowRecognitionSongs/)
+  assert.match(source, /QUIZ_LEVELS\.map/)
+  assert.match(levels, /简单/)
+  assert.match(levels, /常规/)
+  assert.match(levels, /较难/)
+  assert.match(levels, /很难/)
   assert.match(source, /锁定档案/)
+})
+
+test('路演歌曲卡使用克制的低对比度描边', () => {
+  const source = readFileSync(roadshowPanelUrl, 'utf8')
+
+  assert.doesNotMatch(source, /border-white\/8\b/)
+  assert.match(source, /border-white\/10 bg-black\/25 p-3/)
+  assert.match(source, /border-white\/10 bg-black\/25 p-2\.5/)
 })
 
 test('我的档案整合日常练习批量记录和月周日折叠历史', () => {
@@ -1182,20 +1314,20 @@ test('我的档案整合日常练习批量记录和月周日折叠历史', () =>
   assert.match(station, /activeSection !== 'roadshows'/)
 })
 
-test('练习日历月周日超过八首时分别启用限高滚动', () => {
+test('练习日历桌面端只保留一个外层滚动区且移动端自然展开', () => {
   const daily = readFileSync(dailyPracticePanelUrl, 'utf8')
   const css = readFileSync(indexCssUrl, 'utf8')
 
-  assert.match(daily, /const PRACTICE_SCROLL_THRESHOLD = 8;/)
-  assert.match(daily, /const scrollable = recordCount > PRACTICE_SCROLL_THRESHOLD;/)
-  assert.match(daily, /scrollable \? \{ tabIndex: 0, 'aria-label': label \} : \{\}/)
-  assert.match(daily, /scrollRegionProps\(\s*'practice-month-content',\s*monthRecords\.length,/)
-  assert.match(daily, /scrollRegionProps\(\s*'practice-week-content',\s*weekRecords\.length,/)
-  assert.match(daily, /scrollRegionProps\(\s*'practice-day-records',\s*day\.records\.length,/)
+  assert.doesNotMatch(daily, /PRACTICE_SCROLL_THRESHOLD|scrollRegionProps/)
+  assert.match(daily, /<aside className="practice-history practice-history-scroll" tabIndex=\{0\} aria-label="练习日历">/)
+  assert.match(daily, /<div className="practice-month-content">/)
+  assert.match(daily, /<div className="practice-week-content">/)
+  assert.match(daily, /<div className="practice-day-records">/)
 
-  assert.match(css, /\.practice-month-content,\.practice-week-content\s*\{\s*min-height:0;\s*\}/)
-  assert.match(css, /\.practice-scroll-region\s*\{[^}]*max-height:30\.55rem;[^}]*overflow-y:auto;[^}]*scrollbar-color:rgba\(251,146,60,\.52\) rgba\(255,255,255,\.04\);[^}]*\}/s)
-  assert.match(css, /\.practice-scroll-region:focus-visible\s*\{[^}]*outline:1px solid rgba\(253,186,116,\.72\);[^}]*outline-offset:-2px;[^}]*\}/s)
+  assert.doesNotMatch(css, /\.practice-scroll-region/)
+  assert.match(css, /\.practice-history-scroll\s*\{[^}]*max-height:min\(40rem,calc\(100vh - 8rem\)\);[^}]*overflow-y:auto;[^}]*scrollbar-color:rgba\(251,146,60,\.52\) rgba\(255,255,255,\.04\);[^}]*\}/s)
+  assert.match(css, /\.practice-history-scroll:focus-visible\s*\{[^}]*outline:1px solid rgba\(253,186,116,\.72\);[^}]*outline-offset:-2px;[^}]*\}/s)
+  assert.match(css, /@media \(max-width: 900px\)[^{]*\{[\s\S]*?\.practice-history-scroll\s*\{[^}]*max-height:none;[^}]*overflow:visible;[^}]*\}/)
 })
 
 test('browser adapter routes public and private sync through the existing CloudBase singleton', () => {
@@ -1235,8 +1367,6 @@ test('歌曲详情页提供练习与路演记录并保留点歌按钮的独立�
   assert.match(station, /event\.stopPropagation\(\)/)
   assert.match(station, /pullSongRecords/)
   assert.match(station, /SONG_REQUEST_SESSION_EVENT/)
-  assert.match(station, /setActiveSection\('artists'\)/)
-  assert.match(station, /setSelectedArtist\(song\.artist\)/)
   assert.match(station, /if \(!next\).*setSelectedSong\(null\).*setSelectedArtist\(null\)/s)
   assert.match(panel, /练习记录/)
   assert.match(panel, /路演记录/)
@@ -1285,6 +1415,17 @@ test('歌曲详情页提供练习与路演记录并保留点歌按钮的独立�
   assert.match(roadshowPanel, /clearSongRecordCache/)
   assert.match(roadshowPanel, /SONG_REQUEST_SESSION_EVENT/)
   assert.match(roadshowPanel, /dispatchEvent/)
+})
+
+test('歌曲详情返回时恢复进入前的榜单歌手热门或识曲来源页', () => {
+  const source = readFileSync(stationUrl, 'utf8')
+  const goBackBody = source.match(/const goBack = \(\) => \{([\s\S]*?)\n  \};/)?.[1] ?? ''
+
+  assert.match(goBackBody, /if \(selectedSong\) \{\s*setSelectedSong\(null\);\s*return;/)
+  assert.doesNotMatch(goBackBody, /setActiveSection\('artists'\)/)
+  assert.doesNotMatch(goBackBody, /setSelectedArtist\(song\.artist\)/)
+  assert.match(source, /const detailBackLabel = selectedSong/)
+  assert.match(source, /selectedSong \? detailBackLabel/)
 })
 
 test('歌曲详情页会话只读取有效的现有私有空间凭据', async () => {

@@ -132,13 +132,17 @@ const validateAdjustment = (value) => {
 
 const validateArtistSettings = (value) => {
   if (!value || typeof value !== 'object' || Array.isArray(value)
-    || Object.keys(value).some((key) => !['version', 'artistOrder', 'customAvatars', 'avatarAdjustments', 'revision', 'updatedAt'].includes(key))
+    || Object.keys(value).some((key) => !['version', 'artistOrder', 'songOrder', 'customAvatars', 'avatarAdjustments', 'revision', 'updatedAt'].includes(key))
     || value.version !== 1 || !Array.isArray(value.artistOrder)
     || value.artistOrder.length < 1 || value.artistOrder.length > 200) throw new Error('INVALID_ARTIST_SETTINGS');
   const artistOrder = value.artistOrder.map(validateArtistName);
+  const songOrder = value.songOrder === undefined ? [] : value.songOrder;
   if (new Set(artistOrder).size !== artistOrder.length
+    || !Array.isArray(songOrder) || songOrder.length > 2000
     || !value.customAvatars || typeof value.customAvatars !== 'object' || Array.isArray(value.customAvatars)
     || !value.avatarAdjustments || typeof value.avatarAdjustments !== 'object' || Array.isArray(value.avatarAdjustments)) throw new Error('INVALID_ARTIST_SETTINGS');
+  const cleanSongOrder = songOrder.map((songId) => cleanText(songId, 120, 'INVALID_ARTIST_SETTINGS'));
+  if (new Set(cleanSongOrder).size !== cleanSongOrder.length) throw new Error('INVALID_ARTIST_SETTINGS');
   const artistSet = new Set(artistOrder);
   const avatarEntries = Object.entries(value.customAvatars);
   const adjustmentEntries = Object.entries(value.avatarAdjustments);
@@ -148,6 +152,7 @@ const validateArtistSettings = (value) => {
   return {
     version: 1,
     artistOrder,
+    songOrder: cleanSongOrder,
     customAvatars: Object.fromEntries(avatarEntries.map(([artist, avatar]) => [artist, validateArtistAvatar(avatar)])),
     avatarAdjustments: Object.fromEntries(adjustmentEntries.map(([artist, adjustment]) => [artist, validateAdjustment(adjustment)])),
   };

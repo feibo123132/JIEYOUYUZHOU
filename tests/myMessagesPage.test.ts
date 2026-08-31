@@ -34,12 +34,12 @@ test('同一昵称在新会话中仍能看到旧 userId 留下的历史留言', 
   )
 })
 
-test('星星详情提供我的入口并接入全屏留言页', () => {
+test('我的留言页仍由星空接入，但星星详情不再显示误导性的我的入口', () => {
   const starrySky = readFileSync(starrySkyUrl, 'utf8')
   const page = readFileSync(pageUrl, 'utf8')
 
   assert.match(starrySky, /import MyMessagesPage from '\.\/MyMessagesPage'/)
-  assert.match(starrySky, />\s*我的\s*</)
+  assert.doesNotMatch(starrySky, />\s*我的\s*</)
   assert.match(starrySky, /<MyMessagesPage[\s\S]*stars=\{stars\}[\s\S]*userId=\{userId\}[\s\S]*onBack=/)
   assert.match(page, /getMyMessages\(stars, userId, nickname\)/)
   assert.match(page, /\{nickname\}的留言/)
@@ -74,8 +74,30 @@ test('我的留言页使用用户名标题、精简返回文案和留言计数',
 
   assert.match(page, />\s*星空\s*</)
   assert.match(page, /\{nickname\}的留言/)
-  assert.match(page, /那些在星空留下的思绪或记忆，我不曾忘记/)
+  assert.match(page, /那些在星空留下的思绪或记忆，似乎让我看到了当时的自己/)
   assert.match(page, /\{messages\.length\}<span[^>]*>条<\/span>/)
   assert.doesNotMatch(page, />\s*返回星空\s*</)
   assert.doesNotMatch(page, /条留言/)
+})
+
+test('留言页可在简洁两列与宽大四列之间切换并记住选择', () => {
+  const page = readFileSync(pageUrl, 'utf8')
+
+  assert.match(page, /type MessageLayoutMode = 'simple' \| 'wide'/)
+  assert.match(page, /localStorage\.getItem\(MESSAGE_LAYOUT_STORAGE_KEY\)/)
+  assert.match(page, /localStorage\.setItem\(MESSAGE_LAYOUT_STORAGE_KEY, layoutMode\)/)
+  assert.match(page, /aria-label="简洁版"/)
+  assert.match(page, /aria-label="宽大版"/)
+  assert.match(page, /layoutMode === 'wide' \? 'max-w-\[100rem\]' : 'max-w-5xl'/)
+  assert.match(page, /layoutMode === 'wide' \? 'sm:grid-cols-2 xl:grid-cols-4' : 'sm:grid-cols-2'/)
+})
+
+test('星空返回键固定悬浮，滚动后仍可直接点击', () => {
+  const page = readFileSync(pageUrl, 'utf8')
+  const buttonClass = page.match(/aria-label="返回星空"[\s\S]*?className="([^"]+)"/)?.[1] ?? ''
+
+  assert.match(buttonClass, /\bfixed\b/)
+  assert.match(buttonClass, /\bz-50\b/)
+  assert.match(buttonClass, /\btop-5\b/)
+  assert.match(buttonClass, /\bleft-5\b/)
 })

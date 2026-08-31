@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { CalendarDays, Cloud, Guitar, Lock, MessageCircle, Save, Target, Trash2 } from 'lucide-react';
 import type { Song } from './songCatalog';
+import { findSongRoadshowHistory, type RoadshowRecord } from './roadshow';
 import {
   averageMatchScore,
   getMatchQuality,
@@ -18,6 +19,7 @@ import { deleteSongRecord, mapSongRecordSyncError, saveSongRecord } from './song
 interface SongDetailPanelProps {
   song: Song;
   records: SongRecord[];
+  roadshows?: RoadshowRecord[];
   session: SongRecordSession | null;
   syncStatus?: string;
   onRecordsChange: (records: SongRecord[]) => void;
@@ -46,11 +48,13 @@ const qualityTextClass = {
 const displayTime = (value: string) => new Intl.DateTimeFormat('zh-CN', {
   year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
 }).format(new Date(value));
+const displayRoadshowDate = (value: string) => value.replace(/-/g, '/');
 
-const SongDetailPanel = ({ song, records, session, syncStatus = '', onRecordsChange, onOpenPrivateSpace }: SongDetailPanelProps) => {
+const SongDetailPanel = ({ song, records, roadshows = [], session, syncStatus = '', onRecordsChange, onOpenPrivateSpace }: SongDetailPanelProps) => {
   const songRecords = useMemo(() => sortSongRecords(records.filter((record) => record.songId === song.id)), [records, song.id]);
   const practices = songRecords.filter((record): record is PracticeRecord => record.kind === 'practice');
-  const roadshows = songRecords.filter((record): record is SongRoadshowRecord => record.kind === 'roadshow');
+  const roadshowNotes = songRecords.filter((record): record is SongRoadshowRecord => record.kind === 'roadshow');
+  const roadshowHistory = useMemo(() => findSongRoadshowHistory(roadshows, song), [roadshows, song]);
   const averageScore = averageMatchScore(practices);
   const [activeJournal, setActiveJournal] = useState<JournalKind>('practice');
   const [practiceAt, setPracticeAt] = useState(localDateTime);
@@ -171,8 +175,13 @@ const SongDetailPanel = ({ song, records, session, syncStatus = '', onRecordsCha
           </div>
           <div className="flex shrink-0 flex-col items-stretch gap-3 sm:items-end">
             <div className="grid min-w-48 grid-cols-2 gap-2">
-              <Stat label="练习" value={`${practices.length} 次`} />
-              <Stat label="匹配度" value={averageScore === null ? '—' : `${averageScore}`} />
+              {activeJournal === 'practice' ? <>
+                <Stat label="练习" value={`${practices.length} 次`} />
+                <Stat label="匹配度" value={averageScore === null ? '—' : `${averageScore}`} />
+              </> : <>
+                <Stat label="路演" value={`${roadshowHistory.length} 次`} />
+                <Stat label="最近" value={roadshowHistory[0] ? displayRoadshowDate(roadshowHistory[0].date) : '—'} />
+              </>}
             </div>
             <div data-journal-toolbar className="flex w-full flex-wrap items-center justify-end gap-3">
               <div role="group" aria-label="切换记录类型" className="inline-flex rounded-2xl border border-white/10 bg-black/25 p-1">
@@ -207,8 +216,13 @@ const SongDetailPanel = ({ song, records, session, syncStatus = '', onRecordsCha
         </JournalColumn>
         </div>
 
-        <JournalColumn icon={activeJournal === 'practice' ? <Target className="h-5 w-5" /> : <CalendarDays className="h-5 w-5" />} title={`${activeJournal === 'practice' ? '练习记录' : '路演记录'}数据`} subtitle={activeJournal === 'practice' ? '每一次练习都按时间沉淀在这里。' : '每一次现场反馈都按时间沉淀在这里。'}>
-          <RecordTimeline records={activeJournal === 'practice' ? practices : roadshows} busy={busy} editingId={editingRecord?.id ?? ''} onEdit={beginEdit} onDelete={removeRecord} />
+        <JournalColumn icon={activeJournal === 'practice' ? <Target className="h-5 w-5" /> : <CalendarDays className="h-5 w-5" />} title={`${activeJournal === 'practice' ? '练习记录' : '路演记录'}数据`} subtitle={activeJournal === 'practice' ? '每一次练习都按时间沉淀在这里。' : '路演档案与每一次现场反馈都沉淀在这里。'}>
+          {activeJournal === 'practice' ? (
+            <RecordTimeline records={practices} busy={busy} editingId={editingRecord?.id ?? ''} onEdit={beginEdit} onDelete={removeRecord} />
+          ) : <>
+            <RoadshowArchiveTimeline records={roadshowHistory} />
+            <RecordTimeline label="现场反馈" emptyText="还没有现场反馈" records={roadshowNotes} busy={busy} editingId={editingRecord?.id ?? ''} onEdit={beginEdit} onDelete={removeRecord} />
+          </>}
         </JournalColumn>
       </div>
     </section>
@@ -219,14 +233,26 @@ const Stat = ({ label, value }: { label: string; value: string }) => <div classN
 const Field = ({ label, children }: { label: string; children: React.ReactNode }) => <label className="block"><span className="mb-2 block text-xs font-bold text-white/45">{label}</span>{children}</label>;
 const JournalColumn = ({ icon, title, subtitle, children }: { icon: React.ReactNode; title: string; subtitle: string; children: React.ReactNode }) => <section className="rounded-[1.75rem] border border-white/10 bg-[#09090d]/80 p-5 backdrop-blur-xl sm:p-7"><div className="mb-6 flex items-start gap-3"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-orange-200/15 bg-orange-300/10 text-orange-200">{icon}</span><div><h2 className="font-serif text-2xl font-black">{title}</h2><p className="mt-1 text-xs leading-5 text-white/35">{subtitle}</p></div></div><div className="space-y-4">{children}</div></section>;
 
-const RecordTimeline = ({ records, busy, editingId, onEdit, onDelete }: { records: SongRecord[]; busy: string; editingId: string; onEdit: (record: SongRecord) => void; onDelete: (record: SongRecord) => void }) => (
-  <div className="border-t border-white/8 pt-5">
-    <p className="mb-3 text-[10px] font-black tracking-[.24em] text-white/25">HISTORY · {records.length}</p>
+const RoadshowArchiveTimeline = ({ records }: { records: RoadshowRecord[] }) => (
+  <div className="border-t border-white/10 pt-5">
+    <div className="mb-4 flex items-center justify-between gap-3"><p className="text-[10px] font-black tracking-[.2em] text-orange-200/55">参与路演</p><strong className="text-xs text-white/35">{records.length} 次</strong></div>
+    {records.length ? <ol className="grid gap-2 sm:grid-cols-2">{records.map((record) => (
+      <li key={record.id} className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[.025] p-3.5">
+        <span className="grid h-10 min-w-16 shrink-0 place-items-center rounded-xl border border-orange-200/15 bg-orange-300/[.07] px-2 font-serif text-xs font-black text-orange-100">{displayRoadshowDate(record.date).slice(5)}</span>
+        <span className="min-w-0 flex-1"><strong className="block truncate text-sm text-white/85">{record.title}</strong><small className="mt-1 block text-[10px] text-white/30">{displayRoadshowDate(record.date)} · 已编入路演歌曲</small></span>
+      </li>
+    ))}</ol> : <div className="grid min-h-24 place-items-center rounded-2xl border border-dashed border-white/10 text-xs text-white/25">尚未参与路演</div>}
+  </div>
+);
+
+const RecordTimeline = ({ records, busy, editingId, onEdit, onDelete, label = 'HISTORY', emptyText = '还没有记录' }: { records: SongRecord[]; busy: string; editingId: string; onEdit: (record: SongRecord) => void; onDelete: (record: SongRecord) => void; label?: string; emptyText?: string }) => (
+  <div className="border-t border-white/10 pt-5">
+    <p className="mb-3 text-[10px] font-black tracking-[.24em] text-white/25">{label} · {records.length}</p>
     <div className="space-y-3">{records.map((record) => (
-      <article key={record.id} title="双击编辑" onDoubleClick={() => onEdit(record)} className={`group cursor-pointer rounded-2xl border bg-white/[.025] p-4 transition ${editingId === record.id ? 'border-orange-300/45 bg-orange-300/[.045]' : 'border-white/8 hover:border-orange-200/25'}`}>
+      <article key={record.id} title="双击编辑" onDoubleClick={() => onEdit(record)} className={`group cursor-pointer rounded-2xl border bg-white/[.025] p-4 transition ${editingId === record.id ? 'border-orange-300/45 bg-orange-300/[.045]' : 'border-white/10 hover:border-orange-200/25'}`}>
         <div className="flex items-start gap-3"><span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-orange-300/10 text-orange-200">{record.kind === 'practice' ? <Target className="h-4 w-4" /> : <CalendarDays className="h-4 w-4" />}</span><div className="min-w-0 flex-1"><p className="text-xs text-white/35">{displayTime(record.occurredAt)}</p>{record.kind === 'practice' ? <PracticeRecordDetails record={record} /> : <><p className="mt-2 text-sm font-bold text-orange-100">{record.audienceName || '现场观众'}</p><RecordText label="反馈" text={record.feedback} /></>}</div><button type="button" disabled={busy === record.id} onDoubleClick={(event) => event.stopPropagation()} onClick={() => onDelete(record)} aria-label="删除记录" className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-white/20 transition hover:bg-red-300/10 hover:text-red-200 disabled:opacity-30"><Trash2 className="h-4 w-4" /></button></div>
       </article>
-    ))}{!records.length && <div className="grid min-h-24 place-items-center rounded-2xl border border-dashed border-white/10 text-xs text-white/25">还没有记录</div>}</div>
+    ))}{!records.length && <div className="grid min-h-24 place-items-center rounded-2xl border border-dashed border-white/10 text-xs text-white/25">{emptyText}</div>}</div>
   </div>
 );
 

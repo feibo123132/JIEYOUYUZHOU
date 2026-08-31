@@ -334,18 +334,16 @@
 .practice-empty,.roadshow-empty { display:grid; min-height:10rem; place-items:center; border:1px dashed rgba(255,255,255,.09); border-radius:1rem; color:rgba(255,255,255,.3); text-align:center; font-size:.74rem; }
 .practice-month,.practice-week,.practice-day { margin-top:.5rem; border:1px solid rgba(255,255,255,.08); border-radius:.85rem; background:rgba(0,0,0,.16); overflow:hidden; }
 .practice-month-content,.practice-week-content { min-height:0; }
-.practice-scroll-region { max-height:30.55rem; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; scrollbar-color:rgba(251,146,60,.52) rgba(255,255,255,.04); }
-.practice-scroll-region::-webkit-scrollbar { width:.36rem; }
-.practice-scroll-region::-webkit-scrollbar-track { border-radius:999px; background:rgba(255,255,255,.04); }
-.practice-scroll-region::-webkit-scrollbar-thumb { border-radius:999px; background:rgba(251,146,60,.52); }
-.practice-scroll-region:focus-visible { outline:1px solid rgba(253,186,116,.72); outline-offset:-2px; }
-.practice-month-content.practice-scroll-region,.practice-week-content.practice-scroll-region { padding-right:.2rem; }
-.practice-day-records.practice-scroll-region { margin-right:.2rem; padding-right:.25rem; }
+.practice-history-scroll { max-height:min(40rem,calc(100vh - 8rem)); overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; scrollbar-color:rgba(251,146,60,.52) rgba(255,255,255,.04); }
+.practice-history-scroll::-webkit-scrollbar { width:.36rem; }
+.practice-history-scroll::-webkit-scrollbar-track { border-radius:999px; background:rgba(255,255,255,.04); }
+.practice-history-scroll::-webkit-scrollbar-thumb { border-radius:999px; background:rgba(251,146,60,.52); }
+.practice-history-scroll:focus-visible { outline:1px solid rgba(253,186,116,.72); outline-offset:-2px; }
 .practice-month>summary,.practice-week>summary,.practice-day>summary { display:grid; grid-template-columns:1fr auto auto; align-items:center; gap:.55rem; cursor:pointer; padding:.72rem .8rem; list-style:none; }
 .practice-month>summary span { font-family:Georgia,"Noto Serif SC",serif; font-weight:900; }.practice-month summary small { color:rgba(255,255,255,.32); font-size:.64rem; }.practice-month[open]>summary>svg,.practice-week[open]>summary>svg,.practice-day[open]>summary>svg { transform:rotate(180deg); }
 .practice-week { margin:.45rem; }.practice-week>summary { color:rgba(253,186,116,.72); font-size:.75rem; }.practice-day { margin:.38rem; }.practice-day>summary { font-size:.72rem; }
 .practice-day-records { display:grid; gap:.3rem; padding:0 .45rem .45rem; }.practice-day-records button { display:grid; grid-template-columns:minmax(0,1fr) 2rem 2.8rem 1rem; align-items:center; gap:.4rem; border-radius:.6rem; padding:.55rem .6rem; background:rgba(255,255,255,.025); color:rgba(255,255,255,.7); text-align:left; }.practice-day-records b { color:#fed7aa; font-size:.72rem; }
 .roadshow-record-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.7rem; margin-top:1rem; }.roadshow-record-card { display:grid; grid-template-columns:2.5rem minmax(0,1fr) auto; align-items:center; gap:.75rem; border:1px solid rgba(255,255,255,.08); border-radius:1rem; padding:.85rem; background:rgba(0,0,0,.22); color:rgba(255,255,255,.75); text-align:left; }.roadshow-record-card>span:first-child { display:grid; width:2.5rem;height:2.5rem;place-items:center;border-radius:.75rem;background:rgba(251,146,60,.1);color:#fdba74; }.roadshow-record-card strong,.roadshow-record-card small { display:block; }.roadshow-record-card small { margin-top:.2rem;color:rgba(255,255,255,.3);font-size:.66rem; }
 
-@media (max-width: 900px) { .daily-practice-layout { grid-template-columns:1fr; }.practice-history { order:2; } }
+@media (max-width: 900px) { .daily-practice-layout { grid-template-columns:1fr; }.practice-history { order:2; }.practice-history-scroll { max-height:none; overflow:visible; } }
 @media (max-width: 640px) { .archive-panel { border-radius:1.25rem; }.archive-tabs { display:grid; grid-template-columns:1fr 1fr; width:100%; }.archive-tabs button { justify-content:center; }.practice-date-row,.practice-song-picker,.roadshow-record-grid { grid-template-columns:1fr; }.manual-song-entry>div { grid-template-columns:1fr; }.manual-song-entry button { min-height:2.6rem; }.practice-draft-main { grid-template-columns:minmax(0,1fr) 4.5rem 2.6rem 1.5rem; } }

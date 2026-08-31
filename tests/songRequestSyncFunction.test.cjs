@@ -88,6 +88,7 @@ function memoryStore() {
 const artistSettingsPayload = () => ({
   version: 1,
   artistOrder: ['周杰伦', '林俊杰'],
+  songOrder: ['qing-tian', 'dao-xiang'],
   customAvatars: { 周杰伦: 'data:image/png;base64,iVBORw0KGgo=' },
   avatarAdjustments: { 周杰伦: { x: 50, y: 28, scale: 1.4, rotation: 0 } },
 });

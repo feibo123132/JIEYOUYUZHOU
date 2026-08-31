@@ -41,11 +41,17 @@ interface StarrySkyProps {
   initialView?: 'stars' | 'my-messages';
 }
 
+const createInitialStarrySkyBarragePreferences = () => ({
+  ...createInitialBarragePreferences(),
+  fill: true,
+});
+
 const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, userId, initialView = 'stars' }) => {
   const rootRef = useRef<HTMLDivElement>(null);
   const starFieldRef = useRef<HTMLDivElement>(null);
   const [stars, setStars] = useState<StarData[]>([]);
   const [selectedStar, setSelectedStar] = useState<StarData | null>(null);
+  const [pendingDeleteStarId, setPendingDeleteStarId] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [searchName, setSearchName] = useState('');
@@ -54,14 +60,16 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
   const [calYear, setCalYear] = useState<number>(new Date().getFullYear());
   const [calMonth, setCalMonth] = useState<number>(new Date().getMonth());
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
-  const [displayMode, setDisplayMode] = useState<'random' | 'full'>('random');
+  const [starDisplayMode, setStarDisplayMode] = useState<'random' | 'full'>('random');
+  const [messageDisplayMode, setMessageDisplayMode] = useState<'random' | 'full'>('full');
   const [isAdminDevice, setIsAdminDevice] = useState<boolean>(false);
   const [welcomeInfo, setWelcomeInfo] = useState<{ nickname: string; count: number } | null>(null);
   const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [skyView, setSkyView] = useState<'stars' | 'messages'>('stars');
+  const displayMode = skyView === 'messages' ? messageDisplayMode : starDisplayMode;
   const [isMyMessagesOpen, setIsMyMessagesOpen] = useState(initialView === 'my-messages');
-  const [barragePreferences, setBarragePreferences] = useState(createInitialBarragePreferences);
+  const [barragePreferences, setBarragePreferences] = useState(createInitialStarrySkyBarragePreferences);
   const barrageMode = barragePreferences.immersive;
   const intimateMode = barragePreferences.intimate;
   const fillMode = barragePreferences.fill;
@@ -94,14 +102,17 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
     const loadStars = async () => {
       setStars([]);
       setSelectedStar(null);
+      setPendingDeleteStarId(null);
       setIsCreateModalOpen(false);
       setSidebarOpen(false);
       setWelcomeInfo(null);
       setSearchName('');
       setSearchDate('');
       setSkyView('stars');
+      setStarDisplayMode('random');
+      setMessageDisplayMode('full');
       setIsMyMessagesOpen(initialView === 'my-messages');
-      setBarragePreferences(createInitialBarragePreferences());
+      setBarragePreferences(createInitialStarrySkyBarragePreferences());
       setLoadState('loading');
       try {
         const allStars = await starService.getAllStars(theme.id);
@@ -306,6 +317,17 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
     }
   };
 
+  const requestDeleteStar = (starId: string) => {
+    setPendingDeleteStarId(starId);
+  };
+
+  const handleConfirmDelete = () => {
+    if (!pendingDeleteStarId) return;
+    const starId = pendingDeleteStarId;
+    setPendingDeleteStarId(null);
+    void handleDeleteStar(starId);
+  };
+
   // 格式化时间
   const formatTime = (dateString: string) => {
     try {
@@ -410,7 +432,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
   }, [layoutViewport, loadState, skyView, visibleStars]);
 
   const barrageMessages = useMemo<BarrageMessage[]>(() => {
-    return filteredStars.flatMap((star) => {
+    return visibleStars.flatMap((star) => {
       const message = star.message?.trim();
       if (!message) return [];
       return [{
@@ -421,7 +443,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
         color: star.color,
       }];
     });
-  }, [filteredStars]);
+  }, [visibleStars]);
 
   useEffect(() => {
     if (welcomeInfo) {
@@ -453,15 +475,6 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
     });
   };
 
-  const handleOpenMyMessages = () => {
-    (window as any).playClickSound?.();
-    setSelectedStar(null);
-    setSidebarOpen(false);
-    setWelcomeInfo(null);
-    setIsCreateModalOpen(false);
-    setIsMyMessagesOpen(true);
-  };
-
   const handleBarrageSelect = (starId: string) => {
     const star = stars.find((star) => star.id === starId);
     if (!star) return;
@@ -475,6 +488,11 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
 
   const handleFillModeChange = (enabled: boolean) => {
     setBarragePreferences((current) => setBarragePreference(current, 'fill', enabled));
+  };
+
+  const handleDisplayModeChange = (mode: 'random' | 'full') => {
+    if (skyView === 'messages') setMessageDisplayMode(mode);
+    else setStarDisplayMode(mode);
   };
 
   if (isMyMessagesOpen) {
@@ -520,7 +538,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
         onClose={() => setSidebarOpen(false)}
         onOpen={() => setSidebarOpen(true)}
         displayMode={displayMode}
-        onChangeDisplayMode={(mode) => setDisplayMode(mode)}
+        onChangeDisplayMode={handleDisplayModeChange}
         barrageMode={barrageMode}
         onChangeBarrageMode={handleBarrageModeChange}
         intimateMode={intimateMode}
@@ -581,7 +599,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
             shape={star.shape}
             message={star.message}
             canDelete={canDeleteStar(star)}
-            onDelete={() => handleDeleteStar(star.id)}
+            onDelete={() => requestDeleteStar(star.id)}
             />
           );
         })}
@@ -722,20 +740,51 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
                 >
                   找杰宝
                 </button>
-                <button
-                  type="button"
-                  onClick={handleOpenMyMessages}
-                  className="flex-1 rounded-lg border border-gray-300 bg-white px-4 py-2 font-bold text-gray-800 transition-all duration-200 hover:scale-[1.02] hover:bg-gray-100 active:scale-[0.98]"
-                >
-                  我的
-                </button>
                 {canDeleteStar(selectedStar) && (
-                  <button onClick={() => { (window as any).playClickSound?.(); handleDeleteStar(selectedStar.id); }} className="flex-1 bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center space-x-2">
+                  <button type="button" onClick={() => { (window as any).playClickSound?.(); requestDeleteStar(selectedStar.id); }} className="flex-1 bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center space-x-2">
                     <Trash2 className="w-4 h-4" />
                     <span>删除</span>
                   </button>
                 )}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pendingDeleteStarId && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+          onClick={() => setPendingDeleteStarId(null)}
+        >
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="delete-star-title"
+            aria-describedby="delete-star-description"
+            className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#17171c] p-6 text-center text-white shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-500/15 text-red-400">
+              <Trash2 className="h-6 w-6" />
+            </div>
+            <h3 id="delete-star-title" className="mt-4 text-xl font-bold">确定删除这颗星星？</h3>
+            <p id="delete-star-description" className="mt-2 text-sm leading-6 text-white/60">删除后无法恢复，请确认是否继续。</p>
+            <div className="mt-6 grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => { (window as any).playClickSound?.(); setPendingDeleteStarId(null); }}
+                className="rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 font-semibold text-white transition-colors hover:bg-white/10"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={() => { (window as any).playClickSound?.(); handleConfirmDelete(); }}
+                className="rounded-xl bg-red-500 px-4 py-2.5 font-semibold text-white transition-colors hover:bg-red-600"
+              >
+                确认删除
+              </button>
             </div>
           </div>
         </div>

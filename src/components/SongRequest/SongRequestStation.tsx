@@ -1,18 +1,22 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import {
   ArrowLeft, CalendarDays, Check, ChevronLeft, ChevronRight, Disc3, Guitar,
-  Library, ListOrdered, Mic2, Plus, RotateCcw, Search, SlidersHorizontal, Target, Trash2, Trophy, Upload, X,
+  GripVertical, Library, ListOrdered, Mic2, Plus, RotateCcw, Search, SlidersHorizontal, Target, Trash2, Trophy, Upload, X,
 } from 'lucide-react';
 import useAppStore from '../../store/appStore';
 import { SONGS, type Song } from './songCatalog';
 import {
   addCatalogArtist, addCatalogSong, createEditableCatalog, getFeaturedSongs,
   getPersonalRankingPodiumSize, getRankingMedalTone, getSongSubtitle, incrementSongVote, isFeaturedSongManager,
-  loadEditableCatalog, loadVoteCounts, rankSongsByVotes,
-  moveCatalogArtist, removeCatalogArtist, removeCatalogSong, saveEditableCatalog, saveVoteCounts,
+  insertCatalogArtist, insertCatalogSong, loadEditableCatalog, loadVoteCounts, rankSongsByVotes,
+  moveCatalogArtist, moveCatalogSong, removeCatalogArtist, removeCatalogSong, saveEditableCatalog, saveVoteCounts,
   type EditableCatalog, type VoteCounts,
 } from './songRequest';
-import { groupSongsByArtist, prepareLatestRoadshowRecognitionSong, ROADSHOW_CACHE_KEY } from './roadshow';
+import {
+  getLatestRoadshow, groupSongsByArtist, parseRoadshowCache,
+  prepareLatestRoadshowPerformanceSong, prepareLatestRoadshowRecognitionSong, ROADSHOW_CACHE_KEY,
+  type RoadshowRecord,
+} from './roadshow';
 import {
   incrementCloudVote, mapArtistSettingsSyncError, pullArtistSettings, pullCloudFeaturedSongIds, pullCloudVotes,
   pullCloudQuizAssignments, pullPublicPracticeRanking, pullRoadshows, pullSongRecords, pushArtistSettings,
@@ -29,7 +33,7 @@ import {
 } from './songRecords';
 import {
   clearArtistSettingsDraft, createArtistSettingsDraft, createArtistSettingsPayload,
-  ensureArtistSettingsRetryDraft, hasCustomArtistSettings, loadArtistSettingsCache, loadArtistSettingsDraft, mergeArtistOrder,
+  ensureArtistSettingsRetryDraft, hasCustomArtistSettings, loadArtistSettingsCache, loadArtistSettingsDraft, mergeArtistOrder, mergeSongOrder,
   parseArtistSettingsSnapshot, resolveArtistSettingsPull, resolveSuccessfulArtistSettingsPush,
   saveArtistSettingsCache, saveArtistSettingsDraft,
   type ArtistSettingsPayload,
@@ -44,6 +48,12 @@ type SectionId = 'ranking' | 'artists' | 'roadshows' | 'playlists' | 'quiz';
 type RankingView = 'requests' | 'personal';
 type ArtistLanguageFilter = 'chinese' | 'foreign' | 'single';
 type SongDisplayMode = 'random' | 'full';
+type ArtistDropPlacement = 'before' | 'after';
+
+const createInitialSongBarragePreferences = () => ({
+  ...createInitialBarragePreferences(),
+  fill: true,
+});
 
 const ARTIST_LANGUAGE_FILTERS: { value: ArtistLanguageFilter; label: string }[] = [
   { value: 'chinese', label: '华语歌手' },
@@ -158,8 +168,13 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   const [featuredBusyId, setFeaturedBusyId] = useState<string | null>(null);
   const [quizAssignments, setQuizAssignments] = useState<QuizAssignments>({});
   const [quizBusyId, setQuizBusyId] = useState<string | null>(null);
-  const [roadshowQuizBusyId, setRoadshowQuizBusyId] = useState<string | null>(null);
+  const [roadshowBusyId, setRoadshowBusyId] = useState<string | null>(null);
   const [quizMenuSongId, setQuizMenuSongId] = useState<string | null>(null);
+  const [roadshowArchives, setRoadshowArchives] = useState<RoadshowRecord[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try { return parseRoadshowCache(window.localStorage.getItem(ROADSHOW_CACHE_KEY)); } catch { return []; }
+  });
+  const latestRoadshow = useMemo(() => getLatestRoadshow(roadshowArchives) ?? null, [roadshowArchives]);
   const [syncMessage, setSyncMessage] = useState('');
   const [songRecordSession, setSongRecordSession] = useState<SongRecordSession | null>(() => (
     typeof window === 'undefined' ? null : readSongRecordSession(window.sessionStorage)
@@ -173,6 +188,11 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   const [recordSyncStatus, setRecordSyncStatus] = useState('');
   const [avatarAdjustMode, setAvatarAdjustMode] = useState(false);
   const [artistOrderMode, setArtistOrderMode] = useState(false);
+  const [draggedArtist, setDraggedArtist] = useState<string | null>(null);
+  const [artistDropTarget, setArtistDropTarget] = useState<{ artist: string; placement: ArtistDropPlacement } | null>(null);
+  const [songOrderMode, setSongOrderMode] = useState(false);
+  const [draggedSongId, setDraggedSongId] = useState<string | null>(null);
+  const [songDropTarget, setSongDropTarget] = useState<{ songId: string; placement: ArtistDropPlacement } | null>(null);
   const [adjustingArtist, setAdjustingArtist] = useState<string | null>(null);
   const [customArtistAvatars, setCustomArtistAvatars] = useState<Record<string, string>>(() => (
     typeof window === 'undefined' ? {} : loadCustomArtistAvatars()
@@ -181,11 +201,11 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     typeof window === 'undefined' ? {} : loadAvatarAdjustments()
   ));
   const [songAssistantOpen, setSongAssistantOpen] = useState(false);
-  const [barragePreferences, setBarragePreferences] = useState(createInitialBarragePreferences);
+  const [barragePreferences, setBarragePreferences] = useState(createInitialSongBarragePreferences);
   const barrageMode = barragePreferences.immersive;
   const intimateMode = barragePreferences.intimate;
   const fillMode = barragePreferences.fill;
-  const [songDisplayMode, setSongDisplayMode] = useState<SongDisplayMode>('random');
+  const [songDisplayMode, setSongDisplayMode] = useState<SongDisplayMode>('full');
   const artistSettingsInitializedRef = useRef(false);
   const artistSettingsRevisionRef = useRef<number | null>(
     typeof window === 'undefined' ? null : loadArtistSettingsCache(window.localStorage)?.revision ?? null,
@@ -197,7 +217,11 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     if (!snapshot) return;
     artistSettingsRevisionRef.current = snapshot.revision;
     setCatalog((current) => {
-      const next = { ...current, artists: mergeArtistOrder(snapshot.artistOrder, current.artists) };
+      const next = {
+        ...current,
+        artists: mergeArtistOrder(snapshot.artistOrder, current.artists),
+        songs: mergeSongOrder(snapshot.songOrder, current.songs),
+      };
       try { saveEditableCatalog(window.localStorage, next); } catch {}
       return next;
     });
@@ -271,7 +295,13 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     if (artistSettingsInitializedRef.current) return;
     artistSettingsInitializedRef.current = true;
     let active = true;
-    const local = createArtistSettingsPayload(catalog.artists, customArtistAvatars, avatarAdjustments);
+    const defaultCatalog = createEditableCatalog(SONGS);
+    const local = createArtistSettingsPayload(
+      catalog.artists,
+      customArtistAvatars,
+      avatarAdjustments,
+      catalog.songs.map((song) => song.id),
+    );
     pullArtistSettings().then((value) => {
       if (!active) return;
       const cloud = value === null ? null : parseArtistSettingsSnapshot(value);
@@ -280,7 +310,8 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
       const draft = loadArtistSettingsDraft(window.localStorage);
       const decision = resolveArtistSettingsPull({
         cloud, local, draft, hasSession: Boolean(artistSettingsSessionRef.current),
-        defaultArtistOrder: createEditableCatalog(SONGS).artists,
+        defaultArtistOrder: defaultCatalog.artists,
+        defaultSongOrder: defaultCatalog.songs.map((song) => song.id),
       });
       if (decision.kind === 'apply-cloud') {
         applyCloudArtistSettings(decision.snapshot);
@@ -299,7 +330,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
         void runArtistSettingsPush();
         return;
       }
-      if (cloud === null && hasCustomArtistSettings(local, createEditableCatalog(SONGS).artists)) {
+      if (cloud === null && hasCustomArtistSettings(local, defaultCatalog.artists, defaultCatalog.songs.map((song) => song.id))) {
         saveArtistSettingsDraft(window.localStorage, createArtistSettingsDraft(null, null, local));
         if (artistSettingsSessionRef.current) void runArtistSettingsPush();
         else setSyncMessage('歌手设置已保存在本地，进入私有空间后将同步全站。');
@@ -307,7 +338,8 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     }).catch(() => {
       if (!active) return;
       const retryDraft = ensureArtistSettingsRetryDraft(
-        window.localStorage, local, createEditableCatalog(SONGS).artists, artistSettingsRevisionRef.current,
+        window.localStorage, local, defaultCatalog.artists, artistSettingsRevisionRef.current,
+        defaultCatalog.songs.map((song) => song.id),
       );
       if (retryDraft && artistSettingsSessionRef.current) void runArtistSettingsPush();
       setSyncMessage(retryDraft
@@ -366,6 +398,20 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     window.addEventListener(SONG_REQUEST_SESSION_EVENT, refreshSession);
     return () => window.removeEventListener(SONG_REQUEST_SESSION_EVENT, refreshSession);
   }, []);
+
+  useEffect(() => {
+    if (!songRecordSession) {
+      setRoadshowArchives([]);
+      return;
+    }
+    let active = true;
+    pullRoadshows(songRecordSession).then((records) => {
+      if (!active) return;
+      setRoadshowArchives(records);
+      try { window.localStorage.setItem(ROADSHOW_CACHE_KEY, JSON.stringify({ version: 1, records })); } catch {}
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, [songRecordSession]);
 
   useEffect(() => {
     if (!songRecordSession) {
@@ -482,7 +528,19 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     artists = catalog.artists,
     avatars = customArtistAvatars,
     adjustments = avatarAdjustments,
-  ) => queueArtistSettings(createArtistSettingsPayload(artists, avatars, adjustments));
+    songOrder = catalog.songs.map((song) => song.id),
+  ) => queueArtistSettings(createArtistSettingsPayload(artists, avatars, adjustments, songOrder));
+
+  const commitSongOrder = (next: EditableCatalog) => {
+    if (next === catalog) return;
+    commitCatalog(next);
+    syncCurrentArtistSettings(
+      next.artists,
+      customArtistAvatars,
+      avatarAdjustments,
+      next.songs.map((song) => song.id),
+    );
+  };
 
   const commitSongRecords = (next: SongRecord[]) => {
     setSongRecords(next);
@@ -492,10 +550,13 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     }
   };
 
-  const openSongDetail = (song: Song) => setSelectedSong(song);
+  const openSongDetail = (song: Song) => {
+    try { setRoadshowArchives(parseRoadshowCache(window.localStorage.getItem(ROADSHOW_CACHE_KEY))); } catch {}
+    setSelectedSong(song);
+  };
   const canOpenPracticeDetails = Boolean(songRecordSession);
   const openPracticeSongDetail = (song: Song) => {
-    if (canOpenPracticeDetails) setSelectedSong(song);
+    if (canOpenPracticeDetails) openSongDetail(song);
   };
 
   const handleAddArtist = () => {
@@ -543,6 +604,103 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     const targetArtist = artistGroups[currentIndex + direction]?.artist;
     if (!targetArtist) return;
     commitCatalog(moveCatalogArtist(catalog, artist, targetArtist));
+  };
+
+  const clearArtistDragState = () => {
+    setDraggedArtist(null);
+    setArtistDropTarget(null);
+  };
+
+  const getArtistDropPlacement = (event: DragEvent<HTMLElement>): ArtistDropPlacement => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const singleColumn = typeof window !== 'undefined' && window.matchMedia('(max-width: 639px)').matches;
+    return singleColumn
+      ? (event.clientY < rect.top + rect.height / 2 ? 'before' : 'after')
+      : (event.clientX < rect.left + rect.width / 2 ? 'before' : 'after');
+  };
+
+  const handleArtistDragStart = (event: DragEvent<HTMLElement>, artist: string) => {
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', artist);
+    setDraggedArtist(artist);
+    setArtistDropTarget(null);
+  };
+
+  const handleArtistDragOver = (event: DragEvent<HTMLElement>, targetArtist: string) => {
+    const sourceArtist = draggedArtist || event.dataTransfer.getData('text/plain');
+    if (!artistOrderMode || !sourceArtist || sourceArtist === targetArtist) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    const placement = getArtistDropPlacement(event);
+    setArtistDropTarget((current) => (
+      current?.artist === targetArtist && current.placement === placement ? current : { artist: targetArtist, placement }
+    ));
+  };
+
+  const handleArtistDrop = (event: DragEvent<HTMLElement>, targetArtist: string) => {
+    event.preventDefault();
+    const sourceArtist = draggedArtist || event.dataTransfer.getData('text/plain');
+    const placement = artistDropTarget?.artist === targetArtist
+      ? artistDropTarget.placement
+      : getArtistDropPlacement(event);
+    if (sourceArtist && sourceArtist !== targetArtist) {
+      commitCatalog(insertCatalogArtist(catalog, sourceArtist, targetArtist, placement));
+    }
+    clearArtistDragState();
+  };
+
+  const clearSongDragState = () => {
+    setDraggedSongId(null);
+    setSongDropTarget(null);
+  };
+
+  const getSongDropPlacement = (event: DragEvent<HTMLElement>): ArtistDropPlacement => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const singleColumn = typeof window !== 'undefined' && window.matchMedia('(max-width: 639px)').matches;
+    return singleColumn
+      ? (event.clientY < rect.top + rect.height / 2 ? 'before' : 'after')
+      : (event.clientX < rect.left + rect.width / 2 ? 'before' : 'after');
+  };
+
+  const moveVisibleSong = (songId: string, direction: -1 | 1) => {
+    if (!selectedArtist) return;
+    const songs = catalog.songs.filter((song) => song.artist === selectedArtist);
+    const currentIndex = songs.findIndex((song) => song.id === songId);
+    const targetSong = songs[currentIndex + direction];
+    if (!targetSong) return;
+    commitSongOrder(moveCatalogSong(catalog, songId, targetSong.id));
+  };
+
+  const handleSongDragStart = (event: DragEvent<HTMLElement>, songId: string) => {
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', songId);
+    setDraggedSongId(songId);
+    setSongDropTarget(null);
+  };
+
+  const handleSongDragOver = (event: DragEvent<HTMLElement>, targetSongId: string) => {
+    const sourceSongId = draggedSongId || event.dataTransfer.getData('text/plain');
+    if (!songOrderMode || !sourceSongId || sourceSongId === targetSongId) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    const placement = getSongDropPlacement(event);
+    setSongDropTarget((current) => (
+      current?.songId === targetSongId && current.placement === placement
+        ? current
+        : { songId: targetSongId, placement }
+    ));
+  };
+
+  const handleSongDrop = (event: DragEvent<HTMLElement>, targetSongId: string) => {
+    event.preventDefault();
+    const sourceSongId = draggedSongId || event.dataTransfer.getData('text/plain');
+    const placement = songDropTarget?.songId === targetSongId
+      ? songDropTarget.placement
+      : getSongDropPlacement(event);
+    if (sourceSongId && sourceSongId !== targetSongId) {
+      commitSongOrder(insertCatalogSong(catalog, sourceSongId, targetSongId, placement));
+    }
+    clearSongDragState();
   };
 
   const getArtistAvatar = (artist: string): ArtistAvatar | undefined => (
@@ -593,16 +751,16 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
 
   const goBack = () => {
     if (selectedSong) {
-      const song = selectedSong;
       setSelectedSong(null);
-      if (activeSection === 'playlists') return;
-      if (activeSection === 'quiz') return;
-      setActiveSection('artists');
-      setSelectedArtist(song.artist);
       return;
     }
     if (activeSection === null) return onBack();
-    if (selectedArtist) return setSelectedArtist(null);
+    if (selectedArtist) {
+      setSongOrderMode(false);
+      clearSongDragState();
+      setSelectedArtist(null);
+      return;
+    }
     setActiveSection(null);
     setQuery('');
   };
@@ -631,6 +789,16 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   };
 
   const canManageFeaturedSongs = isFeaturedSongManager(songRecordSession?.alias);
+  const rememberRoadshowUpdate = (records: RoadshowRecord[], saved: RoadshowRecord) => {
+    const nextRecords = records
+      .map((record) => record.id === saved.id ? saved : record)
+      .sort((left, right) => right.date.localeCompare(left.date) || right.updatedAt.localeCompare(left.updatedAt));
+    setRoadshowArchives(nextRecords);
+    try {
+      window.localStorage.setItem(ROADSHOW_CACHE_KEY, JSON.stringify({ version: 1, records: nextRecords }));
+    } catch {}
+  };
+
   const updateQuizLevel = async (song: Song, level: QuizLevel) => {
     if (!songRecordSession || !canManageFeaturedSongs || quizBusyId) return;
     const next = setQuizLevel(quizAssignments, song.id, level);
@@ -650,8 +818,8 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   };
 
   const addSongToLatestRoadshow = async (song: Song) => {
-    if (!songRecordSession || roadshowQuizBusyId) return;
-    setRoadshowQuizBusyId(song.id);
+    if (!songRecordSession || roadshowBusyId) return;
+    setRoadshowBusyId(song.id);
     setSyncMessage('');
     try {
       const records = await pullRoadshows(songRecordSession);
@@ -661,48 +829,91 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
         return;
       }
       if (prepared.kind === 'duplicate') {
+        setRoadshowArchives(records);
         setSyncMessage(`${song.title}已在最新路演的听歌识曲中`);
         return;
       }
       const saved = await saveRoadshow(songRecordSession, prepared.record);
-      const nextRecords = records
-        .map((record) => record.id === saved.id ? saved : record)
-        .sort((left, right) => right.date.localeCompare(left.date) || right.updatedAt.localeCompare(left.updatedAt));
-      try {
-        window.localStorage.setItem(ROADSHOW_CACHE_KEY, JSON.stringify({ version: 1, records: nextRecords }));
-      } catch {}
+      rememberRoadshowUpdate(records, saved);
       setSyncMessage(`${song.title}已加入“${saved.title}”的听歌识曲`);
     } catch {
       setSyncMessage('加入最新路演失败，请检查网络后重试');
     } finally {
-      setRoadshowQuizBusyId(null);
+      setRoadshowBusyId(null);
+    }
+  };
+
+  const addSongToLatestRoadshowPerformance = async (song: Song) => {
+    if (!songRecordSession || roadshowBusyId) return;
+    setRoadshowBusyId(song.id);
+    setSyncMessage('');
+    try {
+      const records = await pullRoadshows(songRecordSession);
+      const prepared = prepareLatestRoadshowPerformanceSong(records, song);
+      if (prepared.kind === 'missing') {
+        setRoadshowArchives([]);
+        setSyncMessage('还没有路演，请先在私人记录中创建一场路演');
+        return;
+      }
+      if (prepared.kind === 'duplicate') {
+        setRoadshowArchives(records);
+        setSyncMessage(`${song.title}已在最新路演的路演歌曲中`);
+        return;
+      }
+      const saved = await saveRoadshow(songRecordSession, prepared.record);
+      rememberRoadshowUpdate(records, saved);
+      setQuizMenuSongId(null);
+      setSyncMessage(`${song.title}已加入“${saved.title}”的路演歌曲`);
+    } catch {
+      setSyncMessage('加入最新路演失败，请检查网络后重试');
+    } finally {
+      setRoadshowBusyId(null);
     }
   };
 
   const QuizLevelControl = ({ song }: { song: Song }) => {
     const currentLevel = quizAssignments[song.id];
     const current = QUIZ_LEVELS.find((level) => level.id === currentLevel);
-    if (!canManageFeaturedSongs) {
+    if (!songRecordSession) {
       return current ? <span title={`识曲歌库 · ${current.label}`} className={`inline-flex h-9 min-w-9 shrink-0 items-center justify-center rounded-full border px-2 text-[10px] font-black ${QUIZ_LEVEL_STYLES[current.id].badge}`}>{current.symbol}</span> : null;
     }
     const menuOpen = quizMenuSongId === song.id;
+    const isInLatestRoadshow = Boolean(latestRoadshow?.performanceSongs.some((item) => (
+      item.catalogId === song.id || (item.title === song.title && item.artist === song.artist)
+    )));
     return (
       <span className="relative shrink-0">
-        <button type="button" aria-expanded={menuOpen} aria-label={`选择${song.title}的识曲难度`} title={current ? `识曲歌库 · ${current.label}` : '加入识曲歌库'} disabled={Boolean(quizBusyId)}
+        <button type="button" aria-expanded={menuOpen} aria-label={`编排${song.title}`} title={current ? `编排歌曲 · 识曲${current.label}` : '编排歌曲'} disabled={Boolean(quizBusyId || roadshowBusyId)}
           onClick={(event) => { event.stopPropagation(); setQuizMenuSongId(menuOpen ? null : song.id); }}
-          className={`grid h-9 min-w-9 place-items-center rounded-full border px-2 text-[10px] font-black transition active:scale-95 disabled:opacity-45 ${current ? QUIZ_LEVEL_STYLES[current.id].badge : 'border-white/10 bg-black/25 text-white/35 hover:border-sky-200/35 hover:text-sky-100'}`}>
+          className={`relative grid h-9 min-w-9 place-items-center rounded-full border px-2 text-[10px] font-black transition active:scale-95 disabled:opacity-45 ${current ? QUIZ_LEVEL_STYLES[current.id].badge : 'border-white/10 bg-black/25 text-white/35 hover:border-sky-200/35 hover:text-sky-100'}`}>
           {current?.symbol ?? <Disc3 className="h-4 w-4" />}
+          {isInLatestRoadshow && <span title="已加入最新路演" aria-label="已加入最新路演" className="absolute -right-1 -top-1 grid h-4 w-4 place-items-center rounded-full border border-black/70 bg-orange-300 text-black shadow-[0_0_10px_rgba(253,186,116,.35)]"><Check className="h-2.5 w-2.5" /></span>}
         </button>
         {menuOpen && (
-          <span role="menu" aria-label={`${song.title}识曲难度`} className="absolute bottom-full right-0 z-40 mb-2 grid w-40 gap-1 rounded-2xl border border-white/15 bg-[#100d16]/95 p-2 shadow-2xl backdrop-blur-xl">
-            {QUIZ_LEVELS.map((level) => (
-              <button key={level.id} type="button" role="menuitemradio" aria-checked={currentLevel === level.id}
-                onClick={(event) => { event.stopPropagation(); void updateQuizLevel(song, level.id); }}
-                className={`flex items-center gap-3 rounded-xl px-3 py-2 text-left text-xs font-bold transition hover:bg-white/10 ${currentLevel === level.id ? QUIZ_LEVEL_STYLES[level.id].accent : 'text-white/65'}`}>
-                <span className={`grid h-6 w-6 place-items-center rounded-full border ${QUIZ_LEVEL_STYLES[level.id].badge}`}>{level.symbol}</span>{level.label}
+          <span role="menu" aria-label={`${song.title}编排选项`} className="absolute bottom-full right-0 z-40 mb-2 grid max-h-[calc(100vh-2rem)] overflow-y-auto w-56 gap-1 overscroll-contain rounded-2xl border border-white/15 bg-[#100d16]/95 p-2 shadow-2xl backdrop-blur-xl">
+            {canManageFeaturedSongs && <>
+              <small className="px-2 pb-1 pt-1 text-[9px] font-black tracking-[.16em] text-white/30">识曲歌库</small>
+              <span className="grid grid-cols-2 gap-1">
+                {QUIZ_LEVELS.map((level) => (
+                  <button key={level.id} type="button" role="menuitemradio" aria-checked={currentLevel === level.id}
+                    onClick={(event) => { event.stopPropagation(); void updateQuizLevel(song, level.id); }}
+                    className={`flex items-center gap-2 rounded-xl px-2 py-2 text-left text-xs font-bold transition hover:bg-white/10 ${currentLevel === level.id ? QUIZ_LEVEL_STYLES[level.id].accent : 'text-white/65'}`}>
+                    <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full border ${QUIZ_LEVEL_STYLES[level.id].badge}`}>{level.symbol}</span>{level.label}
+                  </button>
+                ))}
+              </span>
+              <small className="px-2 pt-1 text-[9px] leading-4 text-white/30">再次选择可移出歌库</small>
+            </>}
+            <span className="mx-2 my-1 border-t border-white/10" />
+            <small className="px-2 pb-1 text-[9px] font-black tracking-[.16em] text-orange-200/45">最新路演 · 路演歌曲</small>
+            {latestRoadshow ? (
+              <button type="button" disabled={isInLatestRoadshow || Boolean(roadshowBusyId)}
+                onClick={(event) => { event.stopPropagation(); void addSongToLatestRoadshowPerformance(song); }}
+                className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-left text-xs font-bold transition ${isInLatestRoadshow ? 'cursor-default bg-orange-300/[.08] text-orange-100/55' : 'text-orange-100 hover:bg-orange-300/10'}`}>
+                <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-orange-200/20 bg-orange-300/10">{isInLatestRoadshow ? <Check className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}</span>
+                <span className="min-w-0"><span className="block truncate">{isInLatestRoadshow ? `已加入“${latestRoadshow.title}”` : `加入“${latestRoadshow.title}”`}</span><small className="mt-0.5 block font-normal text-white/30">作为本次准备演唱的歌曲</small></span>
               </button>
-            ))}
-            <small className="px-2 pt-1 text-[9px] leading-4 text-white/30">再次选择可移出歌库</small>
+            ) : <span className="rounded-xl px-3 py-2 text-[10px] leading-5 text-white/30">尚未创建路演，请先前往私人记录创建。</span>}
           </span>
         )}
       </span>
@@ -751,18 +962,56 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
 
   const SongRows = ({ songs }: { songs: Song[] }) => (
     <div className="grid gap-3 sm:grid-cols-2">
-      {songs.map((song) => (
-        <article key={song.id} className="group flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-white/10 bg-black/25 p-2 transition hover:border-orange-200/25 hover:bg-white/[.045]">
-          <button type="button" onClick={() => openSongDetail(song)} className="min-w-0 flex-1 rounded-xl px-2 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-orange-300/50">
-            <h3 className="truncate font-bold transition group-hover:text-orange-100">{song.title}</h3><p title={song.hotComment} className="mt-1 truncate text-xs text-white/40">{getSongSubtitle(song)}</p>
-          </button>
-          <span className="flex shrink-0 items-center gap-2"><QuizLevelControl song={song} /><FeaturedSongControl song={song} /><RequestButton song={song} /></span>
-        </article>
-      ))}
+      {songs.map((song, index) => {
+        const isDragged = draggedSongId === song.id;
+        const dropPlacement = songDropTarget?.songId === song.id ? songDropTarget.placement : null;
+        return (
+          <article
+            key={song.id}
+            draggable={songOrderMode}
+            aria-label={songOrderMode ? `${song.title}，可拖拽排序` : undefined}
+            aria-grabbed={songOrderMode ? isDragged : undefined}
+            onDragStart={songOrderMode ? (event) => handleSongDragStart(event, song.id) : undefined}
+            onDragOver={songOrderMode ? (event) => handleSongDragOver(event, song.id) : undefined}
+            onDrop={songOrderMode ? (event) => handleSongDrop(event, song.id) : undefined}
+            onDragEnd={songOrderMode ? clearSongDragState : undefined}
+            className={`group relative flex min-w-0 items-center justify-between gap-3 rounded-2xl border bg-black/25 p-2 transition ${songOrderMode ? 'cursor-grab select-none active:cursor-grabbing' : 'hover:border-orange-200/25 hover:bg-white/[.045]'} ${isDragged ? 'opacity-40' : ''} ${dropPlacement ? 'border-orange-300/60 bg-orange-300/[.055]' : 'border-white/10'}`}
+          >
+            {dropPlacement && (
+              <span aria-hidden="true" className={`pointer-events-none absolute z-20 rounded-full bg-orange-300 shadow-[0_0_18px_rgba(253,186,116,.8)] ${dropPlacement === 'before' ? '-top-1 left-2 right-2 h-1 sm:-left-1 sm:bottom-2 sm:right-auto sm:top-2 sm:h-auto sm:w-1' : '-bottom-1 left-2 right-2 h-1 sm:-right-1 sm:bottom-2 sm:left-auto sm:top-2 sm:h-auto sm:w-1'}`} />
+            )}
+            {songOrderMode && <GripVertical className="h-5 w-5 shrink-0 text-orange-200/45" aria-hidden="true" />}
+            {songOrderMode ? (
+              <span className="min-w-0 flex-1 rounded-xl px-2 py-2 text-left">
+                <h3 className="truncate font-bold text-orange-50">{song.title}</h3><p title={song.hotComment} className="mt-1 truncate text-xs text-white/40">{getSongSubtitle(song)}</p>
+              </span>
+            ) : (
+              <button type="button" onClick={() => openSongDetail(song)} className="min-w-0 flex-1 rounded-xl px-2 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-orange-300/50">
+                <h3 className="truncate font-bold transition group-hover:text-orange-100">{song.title}</h3><p title={song.hotComment} className="mt-1 truncate text-xs text-white/40">{getSongSubtitle(song)}</p>
+              </button>
+            )}
+            {songOrderMode ? (
+              <span className="flex shrink-0 gap-1">
+                <button type="button" aria-label={`${song.title}前移`} title="前移" disabled={index === 0} onClick={() => moveVisibleSong(song.id, -1)} className="grid h-8 w-8 place-items-center rounded-full border border-white/10 text-white/55 transition hover:border-orange-200/35 hover:text-orange-100 disabled:cursor-not-allowed disabled:opacity-20"><ChevronLeft className="h-4 w-4" /></button>
+                <button type="button" aria-label={`${song.title}后移`} title="后移" disabled={index === songs.length - 1} onClick={() => moveVisibleSong(song.id, 1)} className="grid h-8 w-8 place-items-center rounded-full border border-white/10 text-white/55 transition hover:border-orange-200/35 hover:text-orange-100 disabled:cursor-not-allowed disabled:opacity-20"><ChevronRight className="h-4 w-4" /></button>
+              </span>
+            ) : (
+              <span className="flex shrink-0 items-center gap-2"><QuizLevelControl song={song} /><FeaturedSongControl song={song} /><RequestButton song={song} /></span>
+            )}
+          </article>
+        );
+      })}
     </div>
   );
 
   const sectionTitle = activeSection === 'quiz' ? '识曲歌库' : HUB_DIRECTIONS.find((item) => item.id === activeSection)?.label;
+  const detailBackLabel = selectedSong
+    ? activeSection === 'ranking'
+      ? rankingView === 'requests' ? '点歌榜' : '吉他练习榜'
+      : activeSection === 'playlists' ? '热门歌曲'
+        : activeSection === 'quiz' ? '识曲歌库'
+          : activeSection === 'artists' && selectedArtist ? selectedArtist : '点歌台'
+    : '';
   const popularImmersive = activeSection === 'playlists' && !selectedSong;
 
   return (
@@ -812,13 +1061,13 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
       <div className="relative mx-auto w-full max-w-6xl">
         <header className="mb-8 flex items-center justify-between gap-4 pr-14 sm:pr-16">
           <button type="button" onClick={goBack} className="inline-flex h-11 items-center gap-2 rounded-full border border-white/10 bg-black/35 px-4 text-sm font-semibold text-white/70 backdrop-blur-xl transition hover:text-white">
-            <ArrowLeft className="h-4 w-4" /> {selectedSong ? selectedSong.artist : activeSection === null ? '宇宙' : selectedArtist ? sectionTitle : '点歌台'}
+            <ArrowLeft className="h-4 w-4" /> {selectedSong ? detailBackLabel : activeSection === null ? '宇宙' : selectedArtist ? sectionTitle : '点歌台'}
           </button>
           <span className="text-[10px] font-bold tracking-[0.28em] text-orange-200/55">JIEYOU · SONG REQUEST</span>
         </header>
 
         {selectedSong ? (
-          <SongDetailPanel song={selectedSong} records={songRecords} session={songRecordSession} syncStatus={recordSyncStatus} onRecordsChange={commitSongRecords} onOpenPrivateSpace={openPrivateSpace} />
+          <SongDetailPanel song={selectedSong} records={songRecords} roadshows={roadshowArchives} session={songRecordSession} syncStatus={recordSyncStatus} onRecordsChange={commitSongRecords} onOpenPrivateSpace={openPrivateSpace} />
         ) : activeSection === null ? (
           <>
             <section className="mx-auto max-w-3xl py-5 text-center sm:py-10">
@@ -875,13 +1124,18 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
               {activeSection === 'artists' && (
                 <div className="flex shrink-0 flex-wrap justify-end gap-2">
                   {!selectedArtist && <>
-                    <button type="button" aria-pressed={artistOrderMode} onClick={() => { if (artistOrderMode) syncCurrentArtistSettings(); setArtistOrderMode((current) => !current); setAvatarAdjustMode(false); setAdjustingArtist(null); }} className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-xs font-bold transition ${artistOrderMode ? 'border-orange-200/40 bg-orange-300 text-black' : 'border-white/10 bg-black/30 text-white/55 hover:text-white'}`}>
+                    <button type="button" aria-pressed={artistOrderMode} onClick={() => { if (artistOrderMode) syncCurrentArtistSettings(); clearArtistDragState(); setArtistOrderMode((current) => !current); setAvatarAdjustMode(false); setAdjustingArtist(null); }} className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-xs font-bold transition ${artistOrderMode ? 'border-orange-200/40 bg-orange-300 text-black' : 'border-white/10 bg-black/30 text-white/55 hover:text-white'}`}>
                       <ListOrdered className="h-4 w-4" />{artistOrderMode ? '完成排序' : '调整排序'}
                     </button>
-                    <button type="button" aria-pressed={avatarAdjustMode} onClick={() => { if (avatarAdjustMode) syncCurrentArtistSettings(); setAvatarAdjustMode((current) => !current); setArtistOrderMode(false); setAdjustingArtist(null); }} className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-xs font-bold transition ${avatarAdjustMode ? 'border-orange-200/40 bg-orange-300 text-black' : 'border-white/10 bg-black/30 text-white/55 hover:text-white'}`}>
+                    <button type="button" aria-pressed={avatarAdjustMode} onClick={() => { if (avatarAdjustMode) syncCurrentArtistSettings(); clearArtistDragState(); setAvatarAdjustMode((current) => !current); setArtistOrderMode(false); setAdjustingArtist(null); }} className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-xs font-bold transition ${avatarAdjustMode ? 'border-orange-200/40 bg-orange-300 text-black' : 'border-white/10 bg-black/30 text-white/55 hover:text-white'}`}>
                       <SlidersHorizontal className="h-4 w-4" />{avatarAdjustMode ? '完成头像' : '调整头像'}
                     </button>
                   </>}
+                  {selectedArtist && (
+                    <button type="button" aria-pressed={songOrderMode} onClick={() => { clearSongDragState(); setSongOrderMode((current) => !current); }} className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-xs font-bold transition ${songOrderMode ? 'border-orange-200/40 bg-orange-300 text-black' : 'border-white/10 bg-black/30 text-white/55 hover:text-white'}`}>
+                      <ListOrdered className="h-4 w-4" />{songOrderMode ? '完成排序' : '调整排序'}
+                    </button>
+                  )}
                   <button type="button" onClick={selectedArtist ? handleAddSong : handleAddArtist} className="inline-flex items-center gap-1.5 rounded-full border border-rose-200/25 bg-rose-300/10 px-3.5 py-2 text-xs font-bold text-rose-100 transition hover:bg-rose-300/20">
                     <Plus className="h-4 w-4" />{selectedArtist ? '新增歌曲' : '新增歌手'}
                   </button>
@@ -979,7 +1233,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                               </button>
                               {songRecordSession && (
                                 <button type="button" aria-label={`将${song.title}加入最新路演听歌识曲`} title="加入最新路演 · 听歌识曲"
-                                  disabled={Boolean(roadshowQuizBusyId)} onClick={() => { void addSongToLatestRoadshow(song); }}
+                                  disabled={Boolean(roadshowBusyId)} onClick={() => { void addSongToLatestRoadshow(song); }}
                                   className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-orange-200/20 bg-orange-300/10 text-orange-100 transition hover:bg-orange-300/20 disabled:opacity-40">
                                   <Plus className="h-3.5 w-3.5" />
                                 </button>
@@ -1024,11 +1278,25 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                     onDone={() => { setAdjustingArtist(null); syncCurrentArtistSettings(); }}
                   />
                 )}
-                {selectedArtist ? <SongRows songs={catalogSongs.filter((song) => song.artist === selectedArtist)} /> : (
+                {selectedArtist ? <>
+                  {songOrderMode && (
+                    <p className="flex items-center gap-2 text-xs text-orange-100/55">
+                      <GripVertical className="h-4 w-4" aria-hidden="true" />拖拽歌曲到任意位置，或使用箭头微调；顺序会自动同步
+                    </p>
+                  )}
+                  <SongRows songs={catalogSongs.filter((song) => song.artist === selectedArtist)} />
+                </> : (<>
+                      {artistOrderMode && (
+                        <p className="flex items-center gap-2 text-xs text-orange-100/55">
+                          <GripVertical className="h-4 w-4" aria-hidden="true" />拖拽歌手到任意位置，或使用箭头微调
+                        </p>
+                      )}
                       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{artistGroups.map(({ artist, songs }, index) => {
                         const avatar = getArtistAvatar(artist);
                         const avatarStyle = getAvatarStyle(artist);
-                        const cardClass = `flex min-w-0 items-center gap-4 rounded-2xl border bg-black/30 p-4 text-left transition ${adjustingArtist === artist ? 'border-orange-300/70 ring-2 ring-orange-300/15' : 'border-white/10 hover:border-rose-300/35'}`;
+                        const isDragged = draggedArtist === artist;
+                        const dropPlacement = artistDropTarget?.artist === artist ? artistDropTarget.placement : null;
+                        const cardClass = `relative flex min-w-0 items-center gap-4 rounded-2xl border bg-black/30 p-4 text-left transition ${adjustingArtist === artist ? 'border-orange-300/70 ring-2 ring-orange-300/15' : 'border-white/10 hover:border-rose-300/35'}`;
                         const cardContent = <>
                           <span className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-full border border-rose-200/20 bg-rose-300/10">
                             {avatar && avatarStyle ? (
@@ -1038,7 +1306,27 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                           <span className="min-w-0 flex-1"><strong className="block truncate">{artist}</strong><small className="text-white/35">{songs.length} 首</small></span>
                         </>;
                         if (artistOrderMode) return (
-                          <article key={artist} className={cardClass}>
+                          <article
+                            key={artist}
+                            draggable={artistOrderMode}
+                            aria-label={`${artist}，可拖拽排序`}
+                            aria-grabbed={isDragged}
+                            title="拖拽到任意位置，或使用箭头微调"
+                            onDragStart={(event) => handleArtistDragStart(event, artist)}
+                            onDragOver={(event) => handleArtistDragOver(event, artist)}
+                            onDrop={(event) => handleArtistDrop(event, artist)}
+                            onDragEnd={clearArtistDragState}
+                            className={`${cardClass} cursor-grab select-none active:cursor-grabbing ${isDragged ? 'opacity-40' : ''} ${dropPlacement ? 'border-orange-300/60 bg-orange-300/[.055]' : ''}`}
+                          >
+                            {dropPlacement && (
+                              <span
+                                aria-hidden="true"
+                                className={`pointer-events-none absolute z-20 rounded-full bg-orange-300 shadow-[0_0_18px_rgba(253,186,116,.8)] ${dropPlacement === 'before'
+                                  ? '-top-1 left-2 right-2 h-1 sm:-left-1 sm:bottom-2 sm:right-auto sm:top-2 sm:h-auto sm:w-1'
+                                  : '-bottom-1 left-2 right-2 h-1 sm:-right-1 sm:bottom-2 sm:left-auto sm:top-2 sm:h-auto sm:w-1'}`}
+                              />
+                            )}
+                            <GripVertical className="h-5 w-5 shrink-0 text-orange-200/45" aria-hidden="true" />
                             {cardContent}
                             <span className="flex shrink-0 gap-1">
                               <button type="button" aria-label={`${artist}前移`} title="前移" disabled={index === 0} onClick={() => moveVisibleArtist(artist, -1)} className="grid h-8 w-8 place-items-center rounded-full border border-white/10 text-white/55 transition hover:border-orange-200/35 hover:text-orange-100 disabled:cursor-not-allowed disabled:opacity-20"><ChevronLeft className="h-4 w-4" /></button>
@@ -1052,7 +1340,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                           </button>
                         );
                       })}</div>
-                )}
+                </>)}
               </div>
             )}
 
@@ -1062,6 +1350,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                 songs={catalogSongs}
                 records={songRecords}
                 syncStatus={recordSyncStatus}
+                quizAssignments={quizAssignments}
                 onRecordsChange={commitSongRecords}
               />
             )}

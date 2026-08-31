@@ -1,4 +1,5 @@
 import type { Song } from './songCatalog.ts';
+import type { QuizAssignments, QuizLevel } from './songQuizLibrary.ts';
 
 export interface RoadshowSong {
   id: string;
@@ -30,6 +31,23 @@ export const groupSongsByArtist = (songs: Song[]) => {
   return [...groups].map(([artist, groupedSongs]) => ({ artist, songs: groupedSongs }));
 };
 
+export const groupRoadshowRecognitionSongs = (
+  songs: RoadshowSong[],
+  assignments: QuizAssignments,
+) => {
+  const groups: Record<QuizLevel, RoadshowSong[]> = {
+    warmup: [],
+    standard: [],
+    hard: [],
+    hell: [],
+  };
+  for (const song of songs) {
+    const level = song.catalogId ? assignments[song.catalogId] : undefined;
+    groups[level ?? 'standard'].push(song);
+  }
+  return groups;
+};
+
 const normalize = (value: string) => value.trim().toLocaleLowerCase().replace(/\s+/g, ' ');
 
 export const findSongAppearances = (
@@ -51,6 +69,16 @@ export const findSongAppearances = (
   }
   return [...seen];
 };
+
+export const findSongRoadshowHistory = (
+  records: RoadshowRecord[],
+  candidate: Pick<Song, 'id' | 'title' | 'artist'>,
+) => records
+  .filter((record) => record.performanceSongs.some((song) => (
+    song.catalogId === candidate.id
+    || (normalize(song.title) === normalize(candidate.title) && normalize(song.artist) === normalize(candidate.artist))
+  )))
+  .sort((left, right) => right.date.localeCompare(left.date) || right.updatedAt.localeCompare(left.updatedAt));
 
 const isSong = (value: unknown): value is RoadshowSong => {
   if (!value || typeof value !== 'object') return false;
@@ -93,19 +121,23 @@ export const createRoadshowSong = (song: Song): RoadshowSong => ({
   source: 'catalog',
 });
 
-export type LatestRoadshowRecognitionResult =
+export type LatestRoadshowSongResult =
   | { kind: 'missing' }
   | { kind: 'duplicate'; record: RoadshowRecord }
   | { kind: 'updated'; record: RoadshowRecord };
 
+export const getLatestRoadshow = (records: RoadshowRecord[]) => (
+  [...records].sort((left, right) => (
+    right.date.localeCompare(left.date) || right.updatedAt.localeCompare(left.updatedAt)
+  ))[0]
+);
+
 export const prepareLatestRoadshowRecognitionSong = (
   records: RoadshowRecord[],
   song: Song,
-): LatestRoadshowRecognitionResult => {
-  if (!records.length) return { kind: 'missing' };
-  const latest = [...records].sort((left, right) => (
-    right.date.localeCompare(left.date) || right.updatedAt.localeCompare(left.updatedAt)
-  ))[0];
+): LatestRoadshowSongResult => {
+  const latest = getLatestRoadshow(records);
+  if (!latest) return { kind: 'missing' };
   const duplicate = latest.recognitionSongs.some((item) => (
     item.catalogId === song.id
     || (normalize(item.title) === normalize(song.title) && normalize(item.artist) === normalize(song.artist))
@@ -116,6 +148,26 @@ export const prepareLatestRoadshowRecognitionSong = (
     record: {
       ...latest,
       recognitionSongs: [...latest.recognitionSongs, createRoadshowSong(song)],
+    },
+  };
+};
+
+export const prepareLatestRoadshowPerformanceSong = (
+  records: RoadshowRecord[],
+  song: Song,
+): LatestRoadshowSongResult => {
+  const latest = getLatestRoadshow(records);
+  if (!latest) return { kind: 'missing' };
+  const duplicate = latest.performanceSongs.some((item) => (
+    item.catalogId === song.id
+    || (normalize(item.title) === normalize(song.title) && normalize(item.artist) === normalize(song.artist))
+  ));
+  if (duplicate) return { kind: 'duplicate', record: latest };
+  return {
+    kind: 'updated',
+    record: {
+      ...latest,
+      performanceSongs: [...latest.performanceSongs, createRoadshowSong(song)],
     },
   };
 };

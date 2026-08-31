@@ -37,10 +37,10 @@ const ThemeHub: React.FC<ThemeHubProps> = ({ onSelect, onOpenSongRequest }) => {
       <div className="mx-auto flex min-h-[calc(100vh-7rem)] w-full max-w-6xl flex-col justify-center">
         <header className="mb-9 text-center md:mb-12">
           <h1 className="text-balance font-serif text-4xl font-black tracking-[-0.04em] text-white md:text-6xl lg:text-7xl">
-            很高兴，在这片宇宙遇见你
+            很高兴，在这片星空遇见你
           </h1>
           <p className="mx-auto mt-4 max-w-2xl text-sm leading-7 text-white/55 md:text-base">
-            有些时刻需要被接住，有些时刻值得被庆祝。
+            生活是独属于每个人自己的感受，不属于任何别人的看法
           </p>
         </header>
 
@@ -143,7 +143,7 @@ const ThemeHub: React.FC<ThemeHubProps> = ({ onSelect, onOpenSongRequest }) => {
               <span>
                 <span className="block text-[10px] font-bold tracking-[0.28em] text-orange-200/80">SONG REQUEST</span>
                 <span className="mt-3 block font-serif text-3xl font-black tracking-tight text-white md:text-4xl">点歌台</span>
-                <span className="mt-3 block max-w-md text-sm leading-7 text-white/55">翻翻我会唱的歌，把最想听的那一首送上点歌榜。</span>
+                <span className="mt-3 block max-w-md text-sm leading-7 text-white/55">翻翻JIEYOU会唱的歌，把最想听的那一首送上点歌榜。</span>
                 <span className="mt-7 inline-flex items-center gap-2 text-sm font-bold text-orange-100">
                   去点一首歌
                   <ArrowUpRight className="h-4 w-4 motion-safe:transition-transform motion-safe:duration-300 motion-safe:group-hover:translate-x-1 motion-safe:group-hover:-translate-y-1" />

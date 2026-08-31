@@ -12,3 +12,18 @@ test('管理员模式允许删除任意用户的星星且删除函数保留权�
   assert.match(source, /canDelete=\{canDeleteStar\(star\)\}/)
   assert.match(source, /canDeleteStar\(selectedStar\) && \(/)
 })
+
+test('删除星星必须经过站内二次确认', () => {
+  const source = readFileSync(starrySkyUrl, 'utf8')
+
+  assert.match(source, /const \[pendingDeleteStarId, setPendingDeleteStarId\] = useState<string \| null>\(null\)/)
+  assert.match(source, /requestDeleteStar\(selectedStar\.id\)/)
+  assert.match(source, /onDelete=\{\(\) => requestDeleteStar\(star\.id\)\}/)
+  assert.match(source, /role="alertdialog"/)
+  assert.match(source, /确定删除这颗星星/)
+  assert.match(source, /删除后无法恢复/)
+  assert.match(source, />\s*取消\s*<\/button>/)
+  assert.match(source, />\s*确认删除\s*<\/button>/)
+  assert.match(source, /handleConfirmDelete/)
+  assert.doesNotMatch(source, /handleDeleteStar\(selectedStar\.id\)/)
+})
