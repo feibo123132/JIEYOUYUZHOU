@@ -237,46 +237,29 @@ const SongDetailPanel = ({
       <div className="relative w-full rounded-[2rem] border border-orange-200/15 bg-[linear-gradient(125deg,rgba(67,29,13,.72),rgba(8,8,13,.9)_58%)] p-6 shadow-[0_28px_90px_rgba(0,0,0,.34)] sm:p-9">
         <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-[2rem]"><div className="absolute -right-20 -top-28 h-72 w-72 rounded-full bg-orange-400/10 blur-3xl" /></div>
         <div className="relative flex flex-col justify-between gap-7 sm:flex-row sm:items-start">
-          <div>
-            <div data-journal-eyebrow className="flex flex-wrap items-center gap-x-4 gap-y-2">
-              <p className="text-[10px] font-black tracking-[.3em] text-orange-300/65">MY SONG JOURNAL · {song.artist}</p>
-              {(syncStatus || message) && <p className="inline-flex items-center gap-1.5 text-[10px] font-black tracking-[.12em] text-orange-100/55" role="status"><Cloud className="h-2.5 w-2.5" />{message || syncStatus}</p>}
+          <div className="min-w-0">
+            <h1 className="font-serif text-4xl font-black tracking-[-.04em] sm:text-6xl">{song.title}</h1>
+            <div data-journal-description className="mt-3 flex max-w-2xl flex-wrap items-center gap-x-3 gap-y-1">
+              <p className="text-sm leading-7 text-white/45">{song.hotComment || `${song.artist} · ${song.category}`}</p>
+              {(syncStatus || message) && <p className="inline-flex shrink-0 items-center gap-1.5 text-[10px] font-black tracking-[.12em] text-orange-100/55" role="status"><Cloud className="h-2.5 w-2.5" />{message || syncStatus}</p>}
             </div>
-            <h1 className="mt-3 font-serif text-4xl font-black tracking-[-.04em] sm:text-6xl">{song.title}</h1>
-            <p className="mt-3 max-w-2xl text-sm leading-7 text-white/45">{song.hotComment || `${song.artist} · ${song.category}`}</p>
           </div>
           <div className="flex shrink-0 flex-col items-stretch gap-3 sm:items-end">
-            <div className="grid min-w-48 grid-cols-2 gap-2">
-              {activeJournal === 'practice' ? <>
-                <Stat label="练习" value={`${practices.length} 次`} />
-                <Stat label="匹配度" value={averageScore === null ? '—' : `${averageScore}`} />
-              </> : activeJournal === 'roadshow' ? <>
-                <Stat label="路演" value={`${roadshowHistory.length} 次`} />
-                <Stat label="最近" value={roadshowHistory[0] ? displayRoadshowDate(roadshowHistory[0].date) : '—'} />
-              </> : <>
-                <Stat label="谱页" value={`${scorePages.length} 页`} />
-                <Stat label="状态" value={scorePages.length ? '已上传' : '待上传'} />
-              </>}
-            </div>
-            <div data-journal-toolbar className="flex w-full flex-wrap items-center justify-end gap-3">
-              <div role="group" aria-label="切换记录类型" className="inline-flex rounded-2xl border border-white/10 bg-black/25 p-1">
-                <button type="button" aria-pressed={activeJournal === 'practice'} onClick={() => setActiveJournal('practice')} className={`inline-flex h-9 items-center gap-2 rounded-xl px-3 text-xs font-bold transition ${activeJournal === 'practice' ? 'bg-orange-300 text-black shadow-[0_8px_25px_rgba(251,146,60,.2)]' : 'text-white/40 hover:text-white/75'}`}><Guitar className="h-4 w-4" />练习</button>
-                <button type="button" aria-pressed={activeJournal === 'roadshow'} onClick={() => setActiveJournal('roadshow')} className={`inline-flex h-9 items-center gap-2 rounded-xl px-3 text-xs font-bold transition ${activeJournal === 'roadshow' ? 'bg-orange-300 text-black shadow-[0_8px_25px_rgba(251,146,60,.2)]' : 'text-white/40 hover:text-white/75'}`}><MessageCircle className="h-4 w-4" />路演</button>
-                <button type="button" aria-pressed={activeJournal === 'score'} onClick={() => setActiveJournal('score')} className={`inline-flex h-9 items-center gap-2 rounded-xl px-3 text-xs font-bold transition ${activeJournal === 'score' ? 'bg-orange-300 text-black shadow-[0_8px_25px_rgba(251,146,60,.2)]' : 'text-white/40 hover:text-white/75'}`}><Music4 className="h-4 w-4" />谱子</button>
-              </div>
+            <div className="grid min-w-64 grid-cols-3 gap-2">
               {(canManageQuiz || currentQuizLevel) && (
-                <span className="relative shrink-0">
+                <span className="relative">
                   <button
                     data-detail-quiz-trigger
                     type="button"
-                    className={`grid h-11 w-11 place-items-center rounded-full border text-[11px] font-black transition active:scale-95 ${currentQuizLevel ? quizLevelTone[currentQuizLevel.id] : 'border-white/10 bg-black/25 text-white/35 hover:border-sky-200/35 hover:text-sky-100'}`}
+                    className="flex h-full min-h-[4.75rem] w-full flex-col items-center justify-center rounded-2xl border border-white/10 bg-black/20 p-3 text-center transition hover:border-sky-200/35 active:scale-95 disabled:opacity-45"
                     aria-label="听歌识曲等级"
                     aria-expanded={canManageQuiz ? quizMenuOpen : undefined}
                     title={currentQuizLevel ? `听歌识曲 · ${currentQuizLevel.label}` : '加入听歌识曲'}
                     disabled={!canManageQuiz || quizBusy}
                     onClick={() => setQuizMenuOpen((open) => !open)}
                   >
-                    {currentQuizLevel?.symbol ?? <Disc3 className="h-4 w-4" />}
+                    <strong className="block font-serif text-xl text-orange-100">{currentQuizLevel?.symbol ?? <Disc3 className="h-5 w-5" />}</strong>
+                    <small className="mt-1 block text-[10px] tracking-[.14em] text-white/30">{currentQuizLevel?.label ?? '识曲'}</small>
                   </button>
                   {canManageQuiz && quizMenuOpen && (
                     <span data-detail-quiz-popover role="menu" aria-label={`${song.title}听歌识曲等级`} className="absolute right-0 top-full z-30 mt-2 grid w-56 gap-1 rounded-2xl border border-white/15 bg-[#100d16]/95 p-2 shadow-2xl backdrop-blur-xl">
@@ -303,6 +286,23 @@ const SongDetailPanel = ({
                   )}
                 </span>
               )}
+              {activeJournal === 'practice' ? <>
+                <Stat label="练习" value={`${practices.length} 次`} />
+                <Stat label="匹配度" value={averageScore === null ? '—' : `${averageScore}`} />
+              </> : activeJournal === 'roadshow' ? <>
+                <Stat label="路演" value={`${roadshowHistory.length} 次`} />
+                <Stat label="最近" value={roadshowHistory[0] ? displayRoadshowDate(roadshowHistory[0].date) : '—'} />
+              </> : <>
+                <Stat label="谱页" value={`${scorePages.length} 页`} />
+                <Stat label="状态" value={scorePages.length ? '已上传' : '待上传'} />
+              </>}
+            </div>
+            <div data-journal-toolbar className="flex w-full flex-wrap items-center justify-end gap-3">
+              <div role="group" aria-label="切换记录类型" className="inline-flex rounded-2xl border border-white/10 bg-black/25 p-1">
+                <button type="button" aria-pressed={activeJournal === 'practice'} onClick={() => setActiveJournal('practice')} className={`inline-flex h-9 items-center gap-2 rounded-xl px-3 text-xs font-bold transition ${activeJournal === 'practice' ? 'bg-orange-300 text-black shadow-[0_8px_25px_rgba(251,146,60,.2)]' : 'text-white/40 hover:text-white/75'}`}><Guitar className="h-4 w-4" />练习</button>
+                <button type="button" aria-pressed={activeJournal === 'roadshow'} onClick={() => setActiveJournal('roadshow')} className={`inline-flex h-9 items-center gap-2 rounded-xl px-3 text-xs font-bold transition ${activeJournal === 'roadshow' ? 'bg-orange-300 text-black shadow-[0_8px_25px_rgba(251,146,60,.2)]' : 'text-white/40 hover:text-white/75'}`}><MessageCircle className="h-4 w-4" />路演</button>
+                <button type="button" aria-pressed={activeJournal === 'score'} onClick={() => setActiveJournal('score')} className={`inline-flex h-9 items-center gap-2 rounded-xl px-3 text-xs font-bold transition ${activeJournal === 'score' ? 'bg-orange-300 text-black shadow-[0_8px_25px_rgba(251,146,60,.2)]' : 'text-white/40 hover:text-white/75'}`}><Music4 className="h-4 w-4" />谱子</button>
+              </div>
             </div>
           </div>
         </div>

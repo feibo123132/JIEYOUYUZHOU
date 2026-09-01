@@ -84,7 +84,7 @@ const QUIZ_LEVEL_STYLES: Record<QuizLevel, { accent: string; panel: string; badg
 };
 
 const HUB_DIRECTIONS = [
-  { id: 'ranking', label: '排行榜', eyebrow: 'RANKINGS', description: '切换查看点歌、吉他练习与听歌识曲榜', icon: Trophy, tone: 'from-amber-400/20 to-orange-600/5' },
+  { id: 'ranking', label: '排行榜', eyebrow: 'RANKINGS', description: '切换查看点歌、吉他练习与猜歌榜', icon: Trophy, tone: 'from-amber-400/20 to-orange-600/5' },
   { id: 'artists', label: '歌手', eyebrow: 'ARTISTS', description: '按歌手找到我会唱的歌', icon: Mic2, tone: 'from-rose-400/20 to-pink-700/5' },
   { id: 'roadshows', label: '私人记录', eyebrow: 'PRIVATE ARCHIVE', description: '日常练习与路演记录', icon: CalendarDays, tone: 'from-cyan-400/20 to-blue-700/5' },
   { id: 'playlists', label: '热门歌曲', eyebrow: 'HOT SONGS', description: '看歌名化作彩色弹幕穿过星空', icon: Library, tone: 'from-violet-400/20 to-purple-700/5' },
@@ -209,7 +209,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   const [publicPracticeRanking, setPublicPracticeRanking] = useState<PublicPracticeRankingItem[]>([]);
   const [publicRankingStatus, setPublicRankingStatus] = useState('正在读取公开榜单');
   const [publicQuizRanking, setPublicQuizRanking] = useState<PublicQuizRankingItem[]>([]);
-  const [publicQuizRankingStatus, setPublicQuizRankingStatus] = useState('正在读取识曲榜');
+  const [publicQuizRankingStatus, setPublicQuizRankingStatus] = useState('正在读取猜歌榜');
   const [recoveredSongs, setRecoveredSongs] = useState<Song[]>([]);
   const [recordSyncStatus, setRecordSyncStatus] = useState('');
   const [avatarAdjustMode, setAvatarAdjustMode] = useState(false);
@@ -413,12 +413,12 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   useEffect(() => {
     let active = true;
     const refresh = () => {
-      setPublicQuizRankingStatus('正在读取识曲榜');
+      setPublicQuizRankingStatus('正在读取猜歌榜');
       pullPublicQuizRanking().then((ranking) => {
         if (!active) return;
         setPublicQuizRanking(parsePublicQuizRanking(ranking));
         setPublicQuizRankingStatus('');
-      }).catch(() => { if (active) setPublicQuizRankingStatus('识曲榜暂时未连接'); });
+      }).catch(() => { if (active) setPublicQuizRankingStatus('猜歌榜暂时未连接'); });
     };
     refresh();
     window.addEventListener('jieyou-quiz-ranking-updated', refresh);
@@ -1174,7 +1174,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     ? '点歌榜'
     : rankingView === 'personal'
       ? personalRankingArtist ? `${personalRankingArtist} · 吉他练习榜` : '吉他练习榜'
-      : '识曲榜';
+      : '猜歌榜';
   const detailBackLabel = selectedSong
     ? activeSection === 'ranking'
       ? rankingHeading
@@ -1305,7 +1305,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                     className={`grid h-10 w-10 place-items-center rounded-full transition ${rankingView === 'personal' ? 'bg-orange-300 text-black' : 'text-white/45 hover:text-white'}`}>
                     <Target className="h-4 w-4" />
                   </button>
-                  <button type="button" aria-label="切换到识曲榜" aria-pressed={rankingView === 'quiz'} onClick={() => setRankingView('quiz')}
+                  <button type="button" aria-label="切换到猜歌榜" aria-pressed={rankingView === 'quiz'} onClick={() => setRankingView('quiz')}
                     className={`grid h-10 w-10 place-items-center rounded-full transition ${rankingView === 'quiz' ? 'bg-orange-300 text-black' : 'text-white/45 hover:text-white'}`}>
                     <Disc3 className="h-4 w-4" />
                   </button>
@@ -1437,7 +1437,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                     </div>
                   </aside>
                 ) : (
-                  <aside className="h-fit rounded-[1.75rem] border border-sky-200/15 bg-sky-950/20 p-6 text-sm leading-7 text-white/45">识曲榜会汇总所有路演中的答题记录，优先按正确率排列，正确率相同时答题次数更多的歌曲在前。</aside>
+                  <aside className="h-fit rounded-[1.75rem] border border-sky-200/15 bg-sky-950/20 p-6 text-sm leading-7 text-white/45">猜歌榜会汇总所有路演中的答题记录，优先按正确率排列，正确率相同时答题次数更多的歌曲在前。</aside>
                 )}
               </div>
             )}

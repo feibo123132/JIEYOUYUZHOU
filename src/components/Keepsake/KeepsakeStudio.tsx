@@ -8,6 +8,7 @@ import {
   clampPhotoTransform,
   normalizeKeepsakeText,
   renderKeepsake,
+  type KeepsakeFrameCategory,
   type KeepsakeFrameId,
   type KeepsakeLocation,
   type KeepsakeSentence,
@@ -63,6 +64,14 @@ export default function KeepsakeStudio({ onBack }: KeepsakeStudioProps) {
   const [imageSize, setImageSize] = useState<{ width: number; height: number } | null>(null)
   const [photoView, setPhotoView] = useState(getInitialPhotoView)
   const [frameId, setFrameId] = useState<KeepsakeFrameId>('warm-paper')
+  const [frameCategory, setFrameCategory] = useState<KeepsakeFrameCategory>('basic')
+  const handleCategoryChange = useCallback((category: KeepsakeFrameCategory) => {
+    setFrameCategory(category)
+    const inCategory = KEEPSAKE_FRAMES.filter((f) => f.category === category)
+    if (!inCategory.some((f) => f.id === frameId)) {
+      setFrameId(inCategory[0]?.id ?? 'warm-paper')
+    }
+  }, [frameId])
   const [title, setTitle] = useState('今日留影')
   const [body, setBody] = useState('')
   const [date, setDate] = useState(() => getLocalDateInputValue())
@@ -294,9 +303,27 @@ export default function KeepsakeStudio({ onBack }: KeepsakeStudioProps) {
               </div>
 
               <fieldset>
-                <legend className="mb-3 text-xs font-bold tracking-[0.18em] text-white/55">外框</legend>
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <legend className="text-xs font-bold tracking-[0.18em] text-white/55">外框</legend>
+                  <div className="flex gap-1 rounded-xl border border-white/10 bg-black/25 p-0.5">
+                    <button
+                      type="button"
+                      onClick={() => handleCategoryChange('basic')}
+                      className={`rounded-lg px-3 py-1 text-[11px] font-bold transition focus:outline-none focus:ring-2 focus:ring-sky-200/70 ${frameCategory === 'basic' ? 'bg-white/15 text-white' : 'text-white/45 hover:text-white/70'}`}
+                    >
+                      基础
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleCategoryChange('mid-autumn')}
+                      className={`rounded-lg px-3 py-1 text-[11px] font-bold transition focus:outline-none focus:ring-2 focus:ring-sky-200/70 ${frameCategory === 'mid-autumn' ? 'bg-amber-500/25 text-amber-100' : 'text-white/45 hover:text-white/70'}`}
+                    >
+                      中秋
+                    </button>
+                  </div>
+                </div>
                 <div className="grid grid-cols-3 gap-2 sm:gap-3">
-                  {KEEPSAKE_FRAMES.map((frame) => (
+                  {KEEPSAKE_FRAMES.filter((frame) => frame.category === frameCategory).map((frame) => (
                     <button
                       key={frame.id}
                       type="button"

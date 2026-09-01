@@ -2,7 +2,8 @@ export const KEEPSAKE_WIDTH = 1200
 export const KEEPSAKE_HEIGHT = 1600
 export const PHOTO_WINDOW = Object.freeze({ x: 90, y: 185, width: 1020, height: 980 })
 
-export type KeepsakeFrameId = 'warm-paper' | 'midnight-map' | 'cream-collage'
+export type KeepsakeFrameId = 'warm-paper' | 'midnight-map' | 'cream-collage' | 'moon-glow' | 'jade-rabbit' | 'full-moon'
+export type KeepsakeFrameCategory = 'basic' | 'mid-autumn'
 export type KeepsakeLocation = '医大' | '南湖'
 export const KEEPSAKE_SENTENCES = [
   '今晚校园跑吗？一起呗！',
@@ -24,6 +25,7 @@ type Decoration =
 export interface KeepsakeFrame {
   id: KeepsakeFrameId
   name: string
+  category: KeepsakeFrameCategory
   palette: Record<PaletteKey, string>
   typography: {
     titleY: number
@@ -39,6 +41,7 @@ export const KEEPSAKE_FRAMES: KeepsakeFrame[] = [
   {
     id: 'warm-paper',
     name: '暖橙手札',
+    category: 'basic',
     palette: { paper: '#f2c99a', ink: '#49352b', accent: '#e68132', detail: '#fff4df', mat: '#f8ead7' },
     typography: { titleY: 1270, bodyY: 1348, metaY: 1510, titleSize: 58, bodySize: 31 },
     decorations: [
@@ -50,6 +53,7 @@ export const KEEPSAKE_FRAMES: KeepsakeFrame[] = [
   {
     id: 'midnight-map',
     name: '深蓝星图',
+    category: 'basic',
     palette: { paper: '#101827', ink: '#f4eedf', accent: '#f0c85a', detail: '#7fc4d8', mat: '#0a101b' },
     typography: { titleY: 1260, bodyY: 1342, metaY: 1510, titleSize: 57, bodySize: 30 },
     decorations: [
@@ -61,12 +65,53 @@ export const KEEPSAKE_FRAMES: KeepsakeFrame[] = [
   {
     id: 'cream-collage',
     name: '奶油拼贴',
+    category: 'basic',
     palette: { paper: '#f6efd9', ink: '#34362f', accent: '#d8604b', detail: '#78936b', mat: '#e9dfc4' },
     typography: { titleY: 1275, bodyY: 1352, metaY: 1510, titleSize: 56, bodySize: 30 },
     decorations: [
       { kind: 'line', x: 100, y: 128, width: 410, color: 'detail', alpha: 0.62 },
       { kind: 'circle', x: 1084, y: 1214, size: 31, color: 'accent', alpha: 0.88 },
       { kind: 'dots', x: 780, y: 96, count: 7, gap: 48, size: 6, color: 'accent', alpha: 0.55 },
+    ],
+  },
+  // Mid-Autumn Festival frames
+  {
+    id: 'moon-glow',
+    name: '桂月流光',
+    category: 'mid-autumn',
+    palette: { paper: '#f2efe6', ink: '#3d3022', accent: '#d4a843', detail: '#9a7a4a', mat: '#e8e2d8' },
+    typography: { titleY: 1270, bodyY: 1348, metaY: 1510, titleSize: 58, bodySize: 31 },
+    decorations: [
+      { kind: 'circle', x: 1078, y: 118, size: 42, color: 'accent', alpha: 0.78 },
+      { kind: 'dots', x: 72, y: 82, count: 9, gap: 62, size: 4, color: 'detail', alpha: 0.45 },
+      { kind: 'star', x: 82, y: 1195, size: 26, color: 'accent' },
+      { kind: 'star', x: 1120, y: 1195, size: 20, color: 'detail' },
+    ],
+  },
+  {
+    id: 'jade-rabbit',
+    name: '玉兔衔秋',
+    category: 'mid-autumn',
+    palette: { paper: '#dce3ed', ink: '#2b2633', accent: '#e8c8b8', detail: '#a8b8a0', mat: '#cdd5e0' },
+    typography: { titleY: 1260, bodyY: 1342, metaY: 1510, titleSize: 57, bodySize: 30 },
+    decorations: [
+      { kind: 'star', x: 74, y: 86, size: 32, color: 'accent' },
+      { kind: 'dots', x: 1040, y: 84, count: 6, gap: 40, size: 5, color: 'detail', alpha: 0.55 },
+      { kind: 'circle', x: 1120, y: 1210, size: 28, color: 'accent', alpha: 0.72 },
+      { kind: 'line', x: 130, y: 1448, width: 940, color: 'detail', alpha: 0.35 },
+    ],
+  },
+  {
+    id: 'full-moon',
+    name: '团圆满月',
+    category: 'mid-autumn',
+    palette: { paper: '#f8e8d8', ink: '#4a2e1e', accent: '#c84a28', detail: '#e8c060', mat: '#f0dec8' },
+    typography: { titleY: 1275, bodyY: 1352, metaY: 1510, titleSize: 56, bodySize: 30 },
+    decorations: [
+      { kind: 'circle', x: 112, y: 114, size: 48, color: 'detail', alpha: 0.88 },
+      { kind: 'dots', x: 790, y: 84, count: 8, gap: 52, size: 5, color: 'accent', alpha: 0.5 },
+      { kind: 'star', x: 70, y: 1200, size: 24, color: 'accent' },
+      { kind: 'star', x: 1130, y: 1200, size: 24, color: 'detail' },
     ],
   },
 ]
