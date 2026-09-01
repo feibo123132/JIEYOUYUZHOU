@@ -28,6 +28,9 @@ interface AssistantSidebarProps {
   onChangeFillMode: (enabled: boolean) => void
   isAdminDevice: boolean
   onSetAdminDevice: (v: boolean) => void
+  showHappinessPortrait: boolean
+  onOpenHappinessPortrait: () => void
+  happinessPortraitTriggerRef: React.Ref<HTMLButtonElement>
 }
 
 const AssistantSidebar: React.FC<AssistantSidebarProps> = ({
@@ -57,6 +60,9 @@ const AssistantSidebar: React.FC<AssistantSidebarProps> = ({
   onChangeFillMode,
   isAdminDevice,
   onSetAdminDevice,
+  showHappinessPortrait,
+  onOpenHappinessPortrait,
+  happinessPortraitTriggerRef,
 }) => {
   const [searchFoldOpen, setSearchFoldOpen] = useState(false)
   const [displayFoldOpen, setDisplayFoldOpen] = useState(false)
@@ -293,6 +299,20 @@ const AssistantSidebar: React.FC<AssistantSidebarProps> = ({
                   </button>
                 )}
               </div>
+              {showHappinessPortrait && (
+                <div className="flex items-center justify-between bg-white/5 rounded-xl px-3 py-2">
+                  <div>
+                    <div className="text-sm text-white/90">幸福的模样</div>
+                    <div className="mt-1 text-[11px] text-amber-100/45">看看这片星空共同珍藏的幸福</div>
+                  </div>
+                  <button
+                    ref={happinessPortraitTriggerRef}
+                    type="button"
+                    className="rounded-lg border border-amber-200/15 bg-amber-300/10 px-2.5 py-1 text-xs text-amber-100 transition hover:border-amber-200/35 hover:bg-amber-300/15"
+                    onClick={onOpenHappinessPortrait}
+                  >查看</button>
+                </div>
+              )}
             </div>
           )}
         </div>

@@ -7,13 +7,16 @@ const PUBLIC_ERRORS = new Set([
   'INVALID_SONG_RECORD', 'INVALID_ARTIST_SETTINGS', 'AUTH_FAILED', 'CONFLICT', 'NOT_FOUND',
   'INVALID_FEATURED_SONGS',
   'INVALID_QUIZ_LIBRARY',
+  'INVALID_SONG_SCORE',
 ]);
 
 const FEATURED_SONGS_OWNER_ALIAS = '2421415030@qq.com';
 const workspaceId = (alias) => crypto.createHash('sha256').update(alias.trim().toLocaleLowerCase()).digest('hex');
 const passwordHash = (password, salt) => crypto.scryptSync(password, salt, 32).toString('hex');
 const songRecordDocumentId = (workspace, record) => crypto.createHash('sha256').update(`${workspace}:${record}`).digest('hex');
+const songScoreDocumentId = (workspace, songId) => crypto.createHash('sha256').update(`${workspace}:score:${songId}`).digest('hex');
 const publicSongRecord = ({ workspaceId: _workspaceId, deletedAt: _deletedAt, _id: _documentId, ...record }) => record;
+const publicSongScore = ({ workspaceId: _workspaceId, deletedAt: _deletedAt, _id: _documentId, ...score }) => score;
 const publicArtistSettings = (settings) => {
   if (!settings) return null;
   const { ownerWorkspaceId: _ownerWorkspaceId, _id: _documentId, ...snapshot } = settings;
@@ -49,6 +52,34 @@ const buildPublicPracticeRanking = (records) => {
   })).sort((left, right) => right.score - left.score || left.songTitle.localeCompare(right.songTitle, 'zh-CN')).slice(0, 500);
 };
 
+const buildPublicQuizRanking = (roadshows) => {
+  const groups = new Map();
+  for (const roadshow of roadshows) {
+    for (const attempt of roadshow.recognitionAttempts || []) {
+      if (!attempt || typeof attempt.correct !== 'boolean' || !attempt.title) continue;
+      const songId = attempt.catalogId || `manual:${String(attempt.title).trim().toLocaleLowerCase()}:${String(attempt.artist || '').trim().toLocaleLowerCase()}`;
+      const current = groups.get(songId) || {
+        songId,
+        songTitle: attempt.title,
+        songArtist: attempt.artist || '',
+        answerCount: 0,
+        correctCount: 0,
+      };
+      current.answerCount += 1;
+      if (attempt.correct) current.correctCount += 1;
+      groups.set(songId, current);
+    }
+  }
+  return [...groups.values()].map((entry) => ({
+    ...entry,
+    accuracy: Math.round((entry.correctCount / entry.answerCount) * 1000) / 10,
+  })).sort((left, right) => (
+    right.accuracy - left.accuracy
+    || right.answerCount - left.answerCount
+    || left.songTitle.localeCompare(right.songTitle, 'zh-CN')
+  )).slice(0, 500);
+};
+
 const authenticate = async (store, alias, password) => {
   const id = workspaceId(alias);
   const workspace = await store.getWorkspace(id);
@@ -66,6 +97,9 @@ function createHandler(store) {
       if (request.action === 'votes:pull') return { ok: true, counts: await store.getVotes() };
       if (request.action === 'songRecords:publicRanking') {
         return { ok: true, ranking: buildPublicPracticeRanking(await store.getAllSongRecords()) };
+      }
+      if (request.action === 'roadshows:publicQuizRanking') {
+        return { ok: true, ranking: buildPublicQuizRanking(await store.getAllRoadshows()) };
       }
       if (request.action === 'artistSettings:pull') {
         return { ok: true, snapshot: publicArtistSettings(await store.getArtistSettings()) };
@@ -144,6 +178,22 @@ function createHandler(store) {
         return { ok: true };
       }
 
+      if (request.action === 'songScores:pull') {
+        const scores = await store.getSongScores(id);
+        return { ok: true, scores: scores.filter((score) => !score.deletedAt).map(publicSongScore) };
+      }
+
+      if (request.action === 'songScores:save') {
+        const saved = { ...request.score, workspaceId: id, updatedAt: store.now() };
+        await store.saveSongScoreAtomically(songScoreDocumentId(id, saved.songId), saved);
+        return { ok: true, score: publicSongScore(saved) };
+      }
+
+      if (request.action === 'songScores:delete') {
+        await store.deleteSongScoreAtomically(songScoreDocumentId(id, request.songId), id, request.songId, store.now());
+        return { ok: true };
+      }
+
       if (request.action === 'roadshows:pull') {
         const records = (workspace.roadshows || []).filter((record) => !record.deletedAt);
         return { ok: true, records };
@@ -186,6 +236,7 @@ exports.main = async (event) => {
     const workspaces = db.collection('song_request_workspaces');
     const votes = db.collection('song_request_votes');
     const songRecords = db.collection('song_request_song_records');
+    const songScores = db.collection('song_request_song_scores');
     const artistSettings = db.collection('song_request_artist_settings');
     const command = db.command;
     defaultHandler = createHandler({
@@ -237,6 +288,36 @@ exports.main = async (event) => {
           if (page.length < pageSize) return records;
         }
       },
+      async getAllRoadshows() {
+        const pageSize = 1000;
+        const records = [];
+        for (let offset = 0; ; offset += pageSize) {
+          const result = await workspaces.skip(offset).limit(pageSize).get();
+          const page = result.data || [];
+          for (const workspace of page) {
+            records.push(...(workspace.roadshows || []).filter((record) => !record.deletedAt));
+          }
+          if (page.length < pageSize) return records;
+        }
+      },
+      async getSongScores(workspaceId) {
+        const pageSize = 100;
+        const scores = [];
+        for (let offset = 0; ; offset += pageSize) {
+          const result = await songScores.where({ workspaceId }).skip(offset).limit(pageSize).get();
+          const page = result.data || [];
+          scores.push(...page);
+          if (page.length < pageSize) return scores;
+        }
+      },
+      saveSongScoreAtomically: (documentId, value) => db.runTransaction(async (transaction) => {
+        const ref = transaction.collection('song_request_song_scores').doc(documentId);
+        await ref.set(value);
+      }),
+      deleteSongScoreAtomically: (documentId, workspaceId, songId, deletedAt) => db.runTransaction(async (transaction) => {
+        const ref = transaction.collection('song_request_song_scores').doc(documentId);
+        await ref.set({ workspaceId, songId, deletedAt, updatedAt: deletedAt });
+      }),
       async getArtistSettings() {
         try {
           const result = await artistSettings.doc('global').get();
@@ -321,4 +402,5 @@ exports.createHandler = createHandler;
 exports.buildWritableWorkspace = buildWritableWorkspace;
 exports.buildSoftDeletedSongRecord = buildSoftDeletedSongRecord;
 exports.buildPublicPracticeRanking = buildPublicPracticeRanking;
+exports.buildPublicQuizRanking = buildPublicQuizRanking;
 exports.publicArtistSettings = publicArtistSettings;

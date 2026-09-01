@@ -14,6 +14,41 @@ interface WritableStorage {
 export const VOTE_STORAGE_KEY = 'jieyou-song-request-votes-v1';
 export const CATALOG_STORAGE_KEY = 'jieyou-song-catalog-v1';
 
+export const paginateRankingItems = <T>(items: T[], requestedPage: number, pageSize: number) => {
+  const safePageSize = Math.max(1, Math.floor(pageSize));
+  const pageCount = Math.max(1, Math.ceil(items.length / safePageSize));
+  const page = Math.min(pageCount, Math.max(1, Math.floor(requestedPage)));
+  const start = (page - 1) * safePageSize;
+  return { items: items.slice(start, start + safePageSize), page, pageCount, total: items.length };
+};
+
+export type RankingDisplayMode = 'normal' | 'reverse' | 'random';
+
+export const togglePersonalRankingReverse = (mode: RankingDisplayMode): RankingDisplayMode => (
+  mode === 'reverse' ? 'normal' : 'reverse'
+);
+
+export const togglePersonalRankingRandom = (mode: RankingDisplayMode): RankingDisplayMode => (
+  mode === 'random' ? 'normal' : 'random'
+);
+
+export const orderPersonalRankingItems = <T extends object>(
+  items: T[],
+  mode: RankingDisplayMode,
+  random: () => number = Math.random,
+): Array<T & { originalRank: number }> => {
+  const withRank = items.map((item, index) => ({ ...item, originalRank: index + 1 }));
+  if (mode === 'reverse') return withRank.reverse();
+  if (mode !== 'random' || withRank.length <= 3) return withRank;
+  const top3 = withRank.slice(0, 3);
+  const rest = withRank.slice(3);
+  for (let index = rest.length - 1; index > 0; index--) {
+    const target = Math.floor(random() * (index + 1));
+    [rest[index], rest[target]] = [rest[target], rest[index]];
+  }
+  return [...top3, ...rest];
+};
+
 export const createEditableCatalog = (songs: Song[]): EditableCatalog => ({
   version: 7,
   artists: [...new Set(songs.map((song) => song.artist))],

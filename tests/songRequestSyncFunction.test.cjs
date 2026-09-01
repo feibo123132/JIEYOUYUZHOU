@@ -52,6 +52,9 @@ function memoryStore() {
       .filter((record) => record.workspaceId === workspaceId && !record.deletedAt)
       .map((record) => structuredClone(record)),
     getAllSongRecords: async () => [...songRecords.values()].map((record) => structuredClone(record)),
+    getAllRoadshows: async () => [...workspaces.values()].flatMap((workspace) => (
+      workspace.roadshows || []
+    )).filter((record) => !record.deletedAt).map((record) => structuredClone(record)),
     saveSongRecordAtomically: async (documentId, value) => {
       const current = songRecords.get(documentId);
       if (current?.deletedAt) throw new Error('NOT_FOUND');
@@ -100,6 +103,7 @@ test('validates public and private actions without rejecting platform metadata',
   assert.deepEqual(validateRequest({ action: 'votes:increment', songId: 'qing-tian', userInfo: { uid: 'u1' } }), {
     action: 'votes:increment', songId: 'qing-tian',
   });
+  assert.deepEqual(validateRequest({ action: 'roadshows:publicQuizRanking' }), { action: 'roadshows:publicQuizRanking' });
   assert.throws(() => validateRequest({ action: 'roadshows:register', alias: '', password: '123456' }), /INVALID_ALIAS/);
   assert.throws(() => validateRequest({ action: 'roadshows:register', alias: 'JIEYOU', password: '123' }), /INVALID_PASSWORD/);
 })
@@ -303,6 +307,7 @@ test('saves roadshows and keeps soft-deleted records out of pulls', async () => 
   const auth = { alias: 'JIEYOU', password: 'guitar-2026' };
   const record = {
     id: 'roadshow-1', title: '第一次路演', date: '2026-08-25', updatedAt: '2026-08-25T11:00:00.000Z',
+    location: '解忧杂货铺', weather: '晴',
     performanceSongs: [{ id: 'catalog:qing-tian', catalogId: 'qing-tian', title: '晴天', artist: '周杰伦', source: 'catalog' }],
     recognitionSongs: [{ id: 'manual:test', title: '测试歌曲', artist: '', source: 'manual' }],
   };
@@ -315,6 +320,39 @@ test('saves roadshows and keeps soft-deleted records out of pulls', async () => 
 
   const workspace = [...store.workspaces.values()][0];
   assert.equal(workspace.roadshows[0].deletedAt, '2026-08-25T12:00:00.000Z');
+})
+
+test('publishes a quiz ranking from roadshow answers without exposing private workspaces', async () => {
+  const store = memoryStore();
+  const { createHandler } = loadFunction();
+  const handler = createHandler(store);
+  const first = { alias: 'JIEYOU', password: 'guitar-2026' };
+  const second = { alias: 'PLAYER', password: 'guitar-2026' };
+  const song = (id, title, artist, correct, attempt) => ({
+    id: attempt, catalogId: id, title, artist, correct, answeredAt: `2026-09-01T12:00:0${attempt.slice(-1)}.000Z`,
+  });
+  const roadshow = (id, recognitionAttempts) => ({
+    id, title: id, date: '2026-09-01', updatedAt: '2026-09-01T12:00:00.000Z',
+    performanceSongs: [], recognitionSongs: [], recognitionAttempts,
+  });
+
+  await handler({ action: 'roadshows:register', ...first });
+  await handler({ action: 'roadshows:register', ...second });
+  await handler({ action: 'roadshows:save', ...first, record: roadshow('第一场', [
+    song('a', '晴天', '周杰伦', true, 'attempt-1'),
+    song('a', '晴天', '周杰伦', false, 'attempt-2'),
+    song('b', '江南', '林俊杰', true, 'attempt-3'),
+  ]) });
+  await handler({ action: 'roadshows:save', ...second, record: roadshow('第二场', [
+    song('a', '晴天', '周杰伦', true, 'attempt-4'),
+  ]) });
+
+  const result = await handler({ action: 'roadshows:publicQuizRanking' });
+  assert.deepEqual(result, { ok: true, ranking: [
+    { songId: 'b', songTitle: '江南', songArtist: '林俊杰', answerCount: 1, correctCount: 1, accuracy: 100 },
+    { songId: 'a', songTitle: '晴天', songArtist: '周杰伦', answerCount: 3, correctCount: 2, accuracy: 66.7 },
+  ] });
+  assert.doesNotMatch(JSON.stringify(result), /alias|password|workspaceId|answeredAt/);
 })
 
 test('validates private song practice and roadshow record payloads', () => {

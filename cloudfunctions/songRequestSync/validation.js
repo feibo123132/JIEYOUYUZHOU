@@ -5,11 +5,15 @@ const ACTIONS = new Set([
   'roadshows:pull',
   'roadshows:save',
   'roadshows:delete',
+  'roadshows:publicQuizRanking',
   'songRecords:pull',
   'songRecords:publicRanking',
   'songRecords:save',
   'songRecords:saveBatch',
   'songRecords:delete',
+  'songScores:pull',
+  'songScores:save',
+  'songScores:delete',
   'artistSettings:pull',
   'artistSettings:push',
   'featuredSongs:pull',
@@ -21,6 +25,9 @@ const ACTIONS = new Set([
 const ARTIST_SETTINGS_REQUEST_LIMIT = 5 * 1024 * 1024;
 const DEFAULT_REQUEST_LIMIT = 256 * 1024;
 const ARTIST_AVATAR_LIMIT = 1024 * 1024;
+const SONG_SCORES_REQUEST_LIMIT = 3 * 1024 * 1024;
+const SONG_SCORE_PAGE_LIMIT = 16;
+const SONG_SCORE_PAGES_TOTAL_LIMIT = 2 * 1024 * 1024;
 
 const cleanText = (value, max, error) => {
   if (typeof value !== 'string') throw new Error(error);
@@ -59,14 +66,40 @@ const validateSongList = (value) => {
   return value.map(validateSong);
 };
 
+const validateRecognitionAttempt = (value) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('INVALID_RECORD');
+  const attempt = {
+    id: cleanText(value.id, 100, 'INVALID_RECORD'),
+    title: cleanText(value.title, 100, 'INVALID_RECORD'),
+    artist: typeof value.artist === 'string' ? value.artist.trim().slice(0, 100) : '',
+    correct: value.correct,
+    answeredAt: cleanIsoTime(value.answeredAt, 'INVALID_RECORD'),
+  };
+  if (typeof value.correct !== 'boolean') throw new Error('INVALID_RECORD');
+  if (value.catalogId !== undefined) attempt.catalogId = cleanText(value.catalogId, 80, 'INVALID_RECORD');
+  return attempt;
+};
+
+const validateRecognitionAttempts = (value) => {
+  if (!Array.isArray(value) || value.length > 1000) throw new Error('INVALID_RECORD');
+  const attempts = value.map(validateRecognitionAttempt);
+  if (new Set(attempts.map((attempt) => attempt.id)).size !== attempts.length) throw new Error('INVALID_RECORD');
+  return attempts;
+};
+
 const validateRecord = (value) => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('INVALID_RECORD');
   const date = cleanText(value.date, 10, 'INVALID_RECORD');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('INVALID_RECORD');
+  const optionalFields = {};
+  if (value.location !== undefined) optionalFields.location = cleanOptionalText(value.location, 80, 'INVALID_RECORD');
+  if (value.weather !== undefined) optionalFields.weather = cleanOptionalText(value.weather, 40, 'INVALID_RECORD');
+  if (value.recognitionAttempts !== undefined) optionalFields.recognitionAttempts = validateRecognitionAttempts(value.recognitionAttempts);
   return {
     id: cleanText(value.id, 80, 'INVALID_RECORD'),
     title: cleanText(value.title, 60, 'INVALID_RECORD'),
     date,
+    ...optionalFields,
     performanceSongs: validateSongList(value.performanceSongs),
     recognitionSongs: validateSongList(value.recognitionSongs),
     updatedAt: typeof value.updatedAt === 'string' ? value.updatedAt : '',
@@ -158,12 +191,40 @@ const validateArtistSettings = (value) => {
   };
 };
 
+const validateSongScore = (value) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('INVALID_SONG_SCORE');
+  const score = {
+    id: cleanText(value.id, 120, 'INVALID_SONG_SCORE'),
+    songId: cleanText(value.songId, 100, 'INVALID_SONG_SCORE'),
+    songTitle: cleanText(value.songTitle, 100, 'INVALID_SONG_SCORE'),
+    songArtist: cleanOptionalText(value.songArtist, 100, 'INVALID_SONG_SCORE'),
+    pages: value.pages,
+  };
+  if (!Array.isArray(score.pages) || score.pages.length < 1 || score.pages.length > SONG_SCORE_PAGE_LIMIT) throw new Error('INVALID_SONG_SCORE');
+  for (const page of score.pages) {
+    if (typeof page !== 'string' || page.length === 0) throw new Error('INVALID_SONG_SCORE');
+    if (/^https:\/\//i.test(page)) {
+      if (page.length > 600) throw new Error('INVALID_SONG_SCORE');
+      continue;
+    }
+    const match = /^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/]+={0,2})$/.exec(page);
+    if (!match) throw new Error('INVALID_SONG_SCORE');
+    const bytes = Buffer.from(match[2], 'base64');
+    if (!bytes.length || !validImageMagic(match[1], bytes)) throw new Error('INVALID_SONG_SCORE');
+  }
+  if (score.pages.join('').length > SONG_SCORE_PAGES_TOTAL_LIMIT) throw new Error('PAYLOAD_TOO_LARGE');
+  return score;
+};
+
 function validateRequest(event) {
   if (!event || typeof event !== 'object' || !ACTIONS.has(event.action)) throw new Error('INVALID_ACTION');
-  const requestLimit = event.action === 'artistSettings:push' ? ARTIST_SETTINGS_REQUEST_LIMIT : DEFAULT_REQUEST_LIMIT;
+  const requestLimit = event.action === 'artistSettings:push' ? ARTIST_SETTINGS_REQUEST_LIMIT
+    : event.action === 'songScores:save' ? SONG_SCORES_REQUEST_LIMIT
+    : DEFAULT_REQUEST_LIMIT;
   if (Buffer.byteLength(JSON.stringify(event), 'utf8') > requestLimit) throw new Error('PAYLOAD_TOO_LARGE');
 
   if (event.action === 'votes:pull' || event.action === 'songRecords:publicRanking'
+    || event.action === 'roadshows:publicQuizRanking'
     || event.action === 'artistSettings:pull' || event.action === 'featuredSongs:pull'
     || event.action === 'quizLibrary:pull') return { action: event.action };
   if (event.action === 'votes:increment') {
@@ -207,6 +268,8 @@ function validateRequest(event) {
     if (records.some((record) => record.kind !== 'practice') || new Set(records.map((record) => record.id)).size !== records.length) throw new Error('INVALID_SONG_RECORD');
     return { ...base, records };
   }
+  if (event.action === 'songScores:save') return { ...base, score: validateSongScore(event.score) };
+  if (event.action === 'songScores:delete') return { ...base, songId: cleanText(event.songId, 100, 'INVALID_SONG_SCORE') };
   if (event.action === 'songRecords:delete') return { ...base, id: cleanText(event.id, 100, 'INVALID_SONG_RECORD') };
   return base;
 }

@@ -72,7 +72,7 @@ test('artist settings parse snapshots and merge cloud order without hiding new a
 test('artist settings draft is validated and survives pull conflicts or failures', async () => {
   const {
     ARTIST_SETTINGS_DRAFT_KEY, createArtistSettingsDraft, loadArtistSettingsDraft,
-    ensureArtistSettingsRetryDraft, resolveArtistSettingsPull, saveArtistSettingsDraft,
+    ensureArtistSettingsRetryDraft, rebaseArtistSettingsDraft, resolveArtistSettingsPull, saveArtistSettingsDraft,
   } = await import(artistSettingsUrl.href)
   const values = new Map<string, string>()
   const storage = {
@@ -89,6 +89,10 @@ test('artist settings draft is validated and survives pull conflicts or failures
 
   const cloud = { ...sampleArtistSettingsPayload, revision: 3, updatedAt: '2026-08-28T08:00:00.000Z' }
   assert.equal(resolveArtistSettingsPull({ cloud, local: sampleArtistSettingsPayload, draft, hasSession: true, defaultArtistOrder: sampleArtistSettingsPayload.artistOrder, defaultSongOrder: sampleArtistSettingsPayload.songOrder }).kind, 'conflict')
+  assert.deepEqual(rebaseArtistSettingsDraft(draft, cloud.revision), {
+    ...draft,
+    baseRevision: cloud.revision,
+  }, 'rebasing must preserve local changes while accepting the latest cloud revision')
   assert.equal(resolveArtistSettingsPull({ cloud: { ...cloud, revision: 2 }, local: sampleArtistSettingsPayload, draft, hasSession: true, defaultArtistOrder: sampleArtistSettingsPayload.artistOrder, defaultSongOrder: sampleArtistSettingsPayload.songOrder }).kind, 'push-draft')
   assert.equal(resolveArtistSettingsPull({ cloud: null, local: sampleArtistSettingsPayload, draft: null, hasSession: true, defaultArtistOrder: ['周杰伦', '林俊杰', '孙燕姿'], defaultSongOrder: sampleArtistSettingsPayload.songOrder }).kind, 'seed-cloud')
   assert.throws(() => { throw new Error('SYNC_FAILED') }, /SYNC_FAILED/)
@@ -708,6 +712,32 @@ test('识曲歌库按四档解析、切换、取消并分组计数', async () =>
   })
 })
 
+test('一键选歌按6比10比10比4抽取三十首并排除往期已用歌曲', async () => {
+  const { QUIZ_ROADSHOW_QUOTAS, selectQuizSongsForRoadshow } = await import(songQuizLibraryUrl.href)
+  const levels = ['warmup', 'standard', 'hard', 'hell'] as const
+  const quotas = { warmup: 6, standard: 10, hard: 10, hell: 4 }
+  const catalog = levels.flatMap((level) => Array.from({ length: quotas[level] + 2 }, (_, index) => ({
+    id: `${level}-${index}`, title: `${level}-${index}`, artist: '测试歌手', category: '测试', featured: false,
+  })))
+  const assignments = Object.fromEntries(catalog.map((song) => [song.id, song.id.split('-')[0]]))
+  const usedIds = new Set(levels.map((level) => `${level}-0`))
+
+  assert.deepEqual(QUIZ_ROADSHOW_QUOTAS, quotas)
+  const selected = selectQuizSongsForRoadshow(catalog, assignments, usedIds, () => 0.5)
+  assert.equal(selected.kind, 'selected')
+  assert.equal(selected.songs.length, 30)
+  assert.equal(selected.songs.some((song: { id: string }) => usedIds.has(song.id)), false)
+  assert.deepEqual(Object.fromEntries(levels.map((level) => [
+    level, selected.songs.filter((song: { id: string }) => assignments[song.id] === level).length,
+  ])), quotas)
+
+  const insufficient = selectQuizSongsForRoadshow(catalog, assignments, new Set([
+    'warmup-0', 'warmup-1', 'warmup-2',
+  ]), () => 0.5)
+  assert.equal(insufficient.kind, 'insufficient')
+  assert.deepEqual(insufficient.shortages, [{ level: 'warmup', required: 6, available: 5 }])
+})
+
 test('热门歌曲火焰标记公开可见且仅本人登录后可操作', () => {
   const station = readFileSync(stationUrl, 'utf8')
   const cloud = readFileSync(cloudAdapterUrl, 'utf8')
@@ -791,7 +821,7 @@ test('榜单按总榜与歌手曲库数量决定金银铜名次数量', async ()
 
   const station = readFileSync(stationUrl, 'utf8')
   assert.match(station, /getRankingMedalTone\(index, 3\)/)
-  assert.match(station, /getRankingMedalTone\(index, personalRankingPodiumSize\)/)
+  assert.match(station, /getRankingMedalTone\(originalRank - 1, personalRankingPodiumSize\)/)
   assert.match(station, /getPersonalRankingPodiumSize\(personalRankingArtist \? artistSongCount : null\)/)
   assert.match(station, /gold: 'bg-amber-300/)
   assert.match(station, /silver: 'bg-slate-200/)
@@ -838,7 +868,7 @@ test('station exposes requests and rankings without playback controls', () => {
   assert.match(source, /getSongSubtitle\(song\)/)
   assert.doesNotMatch(source, new RegExp(['点', '这首'].join('')))
   assert.match(source, /<div className="grid gap-3 sm:grid-cols-2">\s*\{songs\.map/)
-  assert.match(source, /grid gap-3 sm:grid-cols-2 lg:grid-cols-4\"\>\{artistGroups/)
+  assert.match(source, /grid gap-3 sm:grid-cols-2 lg:grid-cols-4\"\>\{paginatedArtistGroups/)
   assert.match(source, /新增歌手/)
   assert.match(source, /删除歌手/)
   assert.match(source, /新增歌曲/)
@@ -854,7 +884,7 @@ test('个人练习榜超过八首时滚动并支持从右侧搜索切换总榜�
   assert.match(source, /const \[personalRankingArtist, setPersonalRankingArtist\] = useState<string \| null>\(null\)/)
   assert.match(source, /const \[rankingArtistQuery, setRankingArtistQuery\] = useState\(''\)/)
   assert.match(source, /const visiblePersonalRanking = useMemo/)
-  assert.match(source, /visiblePersonalRanking\.length > PERSONAL_RANKING_SCROLL_THRESHOLD/)
+  assert.match(source, /paginatedPersonalRanking\.items\.length > PERSONAL_RANKING_SCROLL_THRESHOLD/)
   assert.match(source, /max-h-\[42rem\] overflow-y-auto/)
   assert.match(source, /aria-label="个人练习榜歌手筛选"/)
   assert.match(source, /placeholder="搜索歌手或歌曲"/)
@@ -862,6 +892,70 @@ test('个人练习榜超过八首时滚动并支持从右侧搜索切换总榜�
   assert.match(source, /groupSongsByArtist\(catalogSongs\)\.filter\(\(\{ songs \}\) => songs\.length >= 2\)/)
   assert.match(source, /className="mt-3 grid max-h-\[34rem\] grid-cols-2 gap-2 overflow-y-auto/)
   assert.match(source, /setPersonalRankingArtist\(artist\)/)
+})
+
+test('个人练习榜每页五十首并正确处理分页边界', async () => {
+  const module = await loadModule()
+  const paginateRankingItems = module.paginateRankingItems as undefined | (<T>(items: T[], page: number, pageSize: number) => {
+    items: T[]; page: number; pageCount: number; total: number;
+  })
+
+  assert.equal(typeof paginateRankingItems, 'function')
+  if (!paginateRankingItems) return
+  const items = Array.from({ length: 101 }, (_, index) => index + 1)
+  assert.deepEqual(paginateRankingItems(items.slice(0, 49), 1, 50), { items: items.slice(0, 49), page: 1, pageCount: 1, total: 49 })
+  assert.deepEqual(paginateRankingItems(items.slice(0, 50), 1, 50), { items: items.slice(0, 50), page: 1, pageCount: 1, total: 50 })
+  assert.deepEqual(paginateRankingItems(items.slice(0, 51), 2, 50), { items: [51], page: 2, pageCount: 2, total: 51 })
+  assert.deepEqual(paginateRankingItems(items, 99, 50), { items: [101], page: 3, pageCount: 3, total: 101 })
+})
+
+test('个人练习榜支持保留真实名次的倒序展示', async () => {
+  const module = await loadModule()
+  const paginateRankingItems = module.paginateRankingItems as <T>(items: T[], page: number, pageSize: number) => { items: T[] }
+  const orderPersonalRankingItems = module.orderPersonalRankingItems as undefined | (<T extends object>(items: T[], mode: 'normal' | 'reverse' | 'random', random?: () => number) => Array<T & { originalRank: number }>)
+  const togglePersonalRankingReverse = module.togglePersonalRankingReverse as undefined | ((mode: 'normal' | 'reverse' | 'random') => 'normal' | 'reverse' | 'random')
+  const togglePersonalRankingRandom = module.togglePersonalRankingRandom as undefined | ((mode: 'normal' | 'reverse' | 'random') => 'normal' | 'reverse' | 'random')
+  assert.equal(typeof orderPersonalRankingItems, 'function')
+  assert.equal(typeof togglePersonalRankingReverse, 'function')
+  assert.equal(typeof togglePersonalRankingRandom, 'function')
+  if (!orderPersonalRankingItems || !togglePersonalRankingReverse || !togglePersonalRankingRandom) return
+
+  const items = Array.from({ length: 51 }, (_, index) => ({ id: index + 1 }))
+  const reversed = orderPersonalRankingItems(items, 'reverse')
+  assert.deepEqual(reversed.slice(0, 3).map(({ id, originalRank }) => [id, originalRank]), [[51, 51], [50, 50], [49, 49]])
+  assert.deepEqual(paginateRankingItems(reversed, 2, 50).items.map(({ originalRank }) => originalRank), [1])
+  const randomized = orderPersonalRankingItems(items, 'random', () => 0)
+  assert.deepEqual(randomized.slice(0, 3).map(({ originalRank }) => originalRank), [1, 2, 3])
+  assert.deepEqual([...paginateRankingItems(randomized, 1, 50).items, ...paginateRankingItems(randomized, 2, 50).items], randomized)
+  assert.equal(togglePersonalRankingReverse('normal'), 'reverse')
+  assert.equal(togglePersonalRankingReverse('reverse'), 'normal')
+  assert.equal(togglePersonalRankingReverse('random'), 'reverse')
+  assert.equal(togglePersonalRankingRandom('normal'), 'random')
+  assert.equal(togglePersonalRankingRandom('reverse'), 'random')
+  assert.equal(togglePersonalRankingRandom('random'), 'normal')
+
+  const source = readFileSync(stationUrl, 'utf8')
+
+  assert.match(source, /const PERSONAL_RANKING_PAGE_SIZE = 50/)
+  assert.match(source, /const \[personalRankingMode, setPersonalRankingMode\] = useState<RankingDisplayMode>\('normal'\)/)
+  assert.match(source, /orderPersonalRankingItems\(base, personalRankingMode\)/)
+  assert.match(source, /paginateRankingItems\(visiblePersonalRanking, personalRankingPage, PERSONAL_RANKING_PAGE_SIZE\)/)
+  assert.match(source, /paginatedPersonalRanking\.items\.map/)
+  assert.match(source, /key=\{`practice-ranking-\$\{personalRankingMode\}-\$\{paginatedPersonalRanking\.page\}`\}/)
+  assert.match(source, /getRankingMedalTone\(originalRank - 1, personalRankingPodiumSize\)/)
+  assert.match(source, /aria-label="上一页练习榜"/)
+  assert.match(source, /aria-label="下一页练习榜"/)
+  assert.match(source, /togglePersonalRankingReverse/)
+  assert.match(source, /togglePersonalRankingRandom/)
+  assert.match(source, /grid grid-cols-2 gap-2[\s\S]*placeholder="搜索歌手或歌曲"[\s\S]*aria-label="切换练习榜正倒序"/)
+})
+
+test('点歌榜和个人练习榜保持一首歌占据一行', () => {
+  const source = readFileSync(stationUrl, 'utf8')
+
+  assert.match(source, /ranking\.length \? <ol className="space-y-3">/)
+  assert.match(source, /className=\{`space-y-3 \$\{paginatedPersonalRanking\.items\.length/)
+  assert.doesNotMatch(source, /grid grid-cols-1 gap-3 xl:grid-cols-2/)
 })
 
 test('个人练习榜在平均匹配值旁显示对应品质', () => {
@@ -894,12 +988,29 @@ test('歌手页支持持久排序及上传头像后继续微调', () => {
   assert.match(source, /pushArtistSettings/)
   assert.match(source, /artistSettingsInitializedRef/)
   assert.match(source, /resolveArtistSettingsPull/)
+  assert.match(source, /rebaseArtistSettingsDraft/)
+  assert.match(source, /error instanceof Error && error\.message === 'CONFLICT'/)
+  assert.doesNotMatch(source, /showSyncMessage\('云端歌手设置已有更新，本地修改已保留。'\)/)
   assert.match(source, /runArtistSettingsPush/)
   assert.match(source, /ensureArtistSettingsRetryDraft/)
   assert.match(source, /window\.addEventListener\('online', retryArtistSettingsPush\)/)
   assert.match(source, /window\.addEventListener\('focus', retryArtistSettingsPush\)/)
   assert.match(source, /if \(artistOrderMode\) syncCurrentArtistSettings\(\)/)
   assert.match(source, /if \(avatarAdjustMode\) syncCurrentArtistSettings\(\)/)
+})
+
+test('歌手列表每页限制二十四人并在排序时展示全部', () => {
+  const source = readFileSync(stationUrl, 'utf8')
+
+  assert.match(source, /const ARTISTS_PER_PAGE = 24/)
+  assert.match(source, /const \[artistPage, setArtistPage\] = useState\(1\)/)
+  assert.match(source, /artistOrderMode\s*\?\s*artistGroups\s*:\s*artistGroups\.slice/)
+  assert.match(source, /setArtistPage\(1\)/)
+  assert.match(source, /aria-label="上一页歌手"/)
+  assert.match(source, /aria-label="下一页歌手"/)
+  assert.match(source, /共 \{artistGroups\.length\} 位歌手/)
+  assert.match(source, /artistOrderMode \? '' : 'lg:min-h-\[34\.5rem\]'/)
+  assert.match(source, /grid content-start gap-3 sm:grid-cols-2 lg:grid-cols-4/)
 })
 
 test('调整排序时可拖拽歌手并插入任意位置', () => {
@@ -945,6 +1056,29 @@ test('识曲歌库歌曲只加入日期最新的路演听歌识曲并自动去�
   assert.deepEqual(records[1].recognitionSongs, [])
   assert.equal(prepareLatestRoadshowRecognitionSong([first.record], songs[0]).kind, 'duplicate')
   assert.deepEqual(prepareLatestRoadshowRecognitionSong([], songs[0]), { kind: 'missing' })
+})
+
+test('批量识曲选歌写入最新路演并能汇总所有往期已用歌曲', async () => {
+  const { collectUsedRecognitionSongIds, prepareLatestRoadshowRecognitionSongs } = await loadRoadshowModule()
+  const records = [
+    {
+      id: 'older', title: '旧路演', date: '2026-08-20', updatedAt: '2026-08-20T12:00:00.000Z', performanceSongs: [],
+      recognitionSongs: [{ id: 'catalog:a', catalogId: 'a', title: '晴天', artist: '周杰伦', source: 'catalog' }],
+    },
+    {
+      id: 'latest', title: '最新路演', date: '2026-08-28', updatedAt: '2026-08-28T12:00:00.000Z', performanceSongs: [],
+      recognitionSongs: [{ id: 'catalog:b', catalogId: 'b', title: 'Yellow', artist: 'Coldplay', source: 'catalog' }],
+    },
+  ]
+  const additions = [songs[2], { id: 'd', title: '后来', artist: '刘若英', category: '华语', featured: false }]
+
+  assert.deepEqual([...collectUsedRecognitionSongIds(records)].sort(), ['a', 'b'])
+  const prepared = prepareLatestRoadshowRecognitionSongs(records, additions)
+  assert.equal(prepared.kind, 'updated')
+  assert.equal(prepared.record.id, 'latest')
+  assert.deepEqual(prepared.record.recognitionSongs.map((song: { catalogId?: string }) => song.catalogId), ['b', 'c', 'd'])
+  assert.deepEqual(records[1].recognitionSongs.map((song: { catalogId?: string }) => song.catalogId), ['b'])
+  assert.deepEqual(prepareLatestRoadshowRecognitionSongs([], additions), { kind: 'missing' })
 })
 
 test('歌曲只加入日期最新的路演歌曲并自动去重', async () => {
@@ -1016,7 +1150,27 @@ test('歌手歌曲行使用单一编排弹窗同时承载识曲难度和最新�
   assert.match(station, /latestRoadshow\?\.performanceSongs\.some/)
   assert.match(station, /max-h-\[calc\(100vh-2rem\)\] overflow-y-auto/)
   assert.match(station, /grid grid-cols-2 gap-1/)
+  assert.match(station, /\{level\.label\}\s*<span className="ml-auto tabular-nums text-\[10px\] text-white\/40">\{quizCounts\[level\.id\]\}<\/span>/)
   assert.match(station, /<QuizLevelControl song=\{song\} \/><FeaturedSongControl song=\{song\} \/><RequestButton song=\{song\} \/>/)
+})
+
+test('歌曲详情页沿用管理员权限并可将当前歌曲编排进全站听歌识曲', () => {
+  const station = readFileSync(stationUrl, 'utf8')
+  const panel = readFileSync(songDetailPanelUrl, 'utf8')
+
+  assert.match(station, /quizLevel=\{quizAssignments\[selectedSong\.id\]\}/)
+  assert.match(station, /quizCounts=\{quizCounts\}/)
+  assert.match(station, /canManageQuiz=\{canManageFeaturedSongs\}/)
+  assert.match(station, /onQuizLevelChange=\{\(level\) => void updateQuizLevel\(selectedSong, level\)\}/)
+  assert.match(panel, /QUIZ_LEVELS\.map\(\(level\) =>/)
+  assert.match(panel, /听歌识曲/)
+  assert.match(panel, /quizCounts\[level\.id\]/)
+  assert.match(panel, /onQuizLevelChange\(level\.id\)/)
+  assert.match(panel, /再次点击当前等级可移出/)
+  assert.match(panel, /data-journal-toolbar[\s\S]*data-detail-quiz-trigger/)
+  assert.match(panel, /data-detail-quiz-popover/)
+  assert.match(panel, /rounded-full[\s\S]*aria-label="听歌识曲等级"/)
+  assert.doesNotMatch(panel, /data-quiz-level-editor/)
 })
 
 test('路演听歌识曲按识曲歌库四档分组且旧歌曲默认归入常规', async () => {
@@ -1035,6 +1189,54 @@ test('路演听歌识曲按识曲歌库四档分组且旧歌曲默认归入常�
   assert.deepEqual(grouped.hell.map((song: { id: string }) => song.id), ['catalog:b'])
 })
 
+test('路演识曲作答支持同轮改判且公开榜单数据只接收有效统计', async () => {
+  const { createRecognitionAttempt, parsePublicQuizRanking, upsertRecognitionAttempt } = await loadRoadshowModule()
+  const record = {
+    id: 'roadshow-1', title: '路演', date: '2026-09-01', updatedAt: '2026-09-01T12:00:00.000Z',
+    performanceSongs: [], recognitionSongs: [], recognitionAttempts: [],
+  }
+  const song = { id: 'catalog:a', catalogId: 'a', title: '晴天', artist: '周杰伦', source: 'catalog' }
+  const correct = createRecognitionAttempt(song, true, 'attempt-1', '2026-09-01T12:00:00.000Z')
+  const first = upsertRecognitionAttempt(record, correct)
+  const changed = upsertRecognitionAttempt(first, { ...correct, correct: false })
+
+  assert.equal(first.recognitionAttempts.length, 1)
+  assert.equal(changed.recognitionAttempts.length, 1)
+  assert.equal(changed.recognitionAttempts[0].correct, false)
+  assert.deepEqual(parsePublicQuizRanking([
+    { songId: 'a', songTitle: '晴天', songArtist: '周杰伦', answerCount: 3, correctCount: 2, accuracy: 66.7 },
+    { songId: '', songTitle: '坏数据', songArtist: '', answerCount: 0, correctCount: 0, accuracy: 999 },
+  ]), [{ songId: 'a', songTitle: '晴天', songArtist: '周杰伦', answerCount: 3, correctCount: 2, accuracy: 66.7 }])
+})
+
+test('路演识曲面板以参与模式选择四首并在固定判定区记录对错', () => {
+  const source = readFileSync(roadshowPanelUrl, 'utf8')
+  const recognitionEditor = source.slice(source.indexOf('const RecognitionSongListEditor'))
+
+  assert.doesNotMatch(recognitionEditor, /<X className=/)
+  assert.doesNotMatch(recognitionEditor, /\{songs\.length\} 首/)
+  assert.match(recognitionEditor, />参与</)
+  assert.match(recognitionEditor, /selectedSongIds\.length === 4/)
+  assert.match(recognitionEditor, /aria-label=\{`将\$\{song\.title\}标记为答错`\}/)
+  assert.match(recognitionEditor, /aria-label=\{`将\$\{song\.title\}标记为答对`\}/)
+  assert.match(recognitionEditor, /❌/)
+  assert.match(recognitionEditor, /✅/)
+  assert.match(recognitionEditor, /下一位玩家/)
+  assert.match(source, /onRecordAttempt/)
+})
+
+test('排行榜增加识曲榜图标并展示答题数和正确率', () => {
+  const station = readFileSync(stationUrl, 'utf8')
+  const cloud = readFileSync(cloudAdapterUrl, 'utf8')
+
+  assert.match(station, /type RankingView = 'requests' \| 'personal' \| 'quiz'/)
+  assert.match(station, /aria-label="切换到识曲榜"/)
+  assert.match(station, /pullPublicQuizRanking/)
+  assert.match(station, /答题 \{entry\.answerCount\} 次/)
+  assert.match(station, /\{entry\.accuracy\}<small[^>]*>% 正确率/)
+  assert.match(cloud, /action: 'roadshows:publicQuizRanking'/)
+})
+
 test('识曲歌库歌曲卡提供加入最新路演听歌识曲按钮', () => {
   const station = readFileSync(stationUrl, 'utf8')
 
@@ -1043,6 +1245,18 @@ test('识曲歌库歌曲卡提供加入最新路演听歌识曲按钮', () => {
   assert.match(station, /saveRoadshow\(songRecordSession, prepared\.record\)/)
   assert.match(station, /将\$\{song\.title\}加入最新路演听歌识曲/)
   assert.match(station, /已加入.*听歌识曲/)
+})
+
+test('听歌识曲右上角提供一键选歌并标记所有往期已用歌曲', () => {
+  const station = readFileSync(stationUrl, 'utf8')
+
+  assert.match(station, /一键选歌/)
+  assert.match(station, /简单6 · 常规10 · 较难10 · 很难4/)
+  assert.match(station, /selectQuizSongsForRoadshow/)
+  assert.match(station, /collectUsedRecognitionSongIds/)
+  assert.match(station, /prepareLatestRoadshowRecognitionSongs/)
+  assert.match(station, /usedRecognitionSongIds\.has\(song\.id\)/)
+  assert.match(station, />已用</)
 })
 
 test('finds prior roadshows containing the same catalog or manual song', async () => {
@@ -1284,6 +1498,19 @@ test('roadshow editor removes both add forms and shows recognition songs in four
   assert.match(source, /锁定档案/)
 })
 
+test('路演基本信息四项同排并支持可选地点和天气', () => {
+  const source = readFileSync(roadshowPanelUrl, 'utf8')
+
+  assert.match(source, /grid-cols-4/)
+  assert.match(source, /aria-label="第几次路演"/)
+  assert.match(source, /aria-label="路演时间"/)
+  assert.match(source, /aria-label="路演时间"[^>]*onClick=\{\(event\) => event\.currentTarget\.showPicker\?\.\(\)\}/)
+  assert.match(source, /aria-label="路演地点"/)
+  assert.match(source, /placeholder="路演地点（可选）"/)
+  assert.match(source, /aria-label="路演天气"/)
+  assert.match(source, /placeholder="路演天气（可选）"/)
+})
+
 test('路演歌曲卡使用克制的低对比度描边', () => {
   const source = readFileSync(roadshowPanelUrl, 'utf8')
 
@@ -1415,6 +1642,27 @@ test('歌曲详情页提供练习与路演记录并保留点歌按钮的独立�
   assert.match(roadshowPanel, /clearSongRecordCache/)
   assert.match(roadshowPanel, /SONG_REQUEST_SESSION_EVENT/)
   assert.match(roadshowPanel, /dispatchEvent/)
+})
+
+test('歌曲详情页在路演右侧用谱子标签承载上传与翻谱功能', () => {
+  const panel = readFileSync(songDetailPanelUrl, 'utf8')
+  const roadshowButton = panel.indexOf("setActiveJournal('roadshow')")
+  const scoreButton = panel.indexOf("setActiveJournal('score')")
+
+  assert.match(panel, /type JournalKind = 'practice' \| 'roadshow' \| 'score'/)
+  assert.ok(roadshowButton >= 0 && scoreButton > roadshowButton, '谱子按钮应位于路演按钮右侧')
+  assert.match(panel, /aria-pressed=\{activeJournal === 'score'\}/)
+  assert.match(panel, /activeJournal === 'score' && \(\s*<section data-song-score-panel/)
+  assert.match(panel, /activeJournal !== 'score' && \(\s*<div className="grid items-start/)
+})
+
+test('练习记录表单移除弹唱感想输入框但保留历史记录展示', () => {
+  const panel = readFileSync(songDetailPanelUrl, 'utf8')
+
+  assert.doesNotMatch(panel, /<Field label="弹唱感想">/)
+  assert.doesNotMatch(panel, /placeholder="哪里卡住、为什么，以及下次怎样调整……"/)
+  assert.match(panel, /<RecordText label="弹唱感想"/)
+  assert.match(panel, /getPracticeReflection\(record\)/)
 })
 
 test('歌曲详情返回时恢复进入前的榜单歌手热门或识曲来源页', () => {

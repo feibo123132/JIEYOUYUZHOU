@@ -9,12 +9,33 @@ export interface RoadshowSong {
   source: 'catalog' | 'manual';
 }
 
+export interface RecognitionAttempt {
+  id: string;
+  catalogId?: string;
+  title: string;
+  artist: string;
+  correct: boolean;
+  answeredAt: string;
+}
+
+export interface PublicQuizRankingItem {
+  songId: string;
+  songTitle: string;
+  songArtist: string;
+  answerCount: number;
+  correctCount: number;
+  accuracy: number;
+}
+
 export interface RoadshowRecord {
   id: string;
   title: string;
   date: string;
+  location?: string;
+  weather?: string;
   performanceSongs: RoadshowSong[];
   recognitionSongs: RoadshowSong[];
+  recognitionAttempts?: RecognitionAttempt[];
   updatedAt: string;
 }
 
@@ -89,17 +110,33 @@ const isSong = (value: unknown): value is RoadshowSong => {
     && (song.source === 'catalog' || song.source === 'manual');
 };
 
+const isRecognitionAttempt = (value: unknown): value is RecognitionAttempt => {
+  if (!value || typeof value !== 'object') return false;
+  const attempt = value as Partial<RecognitionAttempt>;
+  return typeof attempt.id === 'string'
+    && (attempt.catalogId === undefined || typeof attempt.catalogId === 'string')
+    && typeof attempt.title === 'string'
+    && typeof attempt.artist === 'string'
+    && typeof attempt.correct === 'boolean'
+    && typeof attempt.answeredAt === 'string';
+};
+
 const isRecord = (value: unknown): value is RoadshowRecord => {
   if (!value || typeof value !== 'object') return false;
   const record = value as Partial<RoadshowRecord>;
   return typeof record.id === 'string'
     && typeof record.title === 'string'
     && typeof record.date === 'string'
+    && (record.location === undefined || typeof record.location === 'string')
+    && (record.weather === undefined || typeof record.weather === 'string')
     && typeof record.updatedAt === 'string'
     && Array.isArray(record.performanceSongs)
     && record.performanceSongs.every(isSong)
     && Array.isArray(record.recognitionSongs)
-    && record.recognitionSongs.every(isSong);
+    && record.recognitionSongs.every(isSong)
+    && (record.recognitionAttempts === undefined || (
+      Array.isArray(record.recognitionAttempts) && record.recognitionAttempts.every(isRecognitionAttempt)
+    ));
 };
 
 export const parseRoadshowCache = (raw: string | null): RoadshowRecord[] => {
@@ -121,6 +158,45 @@ export const createRoadshowSong = (song: Song): RoadshowSong => ({
   source: 'catalog',
 });
 
+export const createRecognitionAttempt = (
+  song: RoadshowSong,
+  correct: boolean,
+  id = `quiz:${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+  answeredAt = new Date().toISOString(),
+): RecognitionAttempt => ({
+  id,
+  ...(song.catalogId ? { catalogId: song.catalogId } : {}),
+  title: song.title,
+  artist: song.artist,
+  correct,
+  answeredAt,
+});
+
+export const upsertRecognitionAttempt = (
+  record: RoadshowRecord,
+  attempt: RecognitionAttempt,
+): RoadshowRecord => {
+  const attempts = [...(record.recognitionAttempts ?? [])];
+  const index = attempts.findIndex((item) => item.id === attempt.id);
+  if (index >= 0) attempts[index] = attempt; else attempts.push(attempt);
+  return { ...record, recognitionAttempts: attempts };
+};
+
+export const parsePublicQuizRanking = (value: unknown): PublicQuizRankingItem[] => {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry): entry is PublicQuizRankingItem => {
+    if (!entry || typeof entry !== 'object') return false;
+    const item = entry as Partial<PublicQuizRankingItem>;
+    return typeof item.songId === 'string' && Boolean(item.songId.trim())
+      && typeof item.songTitle === 'string' && Boolean(item.songTitle.trim())
+      && typeof item.songArtist === 'string'
+      && Number.isInteger(item.answerCount) && (item.answerCount ?? 0) > 0
+      && Number.isInteger(item.correctCount) && (item.correctCount ?? -1) >= 0
+      && (item.correctCount ?? 0) <= (item.answerCount ?? 0)
+      && typeof item.accuracy === 'number' && item.accuracy >= 0 && item.accuracy <= 100;
+  });
+};
+
 export type LatestRoadshowSongResult =
   | { kind: 'missing' }
   | { kind: 'duplicate'; record: RoadshowRecord }
@@ -132,25 +208,38 @@ export const getLatestRoadshow = (records: RoadshowRecord[]) => (
   ))[0]
 );
 
-export const prepareLatestRoadshowRecognitionSong = (
+export const collectUsedRecognitionSongIds = (records: RoadshowRecord[]) => new Set(
+  records.flatMap((record) => record.recognitionSongs.flatMap((song) => song.catalogId ? [song.catalogId] : [])),
+);
+
+export const prepareLatestRoadshowRecognitionSongs = (
   records: RoadshowRecord[],
-  song: Song,
+  songs: Song[],
 ): LatestRoadshowSongResult => {
   const latest = getLatestRoadshow(records);
   if (!latest) return { kind: 'missing' };
-  const duplicate = latest.recognitionSongs.some((item) => (
-    item.catalogId === song.id
-    || (normalize(item.title) === normalize(song.title) && normalize(item.artist) === normalize(song.artist))
-  ));
-  if (duplicate) return { kind: 'duplicate', record: latest };
+  const additions: Song[] = [];
+  for (const song of songs) {
+    const duplicate = [...latest.recognitionSongs, ...additions.map(createRoadshowSong)].some((item) => (
+      item.catalogId === song.id
+      || (normalize(item.title) === normalize(song.title) && normalize(item.artist) === normalize(song.artist))
+    ));
+    if (!duplicate) additions.push(song);
+  }
+  if (!additions.length) return { kind: 'duplicate', record: latest };
   return {
     kind: 'updated',
     record: {
       ...latest,
-      recognitionSongs: [...latest.recognitionSongs, createRoadshowSong(song)],
+      recognitionSongs: [...latest.recognitionSongs, ...additions.map(createRoadshowSong)],
     },
   };
 };
+
+export const prepareLatestRoadshowRecognitionSong = (
+  records: RoadshowRecord[],
+  song: Song,
+): LatestRoadshowSongResult => prepareLatestRoadshowRecognitionSongs(records, [song]);
 
 export const prepareLatestRoadshowPerformanceSong = (
   records: RoadshowRecord[],

@@ -278,6 +278,648 @@
   }
 }
 
+.happiness-nebula-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(0, 0, 0, .68);
+  backdrop-filter: blur(14px);
+}
+
+.happiness-nebula {
+  position: relative;
+  width: min(880px, 96vw);
+  max-height: 92vh;
+  overflow: auto;
+  padding: clamp(1.5rem, 4vw, 2.75rem);
+  border: 1px solid rgba(255, 209, 102, .2);
+  border-radius: 2rem;
+  color: #fff8e8;
+  background:
+    radial-gradient(circle at 52% 24%, rgba(255, 193, 87, .13), transparent 30%),
+    radial-gradient(circle at 12% 72%, rgba(255, 122, 138, .08), transparent 28%),
+    linear-gradient(145deg, rgba(18, 13, 7, .98), rgba(4, 4, 5, .98));
+  box-shadow: 0 40px 120px rgba(0, 0, 0, .7), inset 0 1px rgba(255, 235, 184, .08);
+  isolation: isolate;
+}
+
+.happiness-nebula-grain {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  opacity: .45;
+  pointer-events: none;
+  background-image:
+    radial-gradient(circle, rgba(255, 241, 193, .55) 0 1px, transparent 1.5px),
+    radial-gradient(circle, rgba(255, 159, 67, .28) 0 1px, transparent 1.5px);
+  background-position: 0 0, 17px 23px;
+  background-size: 43px 43px, 61px 61px;
+  mask-image: linear-gradient(to bottom, #000, transparent 82%);
+}
+
+.happiness-nebula-close {
+  position: absolute;
+  right: 1rem;
+  top: 1rem;
+  z-index: 20;
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, .1);
+  border-radius: 999px;
+  color: rgba(255, 255, 255, .72);
+  background: rgba(255, 255, 255, .04);
+  transition: color .2s ease, border-color .2s ease, transform .2s ease;
+}
+
+.happiness-nebula-close:hover {
+  color: #fff;
+  border-color: rgba(255, 209, 102, .45);
+  transform: rotate(8deg);
+}
+
+.happiness-nebula-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  color: #d8ad52;
+  font-size: .68rem;
+  font-weight: 700;
+  letter-spacing: .24em;
+}
+
+.happiness-nebula-title {
+  margin-top: .45rem;
+  font-family: "STKaiti", "KaiTi", "Noto Serif SC", serif;
+  font-size: clamp(2rem, 5vw, 3.5rem);
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-shadow: 0 0 38px rgba(255, 193, 87, .24);
+}
+
+.happiness-nebula-summary {
+  margin-top: .35rem;
+  color: rgba(255, 244, 217, .58);
+  font-size: .86rem;
+  letter-spacing: .08em;
+}
+
+.happiness-nebula-field {
+  position: relative;
+  height: clamp(280px, 42vh, 390px);
+  margin-top: .75rem;
+}
+
+.happiness-nebula-lines {
+  position: absolute;
+  inset: 6% 4%;
+  width: 92%;
+  height: 88%;
+  overflow: visible;
+  opacity: .22;
+  pointer-events: none;
+}
+
+.happiness-nebula-lines path {
+  fill: none;
+  stroke: rgba(255, 209, 102, .35);
+  stroke-width: .18;
+  stroke-dasharray: 1.4 2.4;
+}
+
+.happiness-nebula-word {
+  position: absolute;
+  left: var(--nebula-x);
+  top: var(--nebula-y);
+  display: inline-flex;
+  align-items: center;
+  gap: .42rem;
+  padding: .56em .84em;
+  border: 1px solid color-mix(in srgb, var(--nebula-color) 34%, transparent);
+  border-radius: 999px;
+  color: var(--nebula-color);
+  background: color-mix(in srgb, var(--nebula-color) 9%, rgba(5, 5, 6, .74));
+  box-shadow: 0 0 22px color-mix(in srgb, var(--nebula-color) 13%, transparent);
+  font-family: "STKaiti", "KaiTi", "Noto Serif SC", serif;
+  font-size: var(--nebula-size);
+  line-height: 1;
+  transform: translate(-50%, -50%);
+  animation: happiness-nebula-arrive .7s cubic-bezier(.2, .8, .2, 1) both,
+    happiness-nebula-float 5s ease-in-out infinite;
+  animation-delay: var(--nebula-delay), calc(var(--nebula-delay) + .7s);
+  transition: border-color .2s ease, background .2s ease, box-shadow .2s ease;
+}
+
+.happiness-nebula-word small {
+  font-family: ui-monospace, "Cascadia Mono", monospace;
+  font-size: .58em;
+  opacity: .56;
+}
+
+.happiness-nebula-word:hover,
+.happiness-nebula-word.is-selected {
+  border-color: color-mix(in srgb, var(--nebula-color) 78%, white 8%);
+  background: color-mix(in srgb, var(--nebula-color) 18%, rgba(5, 5, 6, .74));
+  box-shadow: 0 0 34px color-mix(in srgb, var(--nebula-color) 32%, transparent), inset 0 0 18px rgba(255, 255, 255, .04);
+}
+
+.happiness-nebula-stories {
+  position: relative;
+  z-index: 5;
+  border-top: 1px solid rgba(255, 222, 154, .12);
+  padding-top: 1.2rem;
+}
+
+.happiness-nebula-stories-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: .75rem;
+}
+
+.happiness-nebula-stories-heading span {
+  font-family: "STKaiti", "KaiTi", "Noto Serif SC", serif;
+  color: #ffd780;
+  font-size: 1.12rem;
+}
+
+.happiness-nebula-stories-heading small {
+  color: rgba(255, 255, 255, .42);
+}
+
+.happiness-nebula-story-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: .75rem;
+}
+
+.happiness-nebula-story {
+  min-height: 8.5rem;
+  padding: 1rem;
+  border: 1px solid rgba(255, 223, 164, .1);
+  border-radius: 1.1rem;
+  color: rgba(255, 248, 232, .76);
+  background: linear-gradient(145deg, rgba(255, 255, 255, .055), rgba(255, 255, 255, .018));
+}
+
+.happiness-nebula-story > svg {
+  color: rgba(255, 193, 87, .5);
+}
+
+.happiness-nebula-story p {
+  margin-top: .6rem;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  font-size: .8rem;
+  line-height: 1.7;
+}
+
+.happiness-nebula-story footer {
+  margin-top: .7rem;
+  color: rgba(255, 209, 102, .58);
+  font-size: .7rem;
+}
+
+.happiness-nebula-empty {
+  display: flex;
+  min-height: 20rem;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  color: rgba(255, 244, 217, .68);
+  font-family: "STKaiti", "KaiTi", "Noto Serif SC", serif;
+  font-size: 1.15rem;
+  letter-spacing: .08em;
+}
+
+.happiness-nebula-empty span {
+  color: #ffd166;
+  font-size: 2rem;
+  filter: drop-shadow(0 0 14px rgba(255, 209, 102, .55));
+}
+
+@keyframes happiness-nebula-arrive {
+  from { opacity: 0; transform: translate(-50%, -45%) scale(.76); }
+  to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+@keyframes happiness-nebula-float {
+  0%, 100% { margin-top: 0; }
+  50% { margin-top: -5px; }
+}
+
+@media (max-width: 640px) {
+  .happiness-nebula {
+    border-radius: 1.4rem;
+    padding: 1.4rem 1rem;
+  }
+
+  .happiness-nebula-field {
+    display: flex;
+    height: auto;
+    min-height: 16rem;
+    flex-wrap: wrap;
+    align-content: center;
+    justify-content: center;
+    gap: .65rem;
+    padding: 2rem .25rem;
+  }
+
+  .happiness-nebula-lines { display: none; }
+
+  .happiness-nebula-word {
+    position: static;
+    font-size: min(var(--nebula-size), 25px);
+    transform: none;
+    animation-name: happiness-nebula-mobile-arrive;
+  }
+
+  .happiness-nebula-story-grid { grid-template-columns: 1fr; }
+  .happiness-nebula-story { min-height: auto; }
+  .happiness-nebula-stories-heading { align-items: flex-start; flex-direction: column; gap: .2rem; }
+}
+
+@keyframes happiness-nebula-mobile-arrive {
+  from { opacity: 0; transform: translateY(8px) scale(.92); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .happiness-nebula-word,
+  .happiness-nebula-close {
+    animation: none;
+    transition: none;
+  }
+}
+
+/* Full-screen happiness sky: the global Three.js canvas remains visible below. */
+.happiness-sky-page {
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+  isolation: isolate;
+  color: #fff8e6;
+  background:
+    radial-gradient(circle at 50% 48%, rgba(251, 191, 36, .09), transparent 25%),
+    radial-gradient(circle at 77% 28%, rgba(245, 158, 11, .06), transparent 22%),
+    linear-gradient(to bottom, rgba(0, 0, 0, .06), rgba(0, 0, 0, .22));
+}
+
+.happiness-sky-page::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: .28;
+  background-image: radial-gradient(circle, rgba(255, 226, 154, .65) 0 1px, transparent 1.4px);
+  background-position: 7px 9px;
+  background-size: 83px 83px;
+  mask-image: linear-gradient(to bottom, transparent, #000 18%, #000 84%, transparent);
+}
+
+.happiness-sky-aurora {
+  position: absolute;
+  left: 50%;
+  top: 48%;
+  z-index: -1;
+  width: min(70vw, 70rem);
+  aspect-ratio: 1.8;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(ellipse, rgba(251, 191, 36, .075), transparent 68%);
+  filter: blur(28px);
+  transform: translate(-50%, -50%);
+}
+
+.happiness-sky-back {
+  position: absolute;
+  left: 1rem;
+  top: 1rem;
+  z-index: 50;
+  display: inline-flex;
+  height: 2.7rem;
+  align-items: center;
+  gap: .5rem;
+  padding: 0 1rem;
+  border: 1px solid rgba(255, 255, 255, .15);
+  border-radius: .7rem;
+  color: rgba(255, 255, 255, .84);
+  background: rgba(10, 8, 5, .48);
+  box-shadow: 0 12px 35px rgba(0, 0, 0, .25);
+  backdrop-filter: blur(14px);
+  font-size: .86rem;
+  font-weight: 700;
+  transition: border-color .2s ease, background .2s ease, transform .2s ease;
+}
+
+.happiness-sky-back:hover {
+  border-color: rgba(255, 220, 145, .42);
+  background: rgba(255, 255, 255, .1);
+  transform: translateX(-2px);
+}
+
+.happiness-sky-header {
+  position: absolute;
+  left: 50%;
+  top: 1rem;
+  z-index: 30;
+  width: min(34rem, calc(100vw - 13rem));
+  text-align: center;
+  transform: translateX(-50%);
+}
+
+.happiness-sky-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .65rem;
+}
+
+.happiness-sky-title-row > svg {
+  width: 1.35rem;
+  height: 1.35rem;
+  flex: none;
+  color: #d8b92d;
+  filter: drop-shadow(0 0 8px rgba(216, 185, 45, .35));
+}
+
+.happiness-sky-header h1 {
+  margin: 0;
+  color: #fff;
+  font-family: "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  font-size: clamp(2rem, 2.4vw, 2.75rem);
+  font-weight: 900;
+  letter-spacing: .02em;
+  line-height: 1.08;
+  text-shadow: 0 0 28px rgba(255, 255, 255, .14);
+}
+
+.happiness-sky-summary {
+  position: absolute;
+  left: 50%;
+  bottom: 1.35rem;
+  z-index: 45;
+  color: rgba(255, 255, 255, .58);
+  font-size: .8rem;
+  font-weight: 650;
+  letter-spacing: .08em;
+  pointer-events: none;
+  text-align: center;
+  text-shadow: 0 2px 16px rgba(0, 0, 0, .9);
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.happiness-sky-field {
+  position: absolute;
+  inset: 4.8rem 1rem 3.5rem;
+  perspective: 1100px;
+  perspective-origin: 50% 48%;
+}
+
+.happiness-sky-stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform: rotateX(var(--happiness-tilt-x)) rotateY(var(--happiness-tilt-y));
+  transform-style: preserve-3d;
+  transition: transform .18s ease-out;
+}
+
+.happiness-sky-orbit {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  border: 1px solid rgba(255, 209, 102, .08);
+  border-radius: 50%;
+  pointer-events: none;
+  transform: translate(-50%, -50%) rotate(-7deg);
+}
+
+.happiness-sky-orbit--inner {
+  width: min(36vw, 34rem);
+  height: min(43vh, 23rem);
+  box-shadow: inset 0 0 60px rgba(251, 191, 36, .025);
+}
+
+.happiness-sky-orbit--outer {
+  width: min(68vw, 72rem);
+  height: min(69vh, 38rem);
+  opacity: .72;
+  transform: translate(-50%, -50%) rotate(5deg);
+}
+
+.happiness-sky-node {
+  position: absolute;
+  left: var(--happiness-node-x);
+  top: var(--happiness-node-y);
+  display: flex;
+  width: var(--happiness-node-diameter);
+  height: var(--happiness-node-diameter);
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: .28rem;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--happiness-node-color) 50%, transparent);
+  border-radius: 50%;
+  color: var(--happiness-node-color);
+  background:
+    radial-gradient(circle at 36% 28%, color-mix(in srgb, var(--happiness-node-color) 18%, white 3%), transparent 30%),
+    radial-gradient(circle, color-mix(in srgb, var(--happiness-node-color) 11%, rgba(6, 5, 4, .72)), rgba(4, 4, 5, .68) 68%);
+  box-shadow:
+    0 0 36px color-mix(in srgb, var(--happiness-node-color) 20%, transparent),
+    inset 0 0 24px color-mix(in srgb, var(--happiness-node-color) 7%, transparent);
+  font-family: "STKaiti", "KaiTi", "Noto Serif SC", serif;
+  font-size: var(--happiness-node-font-size);
+  line-height: 1;
+  transform: translate3d(-50%, -50%, var(--happiness-node-depth));
+  transform-style: preserve-3d;
+  opacity: 0;
+  animation: happiness-sky-arrive .75s cubic-bezier(.18, .8, .2, 1) forwards,
+    happiness-sky-breathe 5.8s ease-in-out infinite;
+  animation-delay: var(--happiness-node-delay), calc(var(--happiness-node-delay) + .8s);
+  transition: border-color .25s ease, box-shadow .25s ease, filter .25s ease, transform .25s ease;
+}
+
+.happiness-sky-node::before {
+  content: "";
+  position: absolute;
+  inset: -9px;
+  border: 1px solid color-mix(in srgb, var(--happiness-node-color) 13%, transparent);
+  border-radius: 50%;
+  opacity: var(--happiness-node-strength);
+}
+
+.happiness-sky-node span {
+  max-width: 78%;
+  text-align: center;
+  text-shadow: 0 0 18px color-mix(in srgb, var(--happiness-node-color) 38%, transparent);
+}
+
+.happiness-sky-node small {
+  font-family: "Cascadia Mono", "SFMono-Regular", monospace;
+  font-size: .48em;
+  opacity: .52;
+}
+
+.happiness-sky-node:hover,
+.happiness-sky-node.is-selected {
+  z-index: 10;
+  border-color: color-mix(in srgb, var(--happiness-node-color) 86%, white 8%);
+  box-shadow:
+    0 0 58px color-mix(in srgb, var(--happiness-node-color) 42%, transparent),
+    inset 0 0 32px color-mix(in srgb, var(--happiness-node-color) 15%, transparent);
+  filter: brightness(1.18);
+  transform: translate3d(-50%, -50%, calc(var(--happiness-node-depth) + 42px)) scale(1.07);
+}
+
+.happiness-sky-stories {
+  position: absolute;
+  right: 1.2rem;
+  top: 7rem;
+  z-index: 60;
+  width: min(23rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 8.2rem);
+  overflow: auto;
+  padding: 1.25rem;
+  border: 1px solid rgba(255, 218, 142, .18);
+  border-radius: 1.5rem;
+  color: #fff6df;
+  background: linear-gradient(145deg, rgba(19, 14, 8, .9), rgba(4, 4, 6, .84));
+  box-shadow: 0 28px 90px rgba(0, 0, 0, .55), inset 0 1px rgba(255, 242, 204, .05);
+  backdrop-filter: blur(22px);
+  animation: happiness-sky-panel-in .35s cubic-bezier(.18, .8, .2, 1) both;
+}
+
+.happiness-sky-stories-close {
+  position: absolute;
+  right: .85rem;
+  top: .85rem;
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, .1);
+  border-radius: 50%;
+  color: rgba(255, 255, 255, .55);
+  background: rgba(255, 255, 255, .04);
+}
+
+.happiness-sky-stories-kicker {
+  color: rgba(255, 209, 102, .5);
+  font-size: .62rem;
+  font-weight: 800;
+  letter-spacing: .14em;
+}
+
+.happiness-sky-stories h2 {
+  margin: .25rem 2.2rem 1rem 0;
+  font-family: "STKaiti", "KaiTi", "Noto Serif SC", serif;
+  color: #ffd780;
+  font-size: 1.55rem;
+}
+
+.happiness-sky-story-list {
+  display: grid;
+  gap: .65rem;
+}
+
+.happiness-sky-story {
+  padding: .9rem;
+  border: 1px solid rgba(255, 230, 184, .09);
+  border-radius: 1rem;
+  color: rgba(255, 249, 235, .72);
+  background: rgba(255, 255, 255, .035);
+}
+
+.happiness-sky-story > svg { color: rgba(255, 193, 87, .5); }
+.happiness-sky-story p { margin-top: .45rem; font-size: .76rem; line-height: 1.75; }
+.happiness-sky-story footer { margin-top: .5rem; color: rgba(255, 209, 102, .5); font-size: .65rem; }
+
+.happiness-sky-empty {
+  position: absolute;
+  inset: 5rem 1rem 3.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  color: rgba(255, 244, 217, .68);
+  font-family: "STKaiti", "KaiTi", "Noto Serif SC", serif;
+  font-size: 1.15rem;
+  letter-spacing: .08em;
+}
+
+.happiness-sky-empty span {
+  color: #ffd166;
+  font-size: 2rem;
+  filter: drop-shadow(0 0 14px rgba(255, 209, 102, .55));
+}
+
+@keyframes happiness-sky-arrive {
+  from { opacity: 0; filter: blur(5px) brightness(.7); }
+  to { opacity: 1; filter: blur(0) brightness(1); }
+}
+
+@keyframes happiness-sky-breathe {
+  0%, 100% { box-shadow: 0 0 24px color-mix(in srgb, var(--happiness-node-color) 18%, transparent), inset 0 0 24px color-mix(in srgb, var(--happiness-node-color) 7%, transparent); }
+  50% { box-shadow: 0 0 42px color-mix(in srgb, var(--happiness-node-color) 28%, transparent), inset 0 0 28px color-mix(in srgb, var(--happiness-node-color) 11%, transparent); }
+}
+
+@keyframes happiness-sky-panel-in {
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@media (max-width: 720px) {
+  .happiness-sky-page { min-height: 100dvh; overflow-y: auto; }
+  .happiness-sky-header { position: relative; top: auto; width: calc(100% - 7rem); margin: 1rem auto 0; transform: none; left: auto; }
+  .happiness-sky-header h1 { font-size: 2rem; }
+  .happiness-sky-title-row { gap: .45rem; }
+  .happiness-sky-title-row > svg { width: 1.05rem; height: 1.05rem; }
+  .happiness-sky-back { height: 2.4rem; padding: 0 .75rem; }
+  .happiness-sky-field { position: relative; inset: auto; min-height: 34rem; margin: .7rem .65rem 0; perspective: none; }
+  .happiness-sky-stage { display: grid; height: auto; min-height: 34rem; grid-template-columns: repeat(3, minmax(0, 1fr)); align-content: center; gap: .75rem .35rem; transform: none; }
+  .happiness-sky-orbit { display: none; }
+  .happiness-sky-node {
+    position: relative;
+    left: auto;
+    top: auto;
+    width: min(var(--happiness-node-diameter), 28vw);
+    height: min(var(--happiness-node-diameter), 28vw);
+    justify-self: center;
+    font-size: min(var(--happiness-node-font-size), 5.8vw);
+    transform: none;
+  }
+  .happiness-sky-node:hover,
+  .happiness-sky-node.is-selected { transform: scale(1.05); }
+  .happiness-sky-stories { position: relative; right: auto; top: auto; width: calc(100% - 1.3rem); max-height: none; margin: .5rem auto 1rem; }
+  .happiness-sky-summary { bottom: .8rem; max-width: calc(100vw - 2rem); font-size: .7rem; overflow: hidden; text-overflow: ellipsis; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .happiness-sky-stage,
+  .happiness-sky-node,
+  .happiness-sky-stories,
+  .happiness-sky-back {
+    animation: none;
+    transition: none;
+  }
+
+  .happiness-sky-node { opacity: 1; }
+}
+
 :root {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
   line-height: 1.5;

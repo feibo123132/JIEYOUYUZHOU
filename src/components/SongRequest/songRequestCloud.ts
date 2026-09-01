@@ -1,7 +1,8 @@
 import { ensureSignIn, tcbApp } from '../../services/tcb';
 import type { VoteCounts } from './songRequest';
-import type { RoadshowRecord } from './roadshow';
+import type { PublicQuizRankingItem, RoadshowRecord } from './roadshow';
 import type { PublicPracticeRankingItem, SongRecord } from './songRecords';
+import type { SongScore } from './songScores';
 import type { ArtistSettingsPayload, ArtistSettingsSnapshot } from './artistSettings';
 import type { QuizAssignments } from './songQuizLibrary';
 
@@ -56,6 +57,10 @@ export const pullRoadshows = async (credentials: Credentials): Promise<RoadshowR
   await callSync<{ records: RoadshowRecord[] }>({ action: 'roadshows:pull', ...credentials })
 ).records;
 
+export const pullPublicQuizRanking = async (): Promise<PublicQuizRankingItem[]> => (
+  await callSync<{ ranking: PublicQuizRankingItem[] }>({ action: 'roadshows:publicQuizRanking' })
+).ranking;
+
 export const saveRoadshow = async (credentials: Credentials, record: RoadshowRecord): Promise<RoadshowRecord> => (
   await callSync<{ record: RoadshowRecord }>({ action: 'roadshows:save', ...credentials, record })
 ).record;
@@ -82,6 +87,27 @@ export const saveSongRecords = async (credentials: Credentials, records: SongRec
 
 export const deleteSongRecord = async (credentials: Credentials, id: string): Promise<void> => {
   await callSync<Record<string, never>>({ action: 'songRecords:delete', ...credentials, id });
+};
+
+export const pullSongScores = async (credentials: Credentials): Promise<SongScore[]> => (
+  await callSync<{ scores: SongScore[] }>({ action: 'songScores:pull', ...credentials })
+).scores;
+
+export const saveSongScore = async (credentials: Credentials, score: SongScore): Promise<SongScore> => (
+  await callSync<{ score: SongScore }>({ action: 'songScores:save', ...credentials, score })
+).score;
+
+export const deleteSongScore = async (credentials: Credentials, songId: string): Promise<void> => {
+  await callSync<Record<string, never>>({ action: 'songScores:delete', ...credentials, songId });
+};
+
+export const mapSongScoreSyncError = (error: unknown) => {
+  const code = error instanceof Error ? error.message : 'SYNC_FAILED';
+  if (code === 'PAYLOAD_TOO_LARGE') return '谱子图片过大，请减少页数或换更小的图片。';
+  if (code === 'INVALID_SONG_SCORE') return '谱子内容格式无效，未保存。';
+  if (code === 'AUTH_FAILED') return '私有空间已锁定，请先重新进入路演档案。';
+  if (code === 'CLOUD_UNAVAILABLE') return '腾讯云暂时未连接，谱子尚未同步。';
+  return '云端暂时没有回应，谱子尚未同步。';
 };
 
 export const pullArtistSettings = async (): Promise<ArtistSettingsSnapshot | null> => (

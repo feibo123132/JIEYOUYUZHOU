@@ -9,10 +9,13 @@ import CreateStarModal from './CreateStarModal';
 import AssistantSidebar from './AssistantSidebar';
 import MessageBarrage, { type BarrageMessage } from './MessageBarrage';
 import MyMessagesPage from './MyMessagesPage';
+import HappinessSkyPage from './HappinessSkyPage';
 import type { ThemeConfig } from '../../themes/themeConfig';
 import { resolveStarLayout, type LayoutRect } from '../../utils/starLayout';
 import { createInitialBarragePreferences, setBarragePreference } from './barragePreferences';
 import { openHappinessMeowGenerator } from '../../utils/meowGenerator';
+import { isLifeSeedStar, mergeLifeSeedStars, selectVisibleStars } from './lifeSeedStars';
+import { restoreHappinessPortraitFocus } from './happinessPortrait';
 
 // ↓↓↓↓↓↓ [修正] 使用正确的默认导入并解构出 starService ↓↓↓↓↓↓
 import services from '../../services/starService';
@@ -49,6 +52,7 @@ const createInitialStarrySkyBarragePreferences = () => ({
 const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, userId, initialView = 'stars' }) => {
   const rootRef = useRef<HTMLDivElement>(null);
   const starFieldRef = useRef<HTMLDivElement>(null);
+  const happinessPortraitTriggerRef = useRef<HTMLButtonElement>(null);
   const [stars, setStars] = useState<StarData[]>([]);
   const [selectedStar, setSelectedStar] = useState<StarData | null>(null);
   const [pendingDeleteStarId, setPendingDeleteStarId] = useState<string | null>(null);
@@ -69,6 +73,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
   const [skyView, setSkyView] = useState<'stars' | 'messages'>('stars');
   const displayMode = skyView === 'messages' ? messageDisplayMode : starDisplayMode;
   const [isMyMessagesOpen, setIsMyMessagesOpen] = useState(initialView === 'my-messages');
+  const [isHappinessPortraitOpen, setIsHappinessPortraitOpen] = useState(false);
   const [barragePreferences, setBarragePreferences] = useState(createInitialStarrySkyBarragePreferences);
   const barrageMode = barragePreferences.immersive;
   const intimateMode = barragePreferences.intimate;
@@ -112,11 +117,12 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
       setStarDisplayMode('random');
       setMessageDisplayMode('full');
       setIsMyMessagesOpen(initialView === 'my-messages');
+      setIsHappinessPortraitOpen(false);
       setBarragePreferences(createInitialStarrySkyBarragePreferences());
       setLoadState('loading');
       try {
         const allStars = await starService.getAllStars(theme.id);
-        const formattedStars = allStars.map(star => ({
+        const formattedStars = mergeLifeSeedStars(theme.id, allStars).map(star => ({
           id: star.id,
           x: star.position_x,
           y: star.position_y,
@@ -299,11 +305,13 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
     return true;
   };
 
-  const canDeleteStar = (star: StarData) => star.userId === userId || isAdminDevice;
+  const canDeleteStar = (star: StarData) => !isLifeSeedStar(star) && (star.userId === userId || isAdminDevice);
 
   const handleDeleteStar = async (starId: string) => {
     const starToDelete = stars.find(star => star.id === starId);
-    if (!starToDelete || !canDeleteStar(starToDelete)) {
+    if (!starToDelete) return;
+    if (isLifeSeedStar(starToDelete)) return;
+    if (!canDeleteStar(starToDelete)) {
       toast.error('无权删除这颗星星');
       return;
     }
@@ -350,14 +358,10 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
   }, [stars, searchName, searchDate]);
 
   const visibleStars = useMemo(() => {
-    const needAll = Boolean(searchName) || Boolean(searchDate) || displayMode === 'full';
-    if (needAll) return filteredStars;
-    const arr = [...filteredStars];
-    for (let i = arr.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [arr[i], arr[j]] = [arr[j], arr[i]];
-    }
-    return arr.slice(0, 30);
+    const selectionMode = Boolean(searchName) || Boolean(searchDate)
+      ? 'full'
+      : displayMode;
+    return selectVisibleStars(filteredStars, selectionMode);
   }, [filteredStars, searchName, searchDate, displayMode]);
 
   useLayoutEffect(() => {
@@ -495,6 +499,16 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
     else setStarDisplayMode(mode);
   };
 
+  const handleOpenHappinessPortrait = () => {
+    (window as any).playClickSound?.();
+    setIsHappinessPortraitOpen(true);
+  };
+
+  const handleCloseHappinessPortrait = () => {
+    setIsHappinessPortraitOpen(false);
+    requestAnimationFrame(() => restoreHappinessPortraitFocus(happinessPortraitTriggerRef.current));
+  };
+
   if (isMyMessagesOpen) {
     return (
       <MyMessagesPage
@@ -503,6 +517,15 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
         nickname={userNickname}
         accentColor={theme.visual.defaultStarColor}
         onBack={() => { (window as any).playClickSound?.(); setIsMyMessagesOpen(false); }}
+      />
+    );
+  }
+
+  if (isHappinessPortraitOpen && theme.id === 'life') {
+    return (
+      <HappinessSkyPage
+        stars={stars}
+        onBack={handleCloseHappinessPortrait}
       />
     );
   }
@@ -547,6 +570,9 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
         onChangeFillMode={handleFillModeChange}
         isAdminDevice={isAdminDevice}
         onSetAdminDevice={(v) => { try { localStorage.setItem('is_admin_device', v ? 'true' : 'false'); } catch {}; setIsAdminDevice(v); }}
+        showHappinessPortrait={theme.id === 'life'}
+        onOpenHappinessPortrait={handleOpenHappinessPortrait}
+        happinessPortraitTriggerRef={happinessPortraitTriggerRef}
       />
 
       {/* 顶部导航 */}

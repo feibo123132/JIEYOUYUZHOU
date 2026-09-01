@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { ArrowLeft, Music, Music2, Sparkles, Star } from 'lucide-react';
 import services from '../../services/starService';
 import type { ThemeConfig } from '../../themes/themeConfig';
+import { mergeLifeSeedStars } from '../StarrySky/lifeSeedStars';
 
 const { starService } = services;
 
@@ -24,7 +25,7 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
     let active = true;
     setStarCount(undefined);
     starService.getAllStars(theme.id)
-      .then((stars) => { if (active) setStarCount(stars.length); })
+      .then((stars) => { if (active) setStarCount(mergeLifeSeedStars(theme.id, stars).length); })
       .catch(() => { if (active) setStarCount(null); });
     return () => { active = false; };
   }, [theme.id]);

@@ -165,6 +165,11 @@ export const createArtistSettingsDraft = (
   snapshot: ArtistSettingsPayload,
 ): ArtistSettingsDraft => ({ changeId: (previous?.changeId ?? 0) + 1, baseRevision, snapshot });
 
+export const rebaseArtistSettingsDraft = (
+  draft: ArtistSettingsDraft,
+  baseRevision: number | null,
+): ArtistSettingsDraft => ({ ...draft, baseRevision });
+
 export const ensureArtistSettingsRetryDraft = (
   storage: ReadableStorage & WritableStorage,
   local: ArtistSettingsPayload,

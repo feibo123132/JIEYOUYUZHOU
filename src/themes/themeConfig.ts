@@ -64,7 +64,7 @@ const THEME_CONFIGS: Record<ThemeId, ThemeConfig> = {
   jieyou: {
     id: 'jieyou',
     hub: {
-      name: '星空树洞',
+      name: '星空树洞企划',
       eyebrow: 'GENTLE RELIEF',
       description: '在星空下许愿，把难以言说的心事交给宇宙。',
       invitation: '进入解忧星域',
@@ -138,7 +138,7 @@ const THEME_CONFIGS: Record<ThemeId, ThemeConfig> = {
     welcome: {
       title: '生命万岁企划',
       intro: ['愿每一份微小幸福', '都被认真看见，并在星空中长久闪烁'],
-      countPrefix: '欢迎生命万岁企划的',
+      countPrefix: '欢迎幸福星域的',
       countNoun: '星星',
       description: ['把那些美好的瞬间', '留在这片属于幸福的星空'],
       features: ['记录今天的小确幸', '收藏值得庆祝的瞬间', '让幸福被温柔看见'],
@@ -151,7 +151,7 @@ const THEME_CONFIGS: Record<ThemeId, ThemeConfig> = {
       tip: '别称会陪伴你记录每一个幸福时刻',
     },
     sky: {
-      title: 'JIEYOU幸福宇宙',
+      title: '生命万岁',
       createLabel: '点亮星星',
       creatingLabel: '正在珍藏...',
       hint: '把值得幸福的事情，留在这片星空里 ☀',
