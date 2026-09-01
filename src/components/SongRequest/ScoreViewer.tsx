@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { readScorePage, saveScorePage } from './songScores';
 
@@ -43,6 +44,10 @@ const ScoreViewer = ({ songId, songTitle, songArtist, pages, onClose }: ScoreVie
   }, [total, songId, onClose]);
 
   const onTouchStart = (event: React.TouchEvent) => {
+    if (event.touches.length !== 1) {
+      touchStartRef.current = null;
+      return;
+    }
     const touch = event.touches[0];
     touchStartRef.current = { x: touch.clientX, y: touch.clientY };
   };
@@ -59,8 +64,15 @@ const ScoreViewer = ({ songId, songTitle, songArtist, pages, onClose }: ScoreVie
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-[90] flex flex-col select-none bg-black/97" role="dialog" aria-label={`${songTitle} 谱子翻页器`} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[90] flex flex-col select-none bg-black"
+      role="dialog"
+      aria-label={`${songTitle} 谱子翻页器`}
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
+      style={{ touchAction: 'pan-x pan-y', overscrollBehavior: 'none' }}
+    >
       <header className="flex shrink-0 items-center justify-between gap-3 px-4 py-3 text-white/85 sm:px-6">
         <div className="min-w-0">
           <p className="truncate text-sm font-black sm:text-base">{songTitle}</p>
@@ -117,7 +129,8 @@ const ScoreViewer = ({ songId, songTitle, songArtist, pages, onClose }: ScoreVie
       <footer className="shrink-0 px-4 pb-4 pt-2 text-center text-[11px] text-white/30">
         {zoomed ? '双击图片恢复适应屏幕 · 放大后可拖动滚动' : '← → 键或左右滑动翻页 · 双击放大 · Esc 关闭'}
       </footer>
-    </div>
+    </div>,
+    document.body,
   );
 };
 

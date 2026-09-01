@@ -350,6 +350,9 @@ const RecognitionSongListEditor = ({ record, assignments, allRecords, busy, onRe
 }) => {
   const songs = record.recognitionSongs;
   const [participating, setParticipating] = useState(false);
+  const [joining, setJoining] = useState(false);
+  const [participantInput, setParticipantInput] = useState('');
+  const [participantName, setParticipantName] = useState('');
   const [selectedSongIds, setSelectedSongIds] = useState<string[]>([]);
   const [attemptIds, setAttemptIds] = useState<Record<string, string>>({});
   const [answers, setAnswers] = useState<Record<string, boolean>>({});
@@ -364,6 +367,9 @@ const RecognitionSongListEditor = ({ record, assignments, allRecords, busy, onRe
 
   useEffect(() => {
     setParticipating(false);
+    setJoining(false);
+    setParticipantInput('');
+    setParticipantName('');
     setSelectedSongIds([]);
     setAttemptIds({});
     setAnswers({});
@@ -377,7 +383,31 @@ const RecognitionSongListEditor = ({ record, assignments, allRecords, busy, onRe
   };
 
   const toggleParticipation = () => {
-    setParticipating((current) => !current);
+    if (!participating) {
+      setJoining(true);
+      return;
+    }
+    setParticipating(false);
+    setJoining(false);
+    setParticipantInput('');
+    setParticipantName('');
+    resetRound();
+  };
+
+  const startParticipation = () => {
+    const name = participantInput.trim();
+    if (!name) return;
+    setParticipantName(name);
+    setParticipating(true);
+    setJoining(false);
+    resetRound();
+  };
+
+  const finishRound = () => {
+    setParticipating(false);
+    setJoining(false);
+    setParticipantInput('');
+    setParticipantName('');
     resetRound();
   };
 
@@ -390,8 +420,8 @@ const RecognitionSongListEditor = ({ record, assignments, allRecords, busy, onRe
   };
 
   const answerSong = (song: RoadshowSong, correct: boolean) => {
-    if (selectedSongIds.length !== 4 || busy) return;
-    const attempt = createRecognitionAttempt(song, correct, attemptIds[song.id]);
+    if (selectedSongIds.length !== 4 || busy || !participantName) return;
+    const attempt = createRecognitionAttempt(song, correct, participantName, attemptIds[song.id]);
     setAttemptIds((current) => ({ ...current, [song.id]: attempt.id }));
     setAnswers((current) => ({ ...current, [song.id]: correct }));
     onRecordAttempt(upsertRecognitionAttempt(record, attempt));
@@ -401,9 +431,18 @@ const RecognitionSongListEditor = ({ record, assignments, allRecords, busy, onRe
     <section className="rounded-[1.75rem] border border-white/10 bg-[#09090c]/85 p-5 backdrop-blur-xl sm:p-7">
       <div className="flex items-end justify-between gap-4">
         <div><h3 className="font-serif text-2xl font-black">听歌识曲</h3><p className="mt-1 text-xs text-white/35">互动游戏准备的题目歌曲</p></div>
-        <button type="button" aria-pressed={participating} onClick={toggleParticipation} className={`inline-flex h-10 items-center gap-2 rounded-full border px-4 text-xs font-black transition ${participating ? 'border-orange-200/45 bg-orange-300 text-black' : 'border-white/10 bg-white/[.045] text-white/65 hover:border-orange-200/30 hover:text-white'}`}>
-          <UsersRound className="h-4 w-4" />{participating ? '退出参与' : <span>参与</span>}
-        </button>
+        {joining ? (
+          <form onSubmit={(event) => { event.preventDefault(); startParticipation(); }} className="flex items-center gap-2">
+            <label className="sr-only" htmlFor={`participant-${record.id}`}>参与者用户名</label>
+            <input id={`participant-${record.id}`} autoFocus maxLength={24} value={participantInput} onChange={(event) => setParticipantInput(event.target.value)} placeholder="输入用户名" className="h-10 w-36 rounded-full border border-white/10 bg-black/35 px-4 text-xs text-white outline-none placeholder:text-white/30 focus:border-orange-200/40 sm:w-44" />
+            <button type="submit" disabled={!participantInput.trim()} className="h-10 rounded-full bg-orange-300 px-4 text-xs font-black text-black transition hover:bg-orange-200 disabled:cursor-not-allowed disabled:opacity-35">开始答题</button>
+            <button type="button" aria-label="取消参与" onClick={() => { setJoining(false); setParticipantInput(''); }} className="grid h-10 w-10 place-items-center rounded-full border border-white/10 text-white/45 transition hover:text-white">×</button>
+          </form>
+        ) : (
+          <button type="button" aria-pressed={participating} onClick={toggleParticipation} className={`inline-flex h-10 items-center gap-2 rounded-full border px-4 text-xs font-black transition ${participating ? 'border-orange-200/45 bg-orange-300 text-black' : 'border-white/10 bg-white/[.045] text-white/65 hover:border-orange-200/30 hover:text-white'}`}>
+            <UsersRound className="h-4 w-4" />{participating ? `退出参与 · ${participantName}` : <span>参与</span>}
+          </button>
+        )}
       </div>
       {participating && (
         <section className="mt-5 rounded-2xl border border-orange-200/15 bg-[radial-gradient(circle_at_top_left,rgba(251,146,60,.12),transparent_45%),rgba(0,0,0,.28)] p-4 sm:p-5">
@@ -426,7 +465,7 @@ const RecognitionSongListEditor = ({ record, assignments, allRecords, busy, onRe
               );
             })}
           </div>
-          {roundComplete && <button type="button" onClick={resetRound} className="mt-4 inline-flex h-10 items-center gap-2 rounded-full border border-emerald-200/25 bg-emerald-300/10 px-4 text-xs font-black text-emerald-100 transition hover:bg-emerald-300/20"><UsersRound className="h-4 w-4" />下一位玩家</button>}
+          {roundComplete && <button type="button" onClick={finishRound} className="mt-4 inline-flex h-10 items-center gap-2 rounded-full border border-emerald-200/25 bg-emerald-300/10 px-4 text-xs font-black text-emerald-100 transition hover:bg-emerald-300/20"><UsersRound className="h-4 w-4" />下一位玩家</button>}
         </section>
       )}
       <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

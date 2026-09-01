@@ -78,6 +78,11 @@
   bottom: 3%;
 }
 
+.barrage-stage--balanced {
+  top: 2.5%;
+  bottom: 21.5%;
+}
+
 .barrage-lanes {
   position: absolute;
   inset: 0;
@@ -192,6 +197,11 @@
     bottom: 4%;
   }
 
+  .barrage-stage--balanced {
+    top: 3.5%;
+    bottom: 23.5%;
+  }
+
   .barrage-lanes-desktop {
     display: none;
   }
@@ -216,6 +226,11 @@
 
   .barrage-stage--immersive {
     bottom: 3%;
+  }
+
+  .barrage-stage--balanced {
+    top: 2.5%;
+    bottom: 20.5%;
   }
 
   .barrage-lanes {
@@ -275,6 +290,11 @@
 
   .barrage-stage--immersive {
     bottom: 4%;
+  }
+
+  .barrage-stage--balanced {
+    top: 3.5%;
+    bottom: 20.5%;
   }
 }
 

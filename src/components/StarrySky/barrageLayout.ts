@@ -21,6 +21,10 @@ export const getBarrageLaneDuration = (messages: readonly string[]) => {
   return Math.min(90, Math.max(24, 18 + contentLength * 0.26 + messages.length * 6))
 }
 
+export const getBarrageLaneDurationScale = (laneIndex: number) => (
+  Math.round((1 + ((Math.max(0, Math.floor(laneIndex)) % 5) - 2) * 0.05) * 1000) / 1000
+)
+
 export interface SafeBarrageLaneCountOptions {
   readonly maxLaneCount: number
   readonly messageCount: number

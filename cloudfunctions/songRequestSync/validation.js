@@ -1,6 +1,7 @@
 const ACTIONS = new Set([
   'votes:pull',
   'votes:increment',
+  'votes:finishAll',
   'roadshows:register',
   'roadshows:pull',
   'roadshows:save',
@@ -77,6 +78,7 @@ const validateRecognitionAttempt = (value) => {
   };
   if (typeof value.correct !== 'boolean') throw new Error('INVALID_RECORD');
   if (value.catalogId !== undefined) attempt.catalogId = cleanText(value.catalogId, 80, 'INVALID_RECORD');
+  if (value.participantName !== undefined) attempt.participantName = cleanText(value.participantName, 24, 'INVALID_RECORD');
   return attempt;
 };
 

@@ -11,11 +11,20 @@ export interface RoadshowSong {
 
 export interface RecognitionAttempt {
   id: string;
+  participantName?: string;
   catalogId?: string;
   title: string;
   artist: string;
   correct: boolean;
   answeredAt: string;
+}
+
+export interface PublicQuizParticipantRankingItem {
+  participantName: string;
+  score: number;
+  answerCount: number;
+  correctCount: number;
+  accuracy: number;
 }
 
 export interface PublicQuizRankingItem {
@@ -127,6 +136,7 @@ const isRecognitionAttempt = (value: unknown): value is RecognitionAttempt => {
   if (!value || typeof value !== 'object') return false;
   const attempt = value as Partial<RecognitionAttempt>;
   return typeof attempt.id === 'string'
+    && (attempt.participantName === undefined || (typeof attempt.participantName === 'string' && Boolean(attempt.participantName.trim())))
     && (attempt.catalogId === undefined || typeof attempt.catalogId === 'string')
     && typeof attempt.title === 'string'
     && typeof attempt.artist === 'string'
@@ -174,10 +184,12 @@ export const createRoadshowSong = (song: Song): RoadshowSong => ({
 export const createRecognitionAttempt = (
   song: RoadshowSong,
   correct: boolean,
+  participantName: string,
   id = `quiz:${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
   answeredAt = new Date().toISOString(),
 ): RecognitionAttempt => ({
   id,
+  participantName: participantName.trim(),
   ...(song.catalogId ? { catalogId: song.catalogId } : {}),
   title: song.title,
   artist: song.artist,
@@ -205,6 +217,21 @@ export const parsePublicQuizRanking = (value: unknown): PublicQuizRankingItem[] 
       && typeof item.songArtist === 'string'
       && Number.isInteger(item.answerCount) && (item.answerCount ?? 0) > 0
       && Number.isInteger(item.correctCount) && (item.correctCount ?? -1) >= 0
+      && (item.correctCount ?? 0) <= (item.answerCount ?? 0)
+      && typeof item.accuracy === 'number' && item.accuracy >= 0 && item.accuracy <= 100;
+  });
+};
+
+export const parsePublicQuizParticipantRanking = (value: unknown): PublicQuizParticipantRankingItem[] => {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry): entry is PublicQuizParticipantRankingItem => {
+    if (!entry || typeof entry !== 'object') return false;
+    const item = entry as Partial<PublicQuizParticipantRankingItem>;
+    return typeof item.participantName === 'string' && Boolean(item.participantName.trim())
+      && Number.isInteger(item.score) && (item.score ?? -1) >= 0
+      && Number.isInteger(item.answerCount) && (item.answerCount ?? 0) > 0
+      && Number.isInteger(item.correctCount) && (item.correctCount ?? -1) >= 0
+      && item.score === item.correctCount
       && (item.correctCount ?? 0) <= (item.answerCount ?? 0)
       && typeof item.accuracy === 'number' && item.accuracy >= 0 && item.accuracy <= 100;
   });

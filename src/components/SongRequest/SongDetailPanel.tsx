@@ -238,7 +238,8 @@ const SongDetailPanel = ({
         <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-[2rem]"><div className="absolute -right-20 -top-28 h-72 w-72 rounded-full bg-orange-400/10 blur-3xl" /></div>
         <div className="relative flex flex-col justify-between gap-7 sm:flex-row sm:items-start">
           <div className="min-w-0">
-            <h1 className="font-serif text-4xl font-black tracking-[-.04em] sm:text-6xl">{song.title}</h1>
+            <p data-journal-eyebrow className="text-[10px] font-black tracking-[.22em] text-orange-200/65">MY SONG JOURNAL</p>
+            <h1 className="mt-2 font-serif text-4xl font-black tracking-[-.04em] sm:text-6xl">{song.title}</h1>
             <div data-journal-description className="mt-3 flex max-w-2xl flex-wrap items-center gap-x-3 gap-y-1">
               <p className="text-sm leading-7 text-white/45">{song.hotComment || `${song.artist} · ${song.category}`}</p>
               {(syncStatus || message) && <p className="inline-flex shrink-0 items-center gap-1.5 text-[10px] font-black tracking-[.12em] text-orange-100/55" role="status"><Cloud className="h-2.5 w-2.5" />{message || syncStatus}</p>}

@@ -11,6 +11,9 @@ const PUBLIC_ERRORS = new Set([
 ]);
 
 const FEATURED_SONGS_OWNER_ALIAS = '2421415030@qq.com';
+const cleanVoteCounts = (value) => value && typeof value === 'object' && !Array.isArray(value)
+  ? Object.fromEntries(Object.entries(value).filter(([, count]) => Number.isInteger(count) && count > 0))
+  : {};
 const workspaceId = (alias) => crypto.createHash('sha256').update(alias.trim().toLocaleLowerCase()).digest('hex');
 const passwordHash = (password, salt) => crypto.scryptSync(password, salt, 32).toString('hex');
 const songRecordDocumentId = (workspace, record) => crypto.createHash('sha256').update(`${workspace}:${record}`).digest('hex');
@@ -80,6 +83,34 @@ const buildPublicQuizRanking = (roadshows) => {
   )).slice(0, 500);
 };
 
+const buildPublicQuizParticipantRanking = (roadshows) => {
+  const attempts = roadshows.flatMap((roadshow) => roadshow.recognitionAttempts || [])
+    .filter((attempt) => attempt && typeof attempt.correct === 'boolean' && typeof attempt.participantName === 'string' && attempt.participantName.trim())
+    .sort((left, right) => String(left.answeredAt || '').localeCompare(String(right.answeredAt || '')) || String(left.id || '').localeCompare(String(right.id || '')));
+  const groups = new Map();
+  for (const attempt of attempts) {
+    const participantName = attempt.participantName.trim();
+    const key = participantName.toLocaleLowerCase();
+    const current = groups.get(key) || { participantName, score: 0, answerCount: 0, correctCount: 0 };
+    current.answerCount += 1;
+    if (attempt.correct) {
+      current.correctCount += 1;
+      current.score += 1;
+    }
+    groups.set(key, current);
+  }
+  return [...groups.values()].map((entry) => ({
+    ...entry,
+    accuracy: Math.round((entry.correctCount / entry.answerCount) * 1000) / 10,
+  })).sort((left, right) => (
+    right.score - left.score
+    || right.accuracy - left.accuracy
+    || right.answerCount - left.answerCount
+    || left.participantName.localeCompare(right.participantName, 'zh-CN', { sensitivity: 'base' })
+    || left.participantName.localeCompare(right.participantName, 'zh-CN')
+  )).slice(0, 500);
+};
+
 const authenticate = async (store, alias, password) => {
   const id = workspaceId(alias);
   const workspace = await store.getWorkspace(id);
@@ -94,12 +125,16 @@ function createHandler(store) {
   return async (event) => {
     try {
       const request = validateRequest(event);
-      if (request.action === 'votes:pull') return { ok: true, counts: await store.getVotes() };
+      if (request.action === 'votes:pull') {
+        const owner = await store.getWorkspace(workspaceId(FEATURED_SONGS_OWNER_ALIAS));
+        return { ok: true, counts: await store.getVotes(), sungCounts: cleanVoteCounts(owner?.sungVoteCounts) };
+      }
       if (request.action === 'songRecords:publicRanking') {
         return { ok: true, ranking: buildPublicPracticeRanking(await store.getAllSongRecords()) };
       }
       if (request.action === 'roadshows:publicQuizRanking') {
-        return { ok: true, ranking: buildPublicQuizRanking(await store.getAllRoadshows()) };
+        const roadshows = await store.getAllRoadshows();
+        return { ok: true, ranking: buildPublicQuizRanking(roadshows), participantRanking: buildPublicQuizParticipantRanking(roadshows) };
       }
       if (request.action === 'artistSettings:pull') {
         return { ok: true, snapshot: publicArtistSettings(await store.getArtistSettings()) };
@@ -136,11 +171,15 @@ function createHandler(store) {
       try {
         authenticated = await authenticate(store, request.alias, request.password);
       } catch (error) {
-        if ((request.action === 'artistSettings:push' || request.action === 'featuredSongs:set' || request.action === 'quizLibrary:set')
+        if ((request.action === 'artistSettings:push' || request.action === 'featuredSongs:set' || request.action === 'quizLibrary:set' || request.action === 'votes:finishAll')
           && error?.message === 'NOT_REGISTERED') throw new Error('AUTH_FAILED');
         throw error;
       }
       const { id, workspace } = authenticated;
+      if (request.action === 'votes:finishAll') {
+        if (id !== workspaceId(FEATURED_SONGS_OWNER_ALIAS)) throw new Error('AUTH_FAILED');
+        return { ok: true, ...await store.finishVotesAtomically(id) };
+      }
       if (request.action === 'featuredSongs:set') {
         if (id !== workspaceId(FEATURED_SONGS_OWNER_ALIAS)) throw new Error('AUTH_FAILED');
         await store.setFeaturedSongIds(id, request.songIds, store.now());
@@ -239,6 +278,19 @@ exports.main = async (event) => {
     const songScores = db.collection('song_request_song_scores');
     const artistSettings = db.collection('song_request_artist_settings');
     const command = db.command;
+    const readVoteCounts = async () => {
+      const pageSize = 1000;
+      const counts = {};
+      for (let offset = 0; ; offset += pageSize) {
+        const result = await votes.skip(offset).limit(pageSize).get();
+        const page = result.data || [];
+        for (const item of page) {
+          const count = Number(item.count) || 0;
+          if (count > 0) counts[item._id] = count;
+        }
+        if (page.length < pageSize) return counts;
+      }
+    };
     defaultHandler = createHandler({
       async getWorkspace(id) {
         try {
@@ -252,10 +304,7 @@ exports.main = async (event) => {
       setWorkspace: (id, value) => workspaces.doc(id).set(buildWritableWorkspace(value)),
       setFeaturedSongIds: (id, songIds, updatedAt) => workspaces.doc(id).update({ featuredSongIds: songIds, updatedAt }),
       setQuizLibraryAssignments: (id, assignments, updatedAt) => workspaces.doc(id).update({ quizLibraryAssignments: assignments, updatedAt }),
-      async getVotes() {
-        const result = await votes.limit(100).get();
-        return Object.fromEntries((result.data || []).map((item) => [item._id, Number(item.count) || 0]));
-      },
+      getVotes: readVoteCounts,
       async incrementVote(songId) {
         const ref = votes.doc(songId);
         try {
@@ -267,6 +316,33 @@ exports.main = async (event) => {
         const result = await ref.get();
         const value = Array.isArray(result.data) ? result.data[0] : result.data;
         return Number(value?.count) || 1;
+      },
+      async finishVotesAtomically(ownerWorkspaceId) {
+        const pendingSnapshot = await readVoteCounts();
+        const songIds = Object.keys(pendingSnapshot);
+        const sungCounts = await db.runTransaction(async (transaction) => {
+          const workspaceRef = transaction.collection('song_request_workspaces').doc(ownerWorkspaceId);
+          const workspaceResult = await workspaceRef.get();
+          const currentWorkspace = Array.isArray(workspaceResult.data) ? workspaceResult.data[0] : workspaceResult.data;
+          if (!currentWorkspace) throw new Error('AUTH_FAILED');
+          const nextSungCounts = cleanVoteCounts(currentWorkspace.sungVoteCounts);
+          for (const songId of songIds) {
+            const voteRef = transaction.collection('song_request_votes').doc(songId);
+            const voteResult = await voteRef.get();
+            const currentVote = Array.isArray(voteResult.data) ? voteResult.data[0] : voteResult.data;
+            const count = Number(currentVote?.count) || 0;
+            if (count <= 0) continue;
+            nextSungCounts[songId] = (nextSungCounts[songId] || 0) + count;
+            await voteRef.set({ count: 0, updatedAt: new Date().toISOString() });
+          }
+          await workspaceRef.set(buildWritableWorkspace({
+            ...currentWorkspace,
+            sungVoteCounts: nextSungCounts,
+            updatedAt: new Date().toISOString(),
+          }));
+          return nextSungCounts;
+        });
+        return { counts: await readVoteCounts(), sungCounts };
       },
       async getSongRecords(workspaceId) {
         const pageSize = 1000;
@@ -403,4 +479,5 @@ exports.buildWritableWorkspace = buildWritableWorkspace;
 exports.buildSoftDeletedSongRecord = buildSoftDeletedSongRecord;
 exports.buildPublicPracticeRanking = buildPublicPracticeRanking;
 exports.buildPublicQuizRanking = buildPublicQuizRanking;
+exports.buildPublicQuizParticipantRanking = buildPublicQuizParticipantRanking;
 exports.publicArtistSettings = publicArtistSettings;

@@ -5,6 +5,7 @@ import {
   getBarrageFillRepeatCount,
   getBarrageLayout,
   getBarrageLaneDuration,
+  getBarrageLaneDurationScale,
   getSafeBarrageLaneCount,
   formatBarrageMessage,
 } from './barrageLayout'
@@ -76,7 +77,7 @@ const BarragePill = ({ item, theme, simple = false, onSelectMessage }: {
   )
   const className = `barrage-item ${simple ? 'popular-song-chip' : ''}`
   const style = simple
-    ? { borderColor: color, boxShadow: `0 0 12px ${color}1f, inset 0 0 10px ${color}0a` }
+    ? { borderColor: `${color}73`, boxShadow: `0 0 9px ${color}14, inset 0 0 8px ${color}08` }
     : { borderColor: `${color}66`, boxShadow: `0 0 22px ${color}24` }
   if (!onSelectMessage) {
     return <div className={className} style={style}>{content}</div>
@@ -136,7 +137,7 @@ const FilledBarrageLane = ({
     gap: laneMeasurement.gap,
   })
   const unitWidth = repeatCount * (laneMeasurement.baseWidth + laneMeasurement.gap)
-  const duration = getBarrageFillDuration(unitWidth)
+  const duration = getBarrageFillDuration(unitWidth) * getBarrageLaneDurationScale(laneIndex)
   const style: FilledLaneStyle = {
     '--lane-top': `${((laneIndex + 0.5) / laneCount) * 100}%`,
     '--lane-delay': `${-(laneIndex * 2.8)}s`,
@@ -246,7 +247,7 @@ const BarrageLanes = ({
             />
           )
         }
-        const duration = getBarrageLaneDuration(lane.map((item) => item.message))
+        const duration = getBarrageLaneDuration(lane.map((item) => item.message)) * getBarrageLaneDurationScale(laneIndex)
         const style: LaneStyle = {
           '--lane-top': `${((laneIndex + 0.5) / laneCount) * 100}%`,
           '--lane-duration': `${duration}s`,
@@ -379,7 +380,7 @@ const MessageBarrage = ({
   return (
     <section
       ref={stageRef}
-      className={`barrage-stage ${immersive ? 'barrage-stage--immersive' : ''} ${intimate ? 'barrage-stage--intimate' : ''} ${simple ? 'popular-song-stage' : ''} absolute inset-0 overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/55`}
+      className={`barrage-stage ${immersive ? 'barrage-stage--immersive' : ''} ${!simple && !immersive ? 'barrage-stage--balanced' : ''} ${intimate ? 'barrage-stage--intimate' : ''} ${simple ? 'popular-song-stage' : ''} absolute inset-0 overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/55`}
       style={stageStyle}
       aria-label={`${ariaLabel || `${theme?.hub.name || '星空'}留言弹幕`}。聚焦此区域可暂停动画。`}
       tabIndex={0}

@@ -48,6 +48,16 @@ function memoryStore() {
       votes.set(songId, count);
       return count;
     },
+    finishVotesAtomically: async (ownerWorkspaceId) => {
+      const workspace = workspaces.get(ownerWorkspaceId);
+      const sungCounts = { ...(workspace?.sungVoteCounts || {}) };
+      for (const [songId, count] of votes) {
+        if (count > 0) sungCounts[songId] = (sungCounts[songId] || 0) + count;
+      }
+      votes.clear();
+      workspaces.set(ownerWorkspaceId, { ...workspace, sungVoteCounts });
+      return { counts: {}, sungCounts: structuredClone(sungCounts) };
+    },
     getSongRecords: async (workspaceId) => [...songRecords.values()]
       .filter((record) => record.workspaceId === workspaceId && !record.deletedAt)
       .map((record) => structuredClone(record)),
@@ -102,6 +112,9 @@ test('validates public and private actions without rejecting platform metadata',
 
   assert.deepEqual(validateRequest({ action: 'votes:increment', songId: 'qing-tian', userInfo: { uid: 'u1' } }), {
     action: 'votes:increment', songId: 'qing-tian',
+  });
+  assert.deepEqual(validateRequest({ action: 'votes:finishAll', alias: '2421415030@qq.com', password: 'guitar-2026' }), {
+    action: 'votes:finishAll', alias: '2421415030@qq.com', password: 'guitar-2026',
   });
   assert.deepEqual(validateRequest({ action: 'roadshows:publicQuizRanking' }), { action: 'roadshows:publicQuizRanking' });
   assert.throws(() => validateRequest({ action: 'roadshows:register', alias: '', password: '123456' }), /INVALID_ALIAS/);
@@ -195,7 +208,34 @@ test('increments and pulls public song request votes', async () => {
 
   assert.deepEqual(await handler({ action: 'votes:increment', songId: 'qing-tian' }), { ok: true, count: 1 });
   assert.deepEqual(await handler({ action: 'votes:increment', songId: 'qing-tian' }), { ok: true, count: 2 });
-  assert.deepEqual(await handler({ action: 'votes:pull' }), { ok: true, counts: { 'qing-tian': 2 } });
+  assert.deepEqual(await handler({ action: 'votes:pull' }), { ok: true, counts: { 'qing-tian': 2 }, sungCounts: {} });
+})
+
+test('only the authenticated owner can move every pending vote into cumulative sung counts', async () => {
+  const store = memoryStore();
+  const { createHandler } = loadFunction();
+  const handler = createHandler(store);
+  const owner = { alias: '2421415030@qq.com', password: 'guitar-2026' };
+  const visitor = { alias: 'visitor@example.com', password: 'guitar-2026' };
+  await handler({ action: 'roadshows:register', ...owner });
+  await handler({ action: 'roadshows:register', ...visitor });
+  await handler({ action: 'votes:increment', songId: 'qing-tian' });
+  await handler({ action: 'votes:increment', songId: 'qing-tian' });
+  await handler({ action: 'votes:increment', songId: 'hua-hai' });
+
+  assert.deepEqual(await handler({ action: 'votes:finishAll', ...visitor }), { ok: false, error: 'AUTH_FAILED' });
+  assert.deepEqual(await handler({ action: 'votes:finishAll', ...owner, password: 'wrong-password' }), { ok: false, error: 'AUTH_FAILED' });
+  assert.deepEqual(await handler({ action: 'votes:finishAll', ...owner }), {
+    ok: true, counts: {}, sungCounts: { 'qing-tian': 2, 'hua-hai': 1 },
+  });
+  assert.deepEqual(await handler({ action: 'votes:pull' }), {
+    ok: true, counts: {}, sungCounts: { 'qing-tian': 2, 'hua-hai': 1 },
+  });
+
+  await handler({ action: 'votes:increment', songId: 'qing-tian' });
+  assert.deepEqual(await handler({ action: 'votes:finishAll', ...owner }), {
+    ok: true, counts: {}, sungCounts: { 'qing-tian': 3, 'hua-hai': 1 },
+  });
 })
 
 test('only the authenticated owner email can publish global featured songs', async () => {
@@ -328,8 +368,9 @@ test('publishes a quiz ranking from roadshow answers without exposing private wo
   const handler = createHandler(store);
   const first = { alias: 'JIEYOU', password: 'guitar-2026' };
   const second = { alias: 'PLAYER', password: 'guitar-2026' };
-  const song = (id, title, artist, correct, attempt) => ({
+  const song = (id, title, artist, correct, attempt, participantName) => ({
     id: attempt, catalogId: id, title, artist, correct, answeredAt: `2026-09-01T12:00:0${attempt.slice(-1)}.000Z`,
+    ...(participantName ? { participantName } : {}),
   });
   const roadshow = (id, recognitionAttempts) => ({
     id, title: id, date: '2026-09-01', updatedAt: '2026-09-01T12:00:00.000Z',
@@ -339,21 +380,37 @@ test('publishes a quiz ranking from roadshow answers without exposing private wo
   await handler({ action: 'roadshows:register', ...first });
   await handler({ action: 'roadshows:register', ...second });
   await handler({ action: 'roadshows:save', ...first, record: roadshow('第一场', [
-    song('a', '晴天', '周杰伦', true, 'attempt-1'),
-    song('a', '晴天', '周杰伦', false, 'attempt-2'),
-    song('b', '江南', '林俊杰', true, 'attempt-3'),
+    song('a', '晴天', '周杰伦', true, 'attempt-1', '小安'),
+    song('a', '晴天', '周杰伦', false, 'attempt-2', '小安'),
+    song('b', '江南', '林俊杰', true, 'attempt-3', 'ALICE'),
   ]) });
   await handler({ action: 'roadshows:save', ...second, record: roadshow('第二场', [
-    song('a', '晴天', '周杰伦', true, 'attempt-4'),
+    song('a', '晴天', '周杰伦', true, 'attempt-4', 'alice'),
   ]) });
 
   const result = await handler({ action: 'roadshows:publicQuizRanking' });
   assert.deepEqual(result, { ok: true, ranking: [
     { songId: 'b', songTitle: '江南', songArtist: '林俊杰', answerCount: 1, correctCount: 1, accuracy: 100 },
     { songId: 'a', songTitle: '晴天', songArtist: '周杰伦', answerCount: 3, correctCount: 2, accuracy: 66.7 },
+  ], participantRanking: [
+    { participantName: 'ALICE', score: 2, answerCount: 2, correctCount: 2, accuracy: 100 },
+    { participantName: '小安', score: 1, answerCount: 2, correctCount: 1, accuracy: 50 },
   ] });
   assert.doesNotMatch(JSON.stringify(result), /alias|password|workspaceId|answeredAt/);
 })
+
+test('participant ranking applies every tie-break and caps results at 500', () => {
+  const { buildPublicQuizParticipantRanking } = loadFunction();
+  const attempt = (participantName, correct, index) => ({ id: `a-${index}`, title: '歌', artist: '', correct, participantName, answeredAt: `2026-09-01T12:${String(index).padStart(2, '0')}:00.000Z` });
+  const ranking = buildPublicQuizParticipantRanking([{ recognitionAttempts: [
+    attempt('Alpha', true, 1), attempt('Alpha', true, 2),
+    attempt('Beta', true, 3), attempt('Beta', true, 4), attempt('Beta', false, 5),
+    attempt('Gamma', true, 6), attempt('Gamma', true, 7), attempt('Gamma', false, 8),
+  ] }]);
+  assert.deepEqual(ranking.map((item) => item.participantName), ['Alpha', 'Beta', 'Gamma']);
+  const capped = buildPublicQuizParticipantRanking([{ recognitionAttempts: Array.from({ length: 501 }, (_, index) => attempt(`用户${String(index).padStart(3, '0')}`, true, index)) }]);
+  assert.equal(capped.length, 500);
+});
 
 test('validates private song practice and roadshow record payloads', () => {
   const { validateRequest } = require(validationPath);

@@ -4,11 +4,19 @@ import test from 'node:test'
 import {
   formatBarrageMessage,
   getBarrageLaneDuration,
+  getBarrageLaneDurationScale,
   getBarrageFillDuration,
   getBarrageFillRepeatCount,
   getBarrageLayout,
   getSafeBarrageLaneCount,
 } from '../src/components/StarrySky/barrageLayout.ts'
+
+test('barrage lanes use a stable subtle duration variation', () => {
+  const scales = Array.from({ length: 10 }, (_, laneIndex) => getBarrageLaneDurationScale(laneIndex))
+  assert.deepEqual(scales.slice(0, 5), [0.9, 0.95, 1, 1.05, 1.1])
+  assert.deepEqual(scales.slice(5), scales.slice(0, 5))
+  assert.ok(Math.max(...scales) - Math.min(...scales) <= 0.200001)
+})
 
 test('barrage messages longer than 25 characters are truncated with an ellipsis', () => {
   assert.equal(formatBarrageMessage('幸福'.repeat(12) + '好'), '幸福'.repeat(12) + '好')

@@ -12,6 +12,7 @@ interface WritableStorage {
 }
 
 export const VOTE_STORAGE_KEY = 'jieyou-song-request-votes-v1';
+export const SUNG_VOTE_STORAGE_KEY = 'jieyou-song-request-sung-votes-v1';
 export const CATALOG_STORAGE_KEY = 'jieyou-song-catalog-v1';
 
 export const paginateRankingItems = <T>(items: T[], requestedPage: number, pageSize: number) => {
@@ -201,11 +202,34 @@ export const incrementSongVote = (counts: VoteCounts, songId: string): VoteCount
   [songId]: (counts[songId] ?? 0) + 1,
 });
 
+export const finishRequestedVotes = (pending: VoteCounts, sung: VoteCounts) => ({
+  pending: {},
+  sung: Object.entries(pending).reduce<VoteCounts>((next, [songId, count]) => ({
+    ...next,
+    [songId]: (next[songId] ?? 0) + count,
+  }), { ...sung }),
+});
+
 export const rankSongsByVotes = (songs: Song[], counts: VoteCounts) => songs
   .map((song, catalogIndex) => ({ song, count: counts[song.id] ?? 0, catalogIndex }))
   .filter((item) => item.count > 0)
   .sort((left, right) => right.count - left.count || left.catalogIndex - right.catalogIndex)
   .map(({ song, count }) => ({ song, count }));
+
+export const rankArtistsByVotes = (songs: Song[], counts: VoteCounts) => {
+  const ranking = new Map<string, { artist: string; count: number; songCount: number; catalogIndex: number }>();
+  songs.forEach((song, catalogIndex) => {
+    const count = counts[song.id] ?? 0;
+    if (count <= 0) return;
+    const current = ranking.get(song.artist) ?? { artist: song.artist, count: 0, songCount: 0, catalogIndex };
+    current.count += count;
+    current.songCount += 1;
+    ranking.set(song.artist, current);
+  });
+  return [...ranking.values()]
+    .sort((left, right) => right.count - left.count || left.catalogIndex - right.catalogIndex)
+    .map(({ artist, count, songCount }) => ({ artist, count, songCount }));
+};
 
 export type RankingMedalTone = 'gold' | 'silver' | 'bronze' | 'neutral';
 
@@ -218,9 +242,9 @@ export const getPersonalRankingPodiumSize = (artistSongCount: number | null) => 
   artistSongCount === null || artistSongCount >= 5 ? 3 : 1
 );
 
-export const loadVoteCounts = (storage: ReadableStorage, validSongIds: string[]): VoteCounts => {
+const loadStoredVoteCounts = (storage: ReadableStorage, storageKey: string, validSongIds: string[]): VoteCounts => {
   try {
-    const raw = storage.getItem(VOTE_STORAGE_KEY);
+    const raw = storage.getItem(storageKey);
     if (!raw) return {};
     const parsed = JSON.parse(raw) as { version?: unknown; counts?: unknown };
     if (parsed.version !== 1 || !parsed.counts || typeof parsed.counts !== 'object') return {};
@@ -235,6 +259,18 @@ export const loadVoteCounts = (storage: ReadableStorage, validSongIds: string[])
   }
 };
 
+export const loadVoteCounts = (storage: ReadableStorage, validSongIds: string[]) => (
+  loadStoredVoteCounts(storage, VOTE_STORAGE_KEY, validSongIds)
+);
+
+export const loadSungVoteCounts = (storage: ReadableStorage, validSongIds: string[]) => (
+  loadStoredVoteCounts(storage, SUNG_VOTE_STORAGE_KEY, validSongIds)
+);
+
 export const saveVoteCounts = (storage: WritableStorage, counts: VoteCounts) => {
   storage.setItem(VOTE_STORAGE_KEY, JSON.stringify({ version: 1, counts }));
+};
+
+export const saveSungVoteCounts = (storage: WritableStorage, counts: VoteCounts) => {
+  storage.setItem(SUNG_VOTE_STORAGE_KEY, JSON.stringify({ version: 1, counts }));
 };

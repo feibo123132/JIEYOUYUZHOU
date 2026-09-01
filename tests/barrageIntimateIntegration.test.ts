@@ -44,6 +44,23 @@ test('message barrage consumes intimate layout values in both responsive lane se
   assert.match(styles, /gap:\s*var\(--barrage-static-gap\)/)
 })
 
+test('all barrage variants share the stronger stable lane speed variation', () => {
+  const component = readSource('src/components/StarrySky/MessageBarrage.tsx')
+
+  assert.equal((component.match(/getBarrageLaneDurationScale\(laneIndex\)/g) ?? []).length, 2)
+  assert.doesNotMatch(component, /simple \? getBarrageLaneDurationScale/)
+})
+
+test('universe message lanes shift upward without changing their usable height', () => {
+  const component = readSource('src/components/StarrySky/MessageBarrage.tsx')
+  const styles = readSource('src/index.css')
+  const balancedStage = styles.match(/\.barrage-stage--balanced\s*\{[^}]*\}/s)?.[0] ?? ''
+
+  assert.match(component, /!simple && !immersive \? 'barrage-stage--balanced'/)
+  assert.match(balancedStage, /top:\s*2\.5%/)
+  assert.match(balancedStage, /bottom:\s*21\.5%/)
+})
+
 test('intimate barrage measures visible pills and safely rebinds responsive observers', () => {
   const component = readSource('src/components/StarrySky/MessageBarrage.tsx')
 

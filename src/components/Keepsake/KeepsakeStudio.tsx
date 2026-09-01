@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type PointerEvent as ReactPointerEvent } from 'react'
-import { ArrowLeft, Camera, Check, Download, ImagePlus, RefreshCw, RotateCcw, Video } from 'lucide-react'
+import { ArrowLeft, Camera, Check, Download, ImagePlus, RefreshCw, Video } from 'lucide-react'
 import {
   KEEPSAKE_FRAMES,
   KEEPSAKE_HEIGHT,
-  KEEPSAKE_SENTENCES,
+  KEEPSAKE_LOCATION_SENTENCES,
   KEEPSAKE_WIDTH,
   clampPhotoTransform,
+  getKeepsakeSentencesForLocation,
   normalizeKeepsakeText,
   renderKeepsake,
+  resolveKeepsakeSentenceAfterLocationChange,
   type KeepsakeFrameCategory,
   type KeepsakeFrameId,
   type KeepsakeLocation,
@@ -76,9 +78,11 @@ export default function KeepsakeStudio({ onBack }: KeepsakeStudioProps) {
   const [body, setBody] = useState('')
   const [date, setDate] = useState(() => getLocalDateInputValue())
   const [location, setLocation] = useState<KeepsakeLocation>('医大')
-  const [sentence, setSentence] = useState<KeepsakeSentence>(() => (
-    KEEPSAKE_SENTENCES[Math.floor(Math.random() * KEEPSAKE_SENTENCES.length)] ?? KEEPSAKE_SENTENCES[0]
-  ))
+  const [sentence, setSentence] = useState<KeepsakeSentence>(KEEPSAKE_LOCATION_SENTENCES.医大)
+  const handleLocationChange = (nextLocation: KeepsakeLocation) => {
+    setSentence((current) => resolveKeepsakeSentenceAfterLocationChange(current, location, nextLocation))
+    setLocation(nextLocation)
+  }
   const [error, setError] = useState('')
   const [isExporting, setIsExporting] = useState(false)
   const [cameraSnapshot, setCameraSnapshot] = useState<CameraSnapshot>({
@@ -205,14 +209,6 @@ export default function KeepsakeStudio({ onBack }: KeepsakeStudioProps) {
     if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null
   }
 
-  const handleZoom = (value: number) => {
-    if (!imageSize) {
-      setPhotoView({ zoom: value, pan: { x: 0, y: 0 } })
-      return
-    }
-    setPhotoView((current) => clampPhotoTransform(imageSize, value, current.pan))
-  }
-
   const handleExport = async () => {
     const canvas = canvasRef.current
     if (!canvas || !image) {
@@ -273,14 +269,14 @@ export default function KeepsakeStudio({ onBack }: KeepsakeStudioProps) {
               />
             </div>
             <p className="mt-3 text-center text-xs tracking-[0.08em] text-white/40">
-              {image ? '在画面上拖动照片 · 使用右侧滑杆缩放' : '照片只在你的浏览器中处理，不会上传'}
+              {image ? '在画面上拖动照片调整位置' : '照片只在你的浏览器中处理，不会上传'}
             </p>
           </section>
 
           <section className="rounded-[2rem] border border-white/10 bg-[#071018]/80 p-5 shadow-[0_30px_100px_rgba(0,0,0,.28)] backdrop-blur-2xl sm:p-7 lg:p-8" aria-label="留影编辑器">
             <div className="mb-7">
               <p className="text-[10px] font-bold tracking-[0.3em] text-sky-200/65">MEMORY STUDIO</p>
-              <h1 className="mt-2 font-serif text-3xl font-black tracking-tight sm:text-4xl">为这一刻，留一副外框</h1>
+              <h1 className="mt-2 font-serif text-3xl font-black tracking-tight sm:text-4xl">生命万岁企划</h1>
               <p className="mt-2 max-w-xl text-sm leading-7 text-white/50">放入照片、写下想留下的话，完成后下载一张高清 PNG。</p>
             </div>
 
@@ -338,30 +334,6 @@ export default function KeepsakeStudio({ onBack }: KeepsakeStudioProps) {
                 </div>
               </fieldset>
 
-              <div>
-                <div className="mb-2 flex items-center justify-between">
-                  <label htmlFor="keepsake-zoom" className="text-xs font-bold tracking-[0.18em] text-white/55">照片缩放</label>
-                  <button
-                    type="button"
-                    onClick={() => setPhotoView(getInitialPhotoView())}
-                    className="inline-flex items-center gap-1.5 text-xs text-white/45 transition hover:text-white"
-                  >
-                    <RotateCcw className="h-3.5 w-3.5" /> 重置
-                  </button>
-                </div>
-                <input
-                  id="keepsake-zoom"
-                  type="range"
-                  min="1"
-                  max="3"
-                  step="0.01"
-                  value={photoView.zoom}
-                  disabled={!image}
-                  onChange={(event) => handleZoom(Number(event.target.value))}
-                  className="w-full accent-sky-300 disabled:opacity-30"
-                />
-              </div>
-
               <div className="grid gap-4 sm:grid-cols-3">
                 <label className="text-xs font-bold tracking-[0.12em] text-white/55">
                   标题
@@ -386,7 +358,7 @@ export default function KeepsakeStudio({ onBack }: KeepsakeStudioProps) {
                   地点
                   <select
                     value={location}
-                    onChange={(event) => setLocation(event.target.value as KeepsakeLocation)}
+                    onChange={(event) => handleLocationChange(event.target.value as KeepsakeLocation)}
                     className="mt-2 w-full rounded-xl border border-white/10 bg-black/25 px-4 py-3 text-sm font-normal tracking-normal text-white outline-none transition focus:border-sky-200/50 [color-scheme:dark]"
                   >
                     <option value="医大">医大</option>
@@ -402,7 +374,8 @@ export default function KeepsakeStudio({ onBack }: KeepsakeStudioProps) {
                   onChange={(event) => setSentence(event.target.value as KeepsakeSentence)}
                   className="mt-2 w-full rounded-xl border border-white/10 bg-black/25 px-4 py-3 text-sm font-normal tracking-normal text-white outline-none transition focus:border-sky-200/50 [color-scheme:dark]"
                 >
-                  {KEEPSAKE_SENTENCES.map((option) => (
+                  <option value="不选">不选</option>
+                  {getKeepsakeSentencesForLocation(location).map((option) => (
                     <option key={option} value={option}>{option}</option>
                   ))}
                 </select>

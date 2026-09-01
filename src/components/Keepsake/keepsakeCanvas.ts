@@ -6,13 +6,29 @@ export type KeepsakeFrameId = 'warm-paper' | 'midnight-map' | 'cream-collage' | 
 export type KeepsakeFrameCategory = 'basic' | 'mid-autumn'
 export type KeepsakeLocation = '医大' | '南湖'
 export const KEEPSAKE_SENTENCES = [
-  '今晚校园跑吗？一起呗！',
-  '听说财院的伙食很好，咱周末去试试看？',
-  '快来快来，校车阿叔马上要走了。',
-  '医大的晚霞很美诶，骑车去逛逛校园吹吹风？',
-  '听学姐说，在图书馆一楼校园跑很高效。',
+  '人有悲欢离合，月有阴晴圆缺，此事古难全。',
+  '生活是独属于每个人自己的感受，不属于任何别人的看法。',
+  '欲买桂花同载酒，终不似，少年游。',
 ] as const
-export type KeepsakeSentence = (typeof KEEPSAKE_SENTENCES)[number]
+export const KEEPSAKE_LOCATION_SENTENCES = {
+  医大: '我在医科大很想你',
+  南湖: '我在南湖很想你',
+} as const
+export type KeepsakeSentence =
+  | (typeof KEEPSAKE_SENTENCES)[number]
+  | (typeof KEEPSAKE_LOCATION_SENTENCES)[KeepsakeLocation]
+  | '不选'
+
+export const getKeepsakeSentencesForLocation = (location: KeepsakeLocation): readonly KeepsakeSentence[] => [
+  ...KEEPSAKE_SENTENCES,
+  KEEPSAKE_LOCATION_SENTENCES[location],
+]
+
+export const resolveKeepsakeSentenceAfterLocationChange = (
+  _sentence: KeepsakeSentence,
+  _previous: KeepsakeLocation,
+  next: KeepsakeLocation,
+): KeepsakeSentence => KEEPSAKE_LOCATION_SENTENCES[next]
 export type Point = { x: number; y: number }
 type PaletteKey = 'paper' | 'ink' | 'accent' | 'detail' | 'mat'
 
@@ -21,6 +37,10 @@ type Decoration =
   | { kind: 'star'; x: number; y: number; size: number; color: PaletteKey; alpha?: number }
   | { kind: 'line'; x: number; y: number; width: number; color: PaletteKey; alpha?: number }
   | { kind: 'dots'; x: number; y: number; count: number; gap: number; size: number; color: PaletteKey; alpha?: number }
+  | { kind: 'moon'; x: number; y: number; size: number; color: PaletteKey; alpha?: number }
+  | { kind: 'lantern'; x: number; y: number; size: number; color: PaletteKey; alpha?: number }
+  | { kind: 'cloud'; x: number; y: number; size: number; color: PaletteKey; alpha?: number }
+  | { kind: 'rabbit'; x: number; y: number; size: number; color: PaletteKey; alpha?: number }
 
 export interface KeepsakeFrame {
   id: KeepsakeFrameId
@@ -82,10 +102,14 @@ export const KEEPSAKE_FRAMES: KeepsakeFrame[] = [
     palette: { paper: '#f2efe6', ink: '#3d3022', accent: '#d4a843', detail: '#9a7a4a', mat: '#e8e2d8' },
     typography: { titleY: 1270, bodyY: 1348, metaY: 1510, titleSize: 58, bodySize: 31 },
     decorations: [
-      { kind: 'circle', x: 1078, y: 118, size: 42, color: 'accent', alpha: 0.78 },
-      { kind: 'dots', x: 72, y: 82, count: 9, gap: 62, size: 4, color: 'detail', alpha: 0.45 },
-      { kind: 'star', x: 82, y: 1195, size: 26, color: 'accent' },
-      { kind: 'star', x: 1120, y: 1195, size: 20, color: 'detail' },
+      { kind: 'moon', x: 596, y: 100, size: 44, color: 'accent', alpha: 0.92 },
+      { kind: 'dots', x: 448, y: 64, count: 3, gap: 12, size: 4, color: 'detail', alpha: 0.5 },
+      { kind: 'dots', x: 716, y: 64, count: 3, gap: 12, size: 4, color: 'detail', alpha: 0.5 },
+      { kind: 'line', x: 470, y: 170, width: 252, color: 'accent', alpha: 0.4 },
+      { kind: 'dots', x: 96, y: 1198, count: 6, gap: 24, size: 7, color: 'accent', alpha: 0.65 },
+      { kind: 'dots', x: 1004, y: 1198, count: 6, gap: 24, size: 7, color: 'accent', alpha: 0.65 },
+      { kind: 'star', x: 76, y: 1470, size: 22, color: 'accent', alpha: 0.75 },
+      { kind: 'star', x: 1124, y: 1470, size: 22, color: 'detail', alpha: 0.75 },
     ],
   },
   {
@@ -95,9 +119,14 @@ export const KEEPSAKE_FRAMES: KeepsakeFrame[] = [
     palette: { paper: '#dce3ed', ink: '#2b2633', accent: '#e8c8b8', detail: '#a8b8a0', mat: '#cdd5e0' },
     typography: { titleY: 1260, bodyY: 1342, metaY: 1510, titleSize: 57, bodySize: 30 },
     decorations: [
-      { kind: 'star', x: 74, y: 86, size: 32, color: 'accent' },
-      { kind: 'dots', x: 1040, y: 84, count: 6, gap: 40, size: 5, color: 'detail', alpha: 0.55 },
-      { kind: 'circle', x: 1120, y: 1210, size: 28, color: 'accent', alpha: 0.72 },
+      { kind: 'rabbit', x: 560, y: 96, size: 40, color: 'ink', alpha: 0.72 },
+      { kind: 'moon', x: 706, y: 84, size: 26, color: 'detail', alpha: 0.85 },
+      { kind: 'star', x: 452, y: 74, size: 16, color: 'accent', alpha: 0.75 },
+      { kind: 'star', x: 748, y: 142, size: 12, color: 'accent', alpha: 0.6 },
+      { kind: 'cloud', x: 88, y: 1200, size: 30, color: 'detail', alpha: 0.45 },
+      { kind: 'cloud', x: 992, y: 1200, size: 30, color: 'detail', alpha: 0.45 },
+      { kind: 'cloud', x: 140, y: 1558, size: 22, color: 'accent', alpha: 0.3 },
+      { kind: 'cloud', x: 1000, y: 1558, size: 22, color: 'accent', alpha: 0.3 },
       { kind: 'line', x: 130, y: 1448, width: 940, color: 'detail', alpha: 0.35 },
     ],
   },
@@ -108,10 +137,14 @@ export const KEEPSAKE_FRAMES: KeepsakeFrame[] = [
     palette: { paper: '#f8e8d8', ink: '#4a2e1e', accent: '#c84a28', detail: '#e8c060', mat: '#f0dec8' },
     typography: { titleY: 1275, bodyY: 1352, metaY: 1510, titleSize: 56, bodySize: 30 },
     decorations: [
-      { kind: 'circle', x: 112, y: 114, size: 48, color: 'detail', alpha: 0.88 },
-      { kind: 'dots', x: 790, y: 84, count: 8, gap: 52, size: 5, color: 'accent', alpha: 0.5 },
-      { kind: 'star', x: 70, y: 1200, size: 24, color: 'accent' },
-      { kind: 'star', x: 1130, y: 1200, size: 24, color: 'detail' },
+      { kind: 'lantern', x: 596, y: 96, size: 42, color: 'accent' },
+      { kind: 'lantern', x: 458, y: 100, size: 24, color: 'detail', alpha: 0.9 },
+      { kind: 'lantern', x: 734, y: 100, size: 24, color: 'detail', alpha: 0.9 },
+      { kind: 'dots', x: 100, y: 1200, count: 4, gap: 28, size: 6, color: 'accent', alpha: 0.55 },
+      { kind: 'dots', x: 1006, y: 1200, count: 4, gap: 28, size: 6, color: 'accent', alpha: 0.55 },
+      { kind: 'lantern', x: 84, y: 1458, size: 26, color: 'accent', alpha: 0.8 },
+      { kind: 'lantern', x: 1116, y: 1458, size: 26, color: 'accent', alpha: 0.8 },
+      { kind: 'moon', x: 1120, y: 1198, size: 20, color: 'detail', alpha: 0.7 },
     ],
   },
 ]
@@ -231,6 +264,79 @@ function drawStar(ctx: CanvasRenderingContext2D, x: number, y: number, size: num
   ctx.fill()
 }
 
+function drawMoon(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
+  ctx.save()
+  ctx.globalAlpha *= 0.16
+  ctx.beginPath()
+  ctx.arc(x, y, size * 1.5, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.globalAlpha *= 2.2
+  ctx.beginPath()
+  ctx.arc(x, y, size * 1.22, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.restore()
+  ctx.beginPath()
+  ctx.arc(x, y, size, 0, Math.PI * 2)
+  ctx.fill()
+}
+
+function drawLantern(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
+  ctx.lineWidth = Math.max(2, size * 0.07)
+  ctx.beginPath()
+  ctx.moveTo(x, y - size * 1.45)
+  ctx.lineTo(x, y - size * 0.85)
+  ctx.stroke()
+  ctx.fillRect(x - size * 0.3, y - size * 0.92, size * 0.6, size * 0.2)
+  ctx.beginPath()
+  ctx.ellipse(x, y, size * 0.72, size * 0.85, 0, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.fillRect(x - size * 0.3, y + size * 0.72, size * 0.6, size * 0.2)
+  ctx.lineWidth = Math.max(2, size * 0.08)
+  ctx.beginPath()
+  ctx.moveTo(x, y + size * 0.92)
+  ctx.lineTo(x, y + size * 1.35)
+  ctx.stroke()
+}
+
+function drawCloud(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
+  ctx.beginPath()
+  ctx.moveTo(x + size * 0.55, y)
+  ctx.arc(x, y, size * 0.55, 0, Math.PI * 2)
+  ctx.moveTo(x + size * 1.12, y - size * 0.25)
+  ctx.arc(x + size * 0.7, y - size * 0.25, size * 0.42, 0, Math.PI * 2)
+  ctx.moveTo(x + size * 1.85, y)
+  ctx.arc(x + size * 1.35, y, size * 0.5, 0, Math.PI * 2)
+  ctx.moveTo(x + size * 1.28, y + size * 0.28)
+  ctx.arc(x + size * 0.68, y + size * 0.28, size * 0.6, 0, Math.PI * 2)
+  ctx.fill()
+}
+
+function drawRabbit(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
+  ctx.beginPath()
+  ctx.arc(x - size * 0.8, y + size * 0.18, size * 0.2, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.beginPath()
+  ctx.ellipse(x, y + size * 0.22, size * 0.78, size * 0.5, 0, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.beginPath()
+  ctx.arc(x + size * 0.68, y - size * 0.18, size * 0.36, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.save()
+  ctx.translate(x + size * 0.74, y - size * 0.46)
+  ctx.rotate(-0.22)
+  ctx.beginPath()
+  ctx.ellipse(0, -size * 0.32, size * 0.11, size * 0.42, 0, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.rotate(0.46)
+  ctx.beginPath()
+  ctx.ellipse(0, -size * 0.32, size * 0.11, size * 0.42, 0, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.restore()
+  ctx.beginPath()
+  ctx.ellipse(x + size * 0.52, y + size * 0.52, size * 0.22, size * 0.14, 0.4, 0, Math.PI * 2)
+  ctx.fill()
+}
+
 function drawDecorations(ctx: CanvasRenderingContext2D, frame: KeepsakeFrame) {
   for (const item of frame.decorations) {
     ctx.save()
@@ -249,6 +355,14 @@ function drawDecorations(ctx: CanvasRenderingContext2D, frame: KeepsakeFrame) {
       ctx.moveTo(item.x, item.y)
       ctx.lineTo(item.x + item.width, item.y)
       ctx.stroke()
+    } else if (item.kind === 'moon') {
+      drawMoon(ctx, item.x, item.y, item.size)
+    } else if (item.kind === 'lantern') {
+      drawLantern(ctx, item.x, item.y, item.size)
+    } else if (item.kind === 'cloud') {
+      drawCloud(ctx, item.x, item.y, item.size)
+    } else if (item.kind === 'rabbit') {
+      drawRabbit(ctx, item.x, item.y, item.size)
     } else {
       for (let index = 0; index < item.count; index += 1) {
         ctx.beginPath()
@@ -351,5 +465,7 @@ export function renderKeepsake(ctx: CanvasRenderingContext2D, state: KeepsakeRen
 
   ctx.font = '700 22px "Microsoft YaHei", sans-serif'
   ctx.textAlign = 'center'
-  ctx.fillText(state.sentence || KEEPSAKE_SENTENCES[0], KEEPSAKE_WIDTH / 2, frame.typography.metaY)
+  if (state.sentence !== '不选') {
+    ctx.fillText(state.sentence, KEEPSAKE_WIDTH / 2, frame.typography.metaY)
+  }
 }

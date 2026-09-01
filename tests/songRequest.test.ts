@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import test from 'node:test'
 
 const moduleUrl = new URL('../src/components/SongRequest/songRequest.ts', import.meta.url)
@@ -797,6 +797,29 @@ test('increments cumulative votes without mutating the prior state', async () =>
   assert.deepEqual(current, { a: 2 })
 })
 
+test('唱完会把全部已点次数累计进已唱且不修改原对象', async () => {
+  const { finishRequestedVotes } = await loadModule()
+  const pending = { a: 2, b: 1 }
+  const sung = { a: 3, c: 4 }
+
+  assert.deepEqual(finishRequestedVotes(pending, sung), {
+    pending: {},
+    sung: { a: 5, b: 1, c: 4 },
+  })
+  assert.deepEqual(pending, { a: 2, b: 1 })
+  assert.deepEqual(sung, { a: 3, c: 4 })
+})
+
+test('已唱歌手榜汇总旗下歌曲次数并按累计次数排序', async () => {
+  const { rankArtistsByVotes } = await loadModule()
+
+  assert.deepEqual(rankArtistsByVotes(songs, { a: 2, b: 4, c: 3 }), [
+    { artist: '周杰伦', count: 5, songCount: 2 },
+    { artist: 'Coldplay', count: 4, songCount: 1 },
+  ])
+  assert.deepEqual(rankArtistsByVotes(songs, {}), [])
+})
+
 test('ranks requested songs by count and keeps catalog order for ties', async () => {
   const { rankSongsByVotes } = await loadModule()
   assert.deepEqual(
@@ -804,6 +827,22 @@ test('ranks requested songs by count and keeps catalog order for ties', async ()
     [['b', 3], ['a', 2], ['c', 2]],
   )
   assert.deepEqual(rankSongsByVotes(songs, {}), [])
+})
+
+test('点歌榜提供已点已唱及歌曲歌手切换并由站主批量唱完', () => {
+  const station = readFileSync(stationUrl, 'utf8')
+  const cloud = readFileSync(cloudAdapterUrl, 'utf8')
+
+  assert.match(station, /aria-label="点歌状态切换"/)
+  assert.match(station, />已点</)
+  assert.match(station, />已唱</)
+  assert.match(station, /aria-label="已唱排行类型切换"/)
+  assert.match(station, />歌手</)
+  assert.match(station, />歌曲</)
+  assert.match(station, />唱完</)
+  assert.match(station, /canManageFeaturedSongs && ranking\.length > 0/)
+  assert.match(station, /finishCloudVotes\(songRecordSession\)/)
+  assert.match(cloud, /action: 'votes:finishAll'/)
 })
 
 test('榜单按总榜与歌手曲库数量决定金银铜名次数量', async () => {
@@ -1224,24 +1263,30 @@ test('路演听歌识曲分页只切换当前等级且选择状态独立保留',
   assert.match(recognitionEditor, /selectedSongIds\.includes\(song\.id\)/)
 })
 
-test('路演识曲作答支持同轮改判且公开榜单数据只接收有效统计', async () => {
-  const { createRecognitionAttempt, parsePublicQuizRanking, upsertRecognitionAttempt } = await loadRoadshowModule()
+test('路演识曲作答记录参与者且公开榜单数据只接收有效统计', async () => {
+  const { createRecognitionAttempt, parsePublicQuizParticipantRanking, parsePublicQuizRanking, parseRoadshowCache, upsertRecognitionAttempt } = await loadRoadshowModule()
   const record = {
     id: 'roadshow-1', title: '路演', date: '2026-09-01', updatedAt: '2026-09-01T12:00:00.000Z',
     performanceSongs: [], recognitionSongs: [], recognitionAttempts: [],
   }
   const song = { id: 'catalog:a', catalogId: 'a', title: '晴天', artist: '周杰伦', source: 'catalog' }
-  const correct = createRecognitionAttempt(song, true, 'attempt-1', '2026-09-01T12:00:00.000Z')
+  const correct = createRecognitionAttempt(song, true, ' 小安 ', 'attempt-1', '2026-09-01T12:00:00.000Z')
   const first = upsertRecognitionAttempt(record, correct)
   const changed = upsertRecognitionAttempt(first, { ...correct, correct: false })
 
   assert.equal(first.recognitionAttempts.length, 1)
   assert.equal(changed.recognitionAttempts.length, 1)
   assert.equal(changed.recognitionAttempts[0].correct, false)
+  assert.equal(changed.recognitionAttempts[0].participantName, '小安')
+  assert.equal(parseRoadshowCache(JSON.stringify({ version: 1, records: [{ ...record, recognitionAttempts: [{ ...correct, participantName: undefined }] }] })).length, 1)
   assert.deepEqual(parsePublicQuizRanking([
     { songId: 'a', songTitle: '晴天', songArtist: '周杰伦', answerCount: 3, correctCount: 2, accuracy: 66.7 },
     { songId: '', songTitle: '坏数据', songArtist: '', answerCount: 0, correctCount: 0, accuracy: 999 },
   ]), [{ songId: 'a', songTitle: '晴天', songArtist: '周杰伦', answerCount: 3, correctCount: 2, accuracy: 66.7 }])
+  assert.deepEqual(parsePublicQuizParticipantRanking([
+    { participantName: '小安', score: 2, answerCount: 3, correctCount: 2, accuracy: 66.7 },
+    { participantName: '', score: 0, answerCount: 0, correctCount: 0, accuracy: 0 },
+  ]), [{ participantName: '小安', score: 2, answerCount: 3, correctCount: 2, accuracy: 66.7 }])
 })
 
 test('路演识曲面板以参与模式选择四首并在固定判定区记录对错', () => {
@@ -1251,6 +1296,9 @@ test('路演识曲面板以参与模式选择四首并在固定判定区记录�
   assert.doesNotMatch(recognitionEditor, /<X className=/)
   assert.doesNotMatch(recognitionEditor, /\{songs\.length\} 首/)
   assert.match(recognitionEditor, />参与</)
+  assert.match(recognitionEditor, /participantName/)
+  assert.match(recognitionEditor, /maxLength=\{24\}/)
+  assert.match(recognitionEditor, />开始答题</)
   assert.match(recognitionEditor, /selectedSongIds\.length === 4/)
   assert.match(recognitionEditor, /aria-label=\{`将\$\{song\.title\}标记为答错`\}/)
   assert.match(recognitionEditor, /aria-label=\{`将\$\{song\.title\}标记为答对`\}/)
@@ -1260,13 +1308,18 @@ test('路演识曲面板以参与模式选择四首并在固定判定区记录�
   assert.match(source, /onRecordAttempt/)
 })
 
-test('排行榜增加猜歌榜图标并展示答题数和正确率', () => {
+test('猜歌榜可切换用户得分榜和歌曲正确率榜', () => {
   const station = readFileSync(stationUrl, 'utf8')
   const cloud = readFileSync(cloudAdapterUrl, 'utf8')
 
   assert.match(station, /type RankingView = 'requests' \| 'personal' \| 'quiz'/)
   assert.match(station, /aria-label="切换到猜歌榜"/)
   assert.match(station, /pullPublicQuizRanking/)
+  assert.match(station, /quizRankingMode/)
+  assert.match(station, />用户榜</)
+  assert.match(station, />歌曲榜</)
+  assert.ok(station.indexOf('>歌曲榜</button>') < station.indexOf('>用户榜</button>'))
+  assert.match(station, /entry\.score/)
   assert.match(station, /答题 \{entry\.answerCount\} 次/)
   assert.match(station, /\{entry\.accuracy\}<small[^>]*>% 正确率/)
   assert.match(cloud, /action: 'roadshows:publicQuizRanking'/)
@@ -1359,7 +1412,8 @@ test('热门歌曲使用浅色描边且背景没有紫色光晕', () => {
   const css = readFileSync(indexCssUrl, 'utf8')
 
   assert.match(barrage, /const COLORS = \['#fca5a5', '#fde68a', '#99f6e4', '#bae6fd', '#ddd6fe', '#fbcfe8', '#bbf7d0'\]/)
-  assert.match(messageBarrage, /boxShadow: `0 0 12px \$\{color\}1f, inset 0 0 10px \$\{color\}0a`/)
+  assert.match(messageBarrage, /borderColor: `\$\{color\}73`/)
+  assert.match(messageBarrage, /boxShadow: `0 0 9px \$\{color\}14, inset 0 0 8px \$\{color\}08`/)
   assert.doesNotMatch(barrage, /popular-song-board__glow/)
   assert.doesNotMatch(css, /\.popular-song-board__glow/)
   assert.doesNotMatch(css, /rgba\((?:91, 33, 182|124, 58, 237)/)
@@ -1462,14 +1516,19 @@ test('歌曲助手默认完全展示并开启填充模式', () => {
 test('歌手卡片按既定顺序使用人物照片并保留自定义歌手兜底图标', () => {
   const source = readFileSync(stationUrl, 'utf8')
   const avatars = [
-    'jay-chou.png', 'jj-lin.png', 'stefanie-sun.png', 'gem.png',
-    'joker-xue.png', 'silence-wang.png', 'fish-leong.png', 'david-tao.png',
-    'wang-leehom.png', 'vae.png', 'eason-chan.png', 'zheng-runze.png',
+    'jay-chou.webp', 'jj-lin.webp', 'stefanie-sun.webp', 'gem.webp',
+    'joker-xue.webp', 'silence-wang.webp', 'fish-leong.webp', 'david-tao.webp',
+    'wang-leehom.webp', 'vae.webp', 'eason-chan.webp', 'zheng-runze.webp',
   ]
 
   assert.match(source, /const ARTIST_AVATARS/)
   assert.match(source, /const artistAvatarUrl = \(fileName: string\) => `\$\{import\.meta\.env\.BASE_URL\}images\/song-request\/artists\/\$\{fileName\}`/)
-  for (const avatar of avatars) assert.match(source, new RegExp(`artistAvatarUrl\\('${avatar}'\\)`))
+  for (const avatar of avatars) {
+    assert.match(source, new RegExp(`artistAvatarUrl\\('${avatar}'\\)`))
+    const file = new URL(`../public/images/song-request/artists/${avatar}`, import.meta.url)
+    assert.ok(existsSync(file), `${avatar} must exist`)
+    assert.ok(statSync(file).size < 100_000, `${avatar} must stay below 100KB`)
+  }
   assert.doesNotMatch(source, /src:\s*['"`]\/images\/song-request\/artists\//)
   assert.match(source, /<img[\s\S]*src=\{avatar\.src\}/)
   assert.match(source, /object-cover/)
@@ -1478,6 +1537,8 @@ test('歌手卡片按既定顺序使用人物照片并保留自定义歌手兜�
   assert.match(source, /transformOrigin: `\$\{avatarStyle\.x\}% \$\{avatarStyle\.y\}%`/)
   assert.match(source, /avatar && avatarStyle \? \(/)
   assert.match(source, /: <Mic2/)
+  assert.match(source, /loading=\{index < 8 \? 'eager' : 'lazy'\}/)
+  assert.match(source, /fetchPriority=\{index < 8 \? 'high' : 'auto'\}/)
 })
 
 test('歌手页将仅有一首歌的歌手归入一人一曲且保留歌曲数据', async () => {
@@ -1638,7 +1699,8 @@ test('歌曲详情页提供练习与路演记录并保留点歌按钮的独立�
   assert.match(panel, /aria-pressed=\{activeJournal === 'roadshow'\}/)
   assert.doesNotMatch(panel, /lg:w-4\/5/)
   assert.match(panel, /sm:items-start/)
-  assert.doesNotMatch(panel, /data-journal-eyebrow|MY SONG JOURNAL/)
+  assert.match(panel, /data-journal-eyebrow[^>]*>MY SONG JOURNAL<\/p>/)
+  assert.doesNotMatch(panel, /MY SONG JOURNAL\s*·\s*\{song\.artist\}/)
   assert.match(panel, /data-journal-description[\s\S]*role="status"/)
   assert.match(panel, /role="status"><Cloud className="h-2\.5 w-2\.5"/)
   assert.doesNotMatch(panel, /data-journal-toolbar.*role="status"/s)

@@ -1,6 +1,6 @@
 import { ensureSignIn, tcbApp } from '../../services/tcb';
 import type { VoteCounts } from './songRequest';
-import type { PublicQuizRankingItem, RoadshowRecord } from './roadshow';
+import type { PublicQuizParticipantRankingItem, PublicQuizRankingItem, RoadshowRecord } from './roadshow';
 import type { PublicPracticeRankingItem, SongRecord } from './songRecords';
 import type { SongScore } from './songScores';
 import type { ArtistSettingsPayload, ArtistSettingsSnapshot } from './artistSettings';
@@ -9,6 +9,11 @@ import type { QuizAssignments } from './songQuizLibrary';
 export interface Credentials {
   alias: string;
   password: string;
+}
+
+export interface CloudVoteState {
+  counts: VoteCounts;
+  sungCounts: VoteCounts;
 }
 
 type CloudResult<T> = { ok: true } & T;
@@ -22,13 +27,21 @@ const callSync = async <T>(data: Record<string, unknown>): Promise<CloudResult<T
   return result as CloudResult<T>;
 };
 
-export const pullCloudVotes = async (): Promise<VoteCounts> => (
-  await callSync<{ counts: VoteCounts }>({ action: 'votes:pull' })
-).counts;
+export const pullCloudVoteState = async (): Promise<CloudVoteState> => {
+  const result = await callSync<{ counts: VoteCounts; sungCounts?: VoteCounts }>({ action: 'votes:pull' });
+  return { counts: result.counts, sungCounts: result.sungCounts ?? {} };
+};
+
+export const pullCloudVotes = async (): Promise<VoteCounts> => (await pullCloudVoteState()).counts;
 
 export const incrementCloudVote = async (songId: string): Promise<number> => (
   await callSync<{ count: number }>({ action: 'votes:increment', songId })
 ).count;
+
+export const finishCloudVotes = async (credentials: Credentials): Promise<CloudVoteState> => {
+  const result = await callSync<CloudVoteState>({ action: 'votes:finishAll', ...credentials });
+  return { counts: result.counts, sungCounts: result.sungCounts };
+};
 
 export const pullCloudFeaturedSongIds = async (): Promise<string[] | null> => (
   await callSync<{ songIds: string[] | null }>({ action: 'featuredSongs:pull' })
@@ -57,9 +70,19 @@ export const pullRoadshows = async (credentials: Credentials): Promise<RoadshowR
   await callSync<{ records: RoadshowRecord[] }>({ action: 'roadshows:pull', ...credentials })
 ).records;
 
-export const pullPublicQuizRanking = async (): Promise<PublicQuizRankingItem[]> => (
-  await callSync<{ ranking: PublicQuizRankingItem[] }>({ action: 'roadshows:publicQuizRanking' })
-).ranking;
+export const pullPublicQuizRanking = async (): Promise<{
+  ranking: PublicQuizRankingItem[];
+  participantRanking: PublicQuizParticipantRankingItem[];
+}> => {
+  const result = await callSync<{
+    ranking?: PublicQuizRankingItem[];
+    participantRanking?: PublicQuizParticipantRankingItem[];
+  }>({ action: 'roadshows:publicQuizRanking' });
+  return {
+    ranking: Array.isArray(result.ranking) ? result.ranking : [],
+    participantRanking: Array.isArray(result.participantRanking) ? result.participantRanking : [],
+  };
+};
 
 export const saveRoadshow = async (credentials: Credentials, record: RoadshowRecord): Promise<RoadshowRecord> => (
   await callSync<{ record: RoadshowRecord }>({ action: 'roadshows:save', ...credentials, record })

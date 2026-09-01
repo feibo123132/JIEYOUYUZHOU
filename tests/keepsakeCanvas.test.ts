@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
+import * as keepsakeCanvasModule from '../src/components/Keepsake/keepsakeCanvas.ts'
 
 import {
   KEEPSAKE_FRAMES,
@@ -14,8 +15,19 @@ import {
   wrapCanvasText,
 } from '../src/components/Keepsake/keepsakeCanvas.ts'
 
-test('defines three complete, stable and data-driven frame configurations', () => {
-  assert.deepEqual(KEEPSAKE_FRAMES.map((frame) => frame.id), ['warm-paper', 'midnight-map', 'cream-collage'])
+test('defines six complete, stable and data-driven frame configurations in two categories', () => {
+  assert.deepEqual(
+    KEEPSAKE_FRAMES.map((frame) => frame.id),
+    ['warm-paper', 'midnight-map', 'cream-collage', 'moon-glow', 'jade-rabbit', 'full-moon'],
+  )
+  assert.deepEqual(
+    KEEPSAKE_FRAMES.filter((frame) => frame.category === 'basic').map((frame) => frame.id),
+    ['warm-paper', 'midnight-map', 'cream-collage'],
+  )
+  assert.deepEqual(
+    KEEPSAKE_FRAMES.filter((frame) => frame.category === 'mid-autumn').map((frame) => frame.id),
+    ['moon-glow', 'jade-rabbit', 'full-moon'],
+  )
   for (const frame of KEEPSAKE_FRAMES) {
     assert.ok(frame.name)
     assert.ok(frame.palette.paper)
@@ -96,7 +108,7 @@ test('renderer uses selected frame configuration and fixed output geometry', () 
     body: '愿这一刻被好好收藏。',
     date: '2026-08-23',
     location: '医大',
-    sentence: '今晚校园跑吗？一起呗！',
+    sentence: '人有悲欢离合，月有阴晴圆缺，此事古难全。',
   })
 
   assert.equal(KEEPSAKE_WIDTH, 1200)
@@ -107,21 +119,51 @@ test('renderer uses selected frame configuration and fixed output geometry', () 
   assert.ok(calls.some((call) => call.name === 'fillText' && call.args[0] === '2026-08-23' && call.args[2] === 100))
   assert.ok(calls.some((call) => call.name === 'fillText' && call.args[0] === '医大' && call.args[1] > 1000 && call.args[2] === 100))
   assert.ok(!calls.some((call) => call.name === 'fillText' && call.args[0] === '2026-08-23' && call.args[2] === frame.typography.metaY))
-  assert.ok(calls.some((call) => call.name === 'fillText' && call.args[0] === '今晚校园跑吗？一起呗！' && call.args[1] === KEEPSAKE_WIDTH / 2 && call.args[2] === frame.typography.metaY && call.textAlign === 'center'))
+  assert.ok(calls.some((call) => call.name === 'fillText' && call.args[0] === '人有悲欢离合，月有阴晴圆缺，此事古难全。' && call.args[1] === KEEPSAKE_WIDTH / 2 && call.args[2] === frame.typography.metaY && call.textAlign === 'center'))
   assert.ok(!calls.some((call) => call.name === 'fillText' && call.args[0] === 'JIEYOU MEMORY'))
   assert.ok(calls.some((call) => call.name === 'arc' || call.name === 'lineTo'))
+
+  calls.length = 0
+  renderKeepsake(ctx, {
+    frameId: frame.id,
+    image: null,
+    imageSize: null,
+    zoom: 1,
+    pan: { x: 0, y: 0 },
+    title: '今晚的星光',
+    body: '愿这一刻被好好收藏。',
+    date: '2026-08-23',
+    location: '医大',
+    sentence: '不选',
+  })
+  assert.ok(!calls.some((call) => call.name === 'fillText' && call.args[2] === frame.typography.metaY))
 })
 
-test('ships the five unnumbered campus sentences for random selection', () => {
+test('ships three literary and philosophical sentences for random selection', () => {
   const expected = [
-    '今晚校园跑吗？一起呗！',
-    '听说财院的伙食很好，咱周末去试试看？',
-    '快来快来，校车阿叔马上要走了。',
-    '医大的晚霞很美诶，骑车去逛逛校园吹吹风？',
-    '听学姐说，在图书馆一楼校园跑很高效。',
+    '人有悲欢离合，月有阴晴圆缺，此事古难全。',
+    '生活是独属于每个人自己的感受，不属于任何别人的看法。',
+    '欲买桂花同载酒，终不似，少年游。',
   ]
   const source = readFileSync(new URL('../src/components/Keepsake/keepsakeCanvas.ts', import.meta.url), 'utf8')
 
-  expected.forEach((sentence) => assert.match(source, new RegExp(sentence.replace(/[？。！]/g, '\\$&'))))
+  expected.forEach((sentence) => assert.match(source, new RegExp(sentence.replace(/[，。]/g, '\\$&'))))
   assert.doesNotMatch(source, /[①②③④⑤]/)
+})
+
+test('offers and defaults to the matching sentence whenever location changes', () => {
+  const helpers = keepsakeCanvasModule as typeof keepsakeCanvasModule & {
+    getKeepsakeSentencesForLocation?: (location: '医大' | '南湖') => readonly string[]
+    resolveKeepsakeSentenceAfterLocationChange?: (sentence: string, previous: '医大' | '南湖', next: '医大' | '南湖') => string
+  }
+
+  assert.equal(typeof helpers.getKeepsakeSentencesForLocation, 'function')
+  assert.equal(typeof helpers.resolveKeepsakeSentenceAfterLocationChange, 'function')
+  if (!helpers.getKeepsakeSentencesForLocation || !helpers.resolveKeepsakeSentenceAfterLocationChange) return
+
+  assert.deepEqual(helpers.getKeepsakeSentencesForLocation('医大').slice(-1), ['我在医科大很想你'])
+  assert.deepEqual(helpers.getKeepsakeSentencesForLocation('南湖').slice(-1), ['我在南湖很想你'])
+  assert.equal(helpers.resolveKeepsakeSentenceAfterLocationChange('我在医科大很想你', '医大', '南湖'), '我在南湖很想你')
+  assert.equal(helpers.resolveKeepsakeSentenceAfterLocationChange('不选', '医大', '南湖'), '我在南湖很想你')
+  assert.equal(helpers.resolveKeepsakeSentenceAfterLocationChange('欲买桂花同载酒，终不似，少年游。', '南湖', '医大'), '我在医科大很想你')
 })
