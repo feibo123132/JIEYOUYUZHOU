@@ -7,6 +7,7 @@ import {
   findSongAppearances,
   createRecognitionAttempt,
   groupRoadshowRecognitionSongs,
+  paginateRoadshowSongs,
   parseRoadshowCache,
   ROADSHOW_CACHE_KEY,
   ROADSHOW_SESSION_KEY,
@@ -352,6 +353,7 @@ const RecognitionSongListEditor = ({ record, assignments, allRecords, busy, onRe
   const [selectedSongIds, setSelectedSongIds] = useState<string[]>([]);
   const [attemptIds, setAttemptIds] = useState<Record<string, string>>({});
   const [answers, setAnswers] = useState<Record<string, boolean>>({});
+  const [quizPages, setQuizPages] = useState<Record<QuizLevel, number>>({ warmup: 1, standard: 1, hard: 1, hell: 1 });
   const groups = groupRoadshowRecognitionSongs(songs, assignments);
   const selectedSongs = selectedSongIds.flatMap((songId) => {
     const song = songs.find((item) => item.id === songId);
@@ -365,6 +367,7 @@ const RecognitionSongListEditor = ({ record, assignments, allRecords, busy, onRe
     setSelectedSongIds([]);
     setAttemptIds({});
     setAnswers({});
+    setQuizPages({ warmup: 1, standard: 1, hard: 1, hell: 1 });
   }, [record.id]);
 
   const resetRound = () => {
@@ -427,22 +430,30 @@ const RecognitionSongListEditor = ({ record, assignments, allRecords, busy, onRe
         </section>
       )}
       <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {QUIZ_LEVELS.map((level) => (
-          <section key={level.id} className={`min-h-36 rounded-2xl border p-3 ${RECOGNITION_LEVEL_STYLES[level.id]}`}>
+        {QUIZ_LEVELS.map((level) => {
+          const paginated = paginateRoadshowSongs(groups[level.id], quizPages[level.id]);
+          return (
+          <section key={level.id} className={`flex min-h-36 flex-col rounded-2xl border p-3 ${RECOGNITION_LEVEL_STYLES[level.id]}`}>
             <header className="mb-3 flex items-center justify-between gap-2 border-b border-white/10 pb-3">
               <span className="flex items-center gap-2"><b className="grid h-7 w-7 place-items-center rounded-full border border-current/30 bg-black/20 font-serif text-xs">{level.symbol}</b><strong className="text-sm">{level.label}</strong></span>
               <small className="text-white/35">{groups[level.id].length} 首</small>
             </header>
             <div className="space-y-2">
-              {groups[level.id].map((song) => {
+              {paginated.items.map((song) => {
                 const appearances = findSongAppearances(allRecords, song, record.id);
                 const selected = selectedSongIds.includes(song.id);
                 return <button key={song.id} type="button" aria-pressed={selected} disabled={!participating || (!selected && selectedSongIds.length === 4)} onClick={() => toggleSong(song)} className={`group flex w-full items-center gap-2 rounded-xl border p-2.5 text-left transition disabled:cursor-default ${selected ? 'border-orange-200/50 bg-orange-300/15 shadow-[0_0_20px_rgba(251,146,60,.08)]' : 'border-white/10 bg-black/25 enabled:hover:border-white/25'}`}><span className="min-w-0 flex-1"><strong className="block truncate text-xs text-white/90">{song.title}</strong><small className="block truncate text-[10px] text-white/35">{song.artist || '未填写歌手'}{appearances.length ? ` · 曾用于：${appearances.join('、')}` : ''}</small></span>{selected && <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-orange-300 text-[10px] font-black text-black">{selectedSongIds.indexOf(song.id) + 1}</span>}</button>;
               })}
               {!groups[level.id].length && <p className="py-5 text-center text-[10px] text-white/20">暂无歌曲</p>}
             </div>
+            <footer className="mt-auto flex items-center justify-center gap-3 pt-3 text-[10px] font-bold text-white/45">
+              <button type="button" aria-label={`${level.label}上一页`} disabled={paginated.page === 1} onClick={() => setQuizPages((current) => ({ ...current, [level.id]: paginated.page - 1 }))} className="grid h-7 w-7 place-items-center rounded-full border border-white/10 transition enabled:hover:border-white/25 enabled:hover:text-white disabled:opacity-20">‹</button>
+              <span>{paginated.page} / {paginated.pageCount}</span>
+              <button type="button" aria-label={`${level.label}下一页`} disabled={paginated.page === paginated.pageCount} onClick={() => setQuizPages((current) => ({ ...current, [level.id]: paginated.page + 1 }))} className="grid h-7 w-7 place-items-center rounded-full border border-white/10 transition enabled:hover:border-white/25 enabled:hover:text-white disabled:opacity-20">›</button>
+            </footer>
           </section>
-        ))}
+          );
+        })}
       </div>
     </section>
   );

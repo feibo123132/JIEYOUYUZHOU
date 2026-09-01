@@ -10,8 +10,8 @@ export interface SongScore {
 }
 
 export const SCORES_CACHE_PREFIX = 'jieyou-song-scores-v1:';
-export const SCORE_PAGE_LIMIT = 16;
-export const SCORE_PAGES_TOTAL_LIMIT = 2_400_000;
+export const SCORE_PAGE_LIMIT = 4;
+export const SCORE_PAGES_TOTAL_LIMIT = 4_600_000;
 export const SCORE_PAGE_CACHE_PREFIX = 'jieyou-song-score-page-v1:';
 
 interface ReadableStorage { getItem: (key: string) => string | null; }
@@ -81,6 +81,12 @@ export const saveScorePage = (storage: WritableStorage, songId: string, page: nu
   }
 };
 
+// 长图谱子（多页拼合）按宽度基准缩放：宽度达标即可保证文字清晰，纵向高度不设上限。
+const SCORE_IMAGE_MAX_WIDTH = 2000;
+// 单页 base64 目标长度；超限则逐级降质量/宽度，尽量保住清晰度。
+const SCORE_IMAGE_TARGET_CHARS = 4_400_000;
+const SCORE_IMAGE_HARD_CHARS = 4_550_000;
+
 export const compressScoreImage = (file: File): Promise<string> => new Promise((resolve, reject) => {
   if (!file.type.startsWith('image/')) {
     reject(new Error('仅支持图片文件'));
@@ -92,20 +98,38 @@ export const compressScoreImage = (file: File): Promise<string> => new Promise((
     const image = new Image();
     image.onerror = () => reject(new Error('图片解析失败'));
     image.onload = () => {
-      const maxEdge = 1500;
-      const scale = Math.min(1, maxEdge / Math.max(image.width, image.height));
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.max(1, Math.round(image.width * scale));
-      canvas.height = Math.max(1, Math.round(image.height * scale));
-      const context = canvas.getContext('2d');
-      if (!context) {
-        reject(new Error('图片处理失败'));
+      const render = (maxWidth: number, quality: number): string => {
+        const scale = Math.min(1, maxWidth / image.width);
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(image.width * scale));
+        canvas.height = Math.max(1, Math.round(image.height * scale));
+        const context = canvas.getContext('2d');
+        if (!context) return '';
+        context.fillStyle = '#ffffff';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        return canvas.toDataURL('image/jpeg', quality);
+      };
+      const attempts: Array<[number, number]> = [
+        [SCORE_IMAGE_MAX_WIDTH, 0.9],
+        [SCORE_IMAGE_MAX_WIDTH, 0.85],
+        [Math.round(SCORE_IMAGE_MAX_WIDTH * 0.85), 0.85],
+        [Math.round(SCORE_IMAGE_MAX_WIDTH * 0.7), 0.8],
+      ];
+      let result = '';
+      for (const [maxWidth, quality] of attempts) {
+        result = render(maxWidth, quality);
+        if (!result) {
+          reject(new Error('图片处理失败'));
+          return;
+        }
+        if (result.length <= SCORE_IMAGE_TARGET_CHARS) break;
+      }
+      if (result.length > SCORE_IMAGE_HARD_CHARS) {
+        reject(new Error('这张谱子图片太大了，请裁剪或分段后再上传'));
         return;
       }
-      context.fillStyle = '#ffffff';
-      context.fillRect(0, 0, canvas.width, canvas.height);
-      context.drawImage(image, 0, 0, canvas.width, canvas.height);
-      resolve(canvas.toDataURL('image/jpeg', 0.72));
+      resolve(result);
     };
     image.src = String(reader.result);
   };

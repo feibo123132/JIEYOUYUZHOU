@@ -1189,6 +1189,40 @@ test('路演听歌识曲按识曲歌库四档分组且旧歌曲默认归入常�
   assert.deepEqual(grouped.hell.map((song: { id: string }) => song.id), ['catalog:b'])
 })
 
+test('路演听歌识曲每栏五首并支持独立页码与越界回落', async () => {
+  const module = await loadRoadshowModule()
+  const paginateRoadshowSongs = module.paginateRoadshowSongs as undefined | (<T>(items: T[], page: number) => {
+    items: T[]; page: number; pageCount: number; total: number
+  })
+
+  assert.equal(module.ROADSHOW_QUIZ_PAGE_SIZE, 5)
+  assert.equal(typeof paginateRoadshowSongs, 'function')
+  if (!paginateRoadshowSongs) return
+
+  const songs = Array.from({ length: 11 }, (_, index) => index + 1)
+  assert.deepEqual(paginateRoadshowSongs(songs, 1), { items: [1, 2, 3, 4, 5], page: 1, pageCount: 3, total: 11 })
+  assert.deepEqual(paginateRoadshowSongs(songs, 2), { items: [6, 7, 8, 9, 10], page: 2, pageCount: 3, total: 11 })
+  assert.deepEqual(paginateRoadshowSongs(songs, 99), { items: [11], page: 3, pageCount: 3, total: 11 })
+
+  const pages = { warmup: 2, standard: 1 }
+  assert.equal(paginateRoadshowSongs(songs, pages.warmup).page, 2)
+  assert.equal(paginateRoadshowSongs(songs, pages.standard).page, 1)
+})
+
+test('路演听歌识曲分页只切换当前等级且选择状态独立保留', () => {
+  const source = readFileSync(roadshowPanelUrl, 'utf8')
+  const recognitionEditor = source.slice(source.indexOf('const RecognitionSongListEditor'))
+
+  assert.match(recognitionEditor, /quizPages/)
+  assert.match(recognitionEditor, /setQuizPages\(\(current\) => \(\{ \.\.\.current, \[level\.id\]:/)
+  assert.match(recognitionEditor, /paginateRoadshowSongs\(groups\[level\.id\], quizPages\[level\.id\]\)/)
+  assert.match(recognitionEditor, /paginated\.items\.map/)
+  assert.doesNotMatch(recognitionEditor, /paginated\.pageCount > 1/)
+  assert.match(recognitionEditor, /<footer className=/)
+  assert.match(recognitionEditor, /\{paginated\.page\} \/ \{paginated\.pageCount\}/)
+  assert.match(recognitionEditor, /selectedSongIds\.includes\(song\.id\)/)
+})
+
 test('路演识曲作答支持同轮改判且公开榜单数据只接收有效统计', async () => {
   const { createRecognitionAttempt, parsePublicQuizRanking, upsertRecognitionAttempt } = await loadRoadshowModule()
   const record = {

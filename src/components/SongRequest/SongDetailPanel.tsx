@@ -4,7 +4,7 @@ import type { Song } from './songCatalog';
 import { findSongRoadshowHistory, type RoadshowRecord } from './roadshow';
 import { QUIZ_LEVELS, type QuizLevel } from './songQuizLibrary';
 import ScoreViewer from './ScoreViewer';
-import { buildSongScore, compressScoreImage, SCORE_PAGE_LIMIT, type SongScore } from './songScores';
+import { buildSongScore, compressScoreImage, SCORE_PAGE_LIMIT, SCORE_PAGES_TOTAL_LIMIT, type SongScore } from './songScores';
 import {
   averageMatchScore,
   getMatchQuality,
@@ -198,7 +198,12 @@ const SongDetailPanel = ({
     try {
       const added: string[] = [];
       for (const file of picked) added.push(await compressScoreImage(file));
-      onScoreChange(song.id, buildSongScore(song, [...scorePages, ...added]));
+      const nextPages = [...scorePages, ...added];
+      if (nextPages.join('').length > SCORE_PAGES_TOTAL_LIMIT) {
+        setMessage('谱子总大小超出云端限制，请删减页数或分段上传更小的图');
+        return;
+      }
+      onScoreChange(song.id, buildSongScore(song, nextPages));
       setMessage(`已添加 ${added.length} 页谱子${files.length > picked.length ? `，超出上限忽略 ${files.length - picked.length} 张` : ''}`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '谱子图片处理失败');
@@ -310,7 +315,7 @@ const SongDetailPanel = ({
             <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-orange-200/15 bg-orange-300/10 text-orange-200"><Music4 className="h-5 w-5" /></span>
             <div>
               <h2 className="font-serif text-2xl font-black">专属谱子</h2>
-              <p className="mt-1 text-xs leading-5 text-white/35">把谱子拍下来传到这里，演唱时打开翻谱器一键翻页。</p>
+              <p className="mt-1 text-xs leading-5 text-white/35">把谱子拍下来传到这里（支持拼好的长图），演唱时打开翻谱器一键翻页。</p>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">

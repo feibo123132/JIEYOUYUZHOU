@@ -25,9 +25,9 @@ const ACTIONS = new Set([
 const ARTIST_SETTINGS_REQUEST_LIMIT = 5 * 1024 * 1024;
 const DEFAULT_REQUEST_LIMIT = 256 * 1024;
 const ARTIST_AVATAR_LIMIT = 1024 * 1024;
-const SONG_SCORES_REQUEST_LIMIT = 3 * 1024 * 1024;
-const SONG_SCORE_PAGE_LIMIT = 16;
-const SONG_SCORE_PAGES_TOTAL_LIMIT = 2 * 1024 * 1024;
+const SONG_SCORES_REQUEST_LIMIT = 5 * 1024 * 1024;
+const SONG_SCORE_PAGE_LIMIT = 4;
+const SONG_SCORE_PAGES_TOTAL_LIMIT = 4600000;
 
 const cleanText = (value, max, error) => {
   if (typeof value !== 'string') throw new Error(error);

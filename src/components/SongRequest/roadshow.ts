@@ -41,6 +41,19 @@ export interface RoadshowRecord {
 
 export const ROADSHOW_CACHE_KEY = 'jieyou-roadshows-v1';
 export const ROADSHOW_SESSION_KEY = 'jieyou-roadshow-session-v1';
+export const ROADSHOW_QUIZ_PAGE_SIZE = 5;
+
+export const paginateRoadshowSongs = <T>(songs: T[], requestedPage: number) => {
+  const pageCount = Math.max(1, Math.ceil(songs.length / ROADSHOW_QUIZ_PAGE_SIZE));
+  const page = Math.min(pageCount, Math.max(1, Math.floor(requestedPage)));
+  const start = (page - 1) * ROADSHOW_QUIZ_PAGE_SIZE;
+  return {
+    items: songs.slice(start, start + ROADSHOW_QUIZ_PAGE_SIZE),
+    page,
+    pageCount,
+    total: songs.length,
+  };
+};
 
 export const groupSongsByArtist = (songs: Song[]) => {
   const groups = new Map<string, Song[]>();
