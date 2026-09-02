@@ -241,7 +241,8 @@ function createHandler(store) {
 
       if (request.action === 'songScores:pull') {
         const scores = await store.getSongScores(id);
-        return { ok: true, scores: scores.filter((score) => !score.deletedAt).map(publicSongScore) };
+        const visibleScores = scores.filter((score) => !score.deletedAt).map(publicSongScore);
+        return { ok: true, scores: store.resolveSongScores ? await store.resolveSongScores(visibleScores) : visibleScores };
       }
 
       if (request.action === 'songScores:save') {
@@ -423,6 +424,20 @@ exports.main = async (event) => {
           scores.push(...page);
           if (page.length < pageSize) return scores;
         }
+      },
+      async resolveSongScores(scores) {
+        const fileIds = [...new Set(scores.flatMap((score) => score.pages || []))];
+        if (!fileIds.length) return scores;
+        const urlByFileId = new Map();
+        for (let offset = 0; offset < fileIds.length; offset += 50) {
+          const response = await app.getTempFileURL({ fileList: fileIds.slice(offset, offset + 50) });
+          for (const item of response.fileList || []) {
+            const fileId = item.fileID || item.fileid;
+            const url = item.tempFileURL || item.download_url;
+            if (fileId && url && (!item.code || item.code === 'SUCCESS')) urlByFileId.set(fileId, url);
+          }
+        }
+        return scores.map((score) => ({ ...score, pageUrls: score.pages.map((page) => urlByFileId.get(page) || page) }));
       },
       saveSongScoreAtomically: (documentId, value) => db.runTransaction(async (transaction) => {
         const ref = transaction.collection('song_request_song_scores').doc(documentId);

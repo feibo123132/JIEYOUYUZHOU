@@ -26,9 +26,7 @@ const ACTIONS = new Set([
 const ARTIST_SETTINGS_REQUEST_LIMIT = 5 * 1024 * 1024;
 const DEFAULT_REQUEST_LIMIT = 256 * 1024;
 const ARTIST_AVATAR_LIMIT = 1024 * 1024;
-const SONG_SCORES_REQUEST_LIMIT = 5 * 1024 * 1024;
 const SONG_SCORE_PAGE_LIMIT = 4;
-const SONG_SCORE_PAGES_TOTAL_LIMIT = 4600000;
 const ROADSHOW_LOCATIONS = new Set(['医大（武鸣）', '医大（本部）', '南湖']);
 
 const optionalRankingLocation = (value) => {
@@ -211,25 +209,15 @@ const validateSongScore = (value) => {
   };
   if (!Array.isArray(score.pages) || score.pages.length < 1 || score.pages.length > SONG_SCORE_PAGE_LIMIT) throw new Error('INVALID_SONG_SCORE');
   for (const page of score.pages) {
-    if (typeof page !== 'string' || page.length === 0) throw new Error('INVALID_SONG_SCORE');
-    if (/^https:\/\//i.test(page)) {
-      if (page.length > 600) throw new Error('INVALID_SONG_SCORE');
-      continue;
-    }
-    const match = /^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/]+={0,2})$/.exec(page);
-    if (!match) throw new Error('INVALID_SONG_SCORE');
-    const bytes = Buffer.from(match[2], 'base64');
-    if (!bytes.length || !validImageMagic(match[1], bytes)) throw new Error('INVALID_SONG_SCORE');
+    if (typeof page !== 'string'
+      || !/^cloud:\/\/[^/\s]{1,180}\/song-request-scores\/[a-f0-9]{64}\/[a-f0-9]{64}\/[a-f0-9-]{16,64}\.jpg$/i.test(page)) throw new Error('INVALID_SONG_SCORE');
   }
-  if (score.pages.join('').length > SONG_SCORE_PAGES_TOTAL_LIMIT) throw new Error('PAYLOAD_TOO_LARGE');
   return score;
 };
 
 function validateRequest(event) {
   if (!event || typeof event !== 'object' || !ACTIONS.has(event.action)) throw new Error('INVALID_ACTION');
-  const requestLimit = event.action === 'artistSettings:push' ? ARTIST_SETTINGS_REQUEST_LIMIT
-    : event.action === 'songScores:save' ? SONG_SCORES_REQUEST_LIMIT
-    : DEFAULT_REQUEST_LIMIT;
+  const requestLimit = event.action === 'artistSettings:push' ? ARTIST_SETTINGS_REQUEST_LIMIT : DEFAULT_REQUEST_LIMIT;
   if (Buffer.byteLength(JSON.stringify(event), 'utf8') > requestLimit) throw new Error('PAYLOAD_TOO_LARGE');
 
   if (event.action === 'votes:pull' || event.action === 'roadshows:publicQuizRanking') {

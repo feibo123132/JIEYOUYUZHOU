@@ -137,6 +137,25 @@ test('validates public and private actions without rejecting platform metadata',
   assert.throws(() => validateRequest({ action: 'roadshows:register', alias: 'JIEYOU', password: '123' }), /INVALID_PASSWORD/);
 })
 
+test('谱子云函数只接收云存储文件引用，不再接收 Base64 图片', () => {
+  const { validateRequest } = require(validationPath);
+  const auth = { alias: 'JIEYOU', password: 'guitar-2026' };
+  const fileId = `cloud://env-123/song-request-scores/${'a'.repeat(64)}/${'b'.repeat(64)}/123e4567-e89b-12d3-a456-426614174000.jpg`;
+  const storedScore = {
+    id: 'score-qing-tian', songId: 'qing-tian', songTitle: '晴天', songArtist: '周杰伦',
+    pages: [fileId],
+  };
+  const score = { ...storedScore, updatedAt: '2026-09-02T08:00:00.000Z' };
+
+  assert.deepEqual(validateRequest({ action: 'songScores:save', ...auth, score }), {
+    action: 'songScores:save', ...auth, score: storedScore,
+  });
+  assert.throws(() => validateRequest({
+    action: 'songScores:save', ...auth,
+    score: { ...score, pages: ['data:image/jpeg;base64,/9j/'] },
+  }), /INVALID_SONG_SCORE/);
+});
+
 test('validates global artist settings actions, revisions, images, and payload limits', () => {
   const { validateRequest } = require(validationPath);
   const auth = { alias: 'JIEYOU', password: 'guitar-2026' };

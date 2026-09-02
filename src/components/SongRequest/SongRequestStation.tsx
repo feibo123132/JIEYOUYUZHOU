@@ -21,7 +21,7 @@ import {
 import {
   finishCloudVotes, incrementCloudVote, mapArtistSettingsSyncError, mapSongScoreSyncError, pullArtistSettings, pullCloudFeaturedSongIds, pullCloudVoteState,
   pullCloudQuizAssignments, pullPublicPracticeRanking, pullPublicQuizRanking, pullRoadshows, pullSongRecords, pullSongScores, pushArtistSettings,
-  saveCloudFeaturedSongIds, saveCloudQuizAssignments, saveRoadshow, saveSongScore, deleteSongScore,
+  saveCloudFeaturedSongIds, saveCloudQuizAssignments, saveRoadshow, syncSongScoreToCloud, deleteSongScore,
 } from './songRequestCloud';
 import RoadshowPanel from './RoadshowPanel';
 import SongDetailPanel from './SongDetailPanel';
@@ -29,7 +29,7 @@ import PopularSongBarrage from './PopularSongBarrage';
 import { createInitialBarragePreferences, setBarragePreference } from '../StarrySky/barragePreferences';
 import { calculateAvatarCropLayout } from './avatarCrop';
 import {
-  loadSongScoreCache, parseSongScores, saveSongScoreCache,
+  isCloudScorePage, isPendingSongScore, loadSongScoreCache, parseSongScores, saveSongScoreCache,
   type SongScore,
 } from './songScores';
 import {
@@ -202,7 +202,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   const [activeSection, setActiveSection] = useState<SectionId | null>(null);
   const [rankingView, setRankingView] = useState<RankingView>('requests');
   const [requestVoteView, setRequestVoteView] = useState<RequestVoteView>('pending');
-  const [sungRankingMode, setSungRankingMode] = useState<SungRankingMode>('artists');
+  const [sungRankingMode, setSungRankingMode] = useState<SungRankingMode>('songs');
   const [rankingLocation, setRankingLocation] = useState<RoadshowRankingLocation>('总榜');
   const [personalRankingArtist, setPersonalRankingArtist] = useState<string | null>(null);
   const [personalRankingMode, setPersonalRankingMode] = useState<RankingDisplayMode>('normal');
@@ -210,6 +210,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   const [rankingArtistQuery, setRankingArtistQuery] = useState('');
   const [selectedArtist, setSelectedArtist] = useState<string | null>(null);
   const [selectedSong, setSelectedSong] = useState<Song | null>(null);
+  const [popularActionSong, setPopularActionSong] = useState<Song | null>(null);
   const [query, setQuery] = useState('');
   const [artistLanguageFilter, setArtistLanguageFilter] = useState<ArtistLanguageFilter>('chinese');
   const [artistPage, setArtistPage] = useState(1);
@@ -264,6 +265,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     typeof window === 'undefined' ? [] : loadSongScoreCache(window.localStorage, readSongRecordSession(window.sessionStorage)?.alias ?? null)
   ));
   const [scoreBusy, setScoreBusy] = useState(false);
+  const [scoreSyncStatus, setScoreSyncStatus] = useState('');
   const [publicPracticeRanking, setPublicPracticeRanking] = useState<PublicPracticeRankingItem[]>([]);
   const [publicRankingStatus, setPublicRankingStatus] = useState('正在读取公开榜单');
   const [publicQuizRanking, setPublicQuizRanking] = useState<PublicQuizRankingItem[]>([]);
@@ -619,15 +621,41 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   useEffect(() => {
     if (!songRecordSession) {
       setSongScores([]);
+      setScoreSyncStatus('');
       return;
     }
     let active = true;
-    pullSongScores(songRecordSession).then((cloudScores) => {
-      if (!active) return;
-      const validScores = parseSongScores(cloudScores);
-      setSongScores(validScores);
-      saveSongScoreCache(window.localStorage, songRecordSession.alias, validScores);
-    }).catch(() => undefined);
+    const cachedScores = loadSongScoreCache(window.localStorage, songRecordSession.alias);
+    const pendingScores = cachedScores.filter(isPendingSongScore);
+    setSongScores(cachedScores);
+    setScoreSyncStatus(pendingScores.length ? '仅保存在本机，等待同步' : '正在从云端读取谱子');
+    void (async () => {
+      try {
+        const cloudScores = parseSongScores(await pullSongScores(songRecordSession));
+        if (!active) return;
+        let mergedScores = [
+          ...pendingScores,
+          ...cloudScores.filter((score) => !pendingScores.some((pending) => pending.songId === score.songId)),
+        ];
+        setSongScores(mergedScores);
+        saveSongScoreCache(window.localStorage, songRecordSession.alias, mergedScores);
+        let migrationFailed = false;
+        for (const pendingScore of pendingScores) {
+          try {
+            const syncedScore = await syncSongScoreToCloud(songRecordSession, pendingScore);
+            if (!active) return;
+            mergedScores = [syncedScore, ...mergedScores.filter((score) => score.songId !== pendingScore.songId)];
+            setSongScores(mergedScores);
+            saveSongScoreCache(window.localStorage, songRecordSession.alias, mergedScores);
+          } catch {
+            migrationFailed = true;
+          }
+        }
+        if (active) setScoreSyncStatus(migrationFailed ? '云端暂时未连接，谱子仅保存在本机' : '已同步到云端');
+      } catch {
+        if (active) setScoreSyncStatus('云端暂时未连接，谱子仅保存在本机');
+      }
+    })();
     return () => { active = false; };
   }, [songRecordSession]);
 
@@ -796,18 +824,44 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   };
 
   const commitSongScore = (songId: string, next: SongScore | null) => {
-    const updated = next
-      ? [next, ...songScores.filter((score) => score.songId !== songId)]
+    const previous = songScores.find((score) => score.songId === songId) ?? null;
+    const pendingScore = next ? { ...next, pendingSync: true } : null;
+    const updated = pendingScore
+      ? [pendingScore, ...songScores.filter((score) => score.songId !== songId)]
       : songScores.filter((score) => score.songId !== songId);
     setSongScores(updated);
-    if (!songRecordSession) return;
+    if (!songRecordSession) {
+      setScoreSyncStatus('仅保存在本机，等待同步');
+      return;
+    }
     try { saveSongScoreCache(window.localStorage, songRecordSession.alias, updated); } catch {}
     setScoreBusy(true);
-    const sync = next ? saveSongScore(songRecordSession, next) : deleteSongScore(songRecordSession, songId);
-    sync.then(() => setScoreBusy(false)).catch((error) => {
-      setScoreBusy(false);
-      showSyncMessage(mapSongScoreSyncError(error));
-    });
+    setScoreSyncStatus('正在同步谱子到云端…');
+    const retainedFileIds = new Set(pendingScore?.pages.filter(isCloudScorePage) ?? []);
+    const retiredFileIds = previous?.pages.filter((page) => isCloudScorePage(page) && !retainedFileIds.has(page)) ?? [];
+    void (async () => {
+      try {
+        if (pendingScore) {
+          const syncedScore = await syncSongScoreToCloud(songRecordSession, pendingScore, retiredFileIds);
+          const syncedScores = [syncedScore, ...updated.filter((score) => score.songId !== songId)];
+          setSongScores(syncedScores);
+          saveSongScoreCache(window.localStorage, songRecordSession.alias, syncedScores);
+        } else {
+          await deleteSongScore(songRecordSession, songId, retiredFileIds);
+        }
+        setScoreSyncStatus('已同步到云端');
+      } catch (error) {
+        if (!pendingScore && previous) {
+          const restored = [previous, ...updated.filter((score) => score.songId !== songId)];
+          setSongScores(restored);
+          saveSongScoreCache(window.localStorage, songRecordSession.alias, restored);
+        }
+        setScoreSyncStatus('云端暂时未连接，谱子仅保存在本机');
+        showSyncMessage(mapSongScoreSyncError(error));
+      } finally {
+        setScoreBusy(false);
+      }
+    })();
   };
 
   const openSongDetail = (song: Song) => {
@@ -1102,6 +1156,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
         setLocationVotes({});
       }
       setRequestVoteView('sung');
+      setSungRankingMode('songs');
       showSyncMessage('已将全部待唱歌曲转入已唱');
     } catch {
       showSyncMessage('唱完状态未同步，请检查网络后重试');
@@ -1402,6 +1457,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
       ? rankingHeading
       : activeSection === 'playlists' ? '热门歌曲'
         : activeSection === 'quiz' ? '听歌识曲'
+          : activeSection === 'roadshows' ? '我的档案'
           : activeSection === 'artists' && selectedArtist ? selectedArtist : '点歌台'
     : '';
   const popularImmersive = activeSection === 'playlists' && !selectedSong;
@@ -1433,7 +1489,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
       )}
       {popularImmersive ? (
         <section data-popular-immersive className="fixed inset-0 z-10 overflow-hidden bg-transparent">
-          <PopularSongBarrage songs={barrageSongs} intimate={intimateMode} fill={fillMode} onSelectSong={openSongDetail} immersive />
+          <PopularSongBarrage songs={barrageSongs} intimate={intimateMode} fill={fillMode} onSelectSong={setPopularActionSong} immersive />
           {!barrageMode && (
           <header className="pointer-events-none fixed inset-x-0 top-0 z-30 flex items-start justify-between p-4 pr-16 sm:p-6 sm:pr-20">
             <button type="button" onClick={goBack} className="pointer-events-auto inline-flex h-11 items-center gap-2 rounded-xl border border-white/10 bg-black/45 px-4 text-sm font-semibold text-white/75 shadow-2xl backdrop-blur-xl transition hover:bg-white/15 hover:text-white">
@@ -1471,6 +1527,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
             quizBusy={quizBusyId === selectedSong.id}
             score={songScores.find((score) => score.songId === selectedSong.id) ?? null}
             scoreBusy={scoreBusy}
+            scoreSyncStatus={scoreSyncStatus}
             onQuizLevelChange={(level) => void updateQuizLevel(selectedSong, level)}
             onRecordsChange={commitSongRecords}
             onScoreChange={commitSongScore}
@@ -1682,11 +1739,11 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                   <aside data-request-ranking-controls className="h-fit rounded-[1.75rem] border border-orange-200/15 bg-orange-950/20 p-4 sm:p-5">
                     <div role="tablist" aria-label="点歌状态切换" className="grid grid-cols-2 gap-2">
                       <button type="button" role="tab" aria-selected={requestVoteView === 'pending'} onClick={() => setRequestVoteView('pending')} className={`rounded-xl border px-4 py-3 text-sm font-black transition ${requestVoteView === 'pending' ? 'border-orange-300/45 bg-orange-300 text-black' : 'border-white/10 bg-black/25 text-white/65 hover:text-white'}`}>已点</button>
-                      <button type="button" role="tab" aria-selected={requestVoteView === 'sung'} onClick={() => setRequestVoteView('sung')} className={`rounded-xl border px-4 py-3 text-sm font-black transition ${requestVoteView === 'sung' ? 'border-orange-300/45 bg-orange-300 text-black' : 'border-white/10 bg-black/25 text-white/65 hover:text-white'}`}>已唱</button>
+                      <button type="button" role="tab" aria-selected={requestVoteView === 'sung'} onClick={() => { setRequestVoteView('sung'); setSungRankingMode('songs'); }} className={`rounded-xl border px-4 py-3 text-sm font-black transition ${requestVoteView === 'sung' ? 'border-orange-300/45 bg-orange-300 text-black' : 'border-white/10 bg-black/25 text-white/65 hover:text-white'}`}>已唱</button>
                     </div>
                     <div role="tablist" aria-label="已唱排行类型切换" className={`mt-2 grid grid-cols-2 gap-2 transition ${requestVoteView === 'pending' ? 'pointer-events-none opacity-35' : ''}`}>
-                      <button type="button" role="tab" aria-selected={sungRankingMode === 'artists'} onClick={() => setSungRankingMode('artists')} className={`rounded-xl border px-4 py-3 text-sm font-black transition ${sungRankingMode === 'artists' ? 'border-orange-300/45 bg-orange-300 text-black' : 'border-white/10 bg-black/25 text-white/65 hover:text-white'}`}>歌手</button>
                       <button type="button" role="tab" aria-selected={sungRankingMode === 'songs'} onClick={() => setSungRankingMode('songs')} className={`rounded-xl border px-4 py-3 text-sm font-black transition ${sungRankingMode === 'songs' ? 'border-orange-300/45 bg-orange-300 text-black' : 'border-white/10 bg-black/25 text-white/65 hover:text-white'}`}>歌曲</button>
+                      <button type="button" role="tab" aria-selected={sungRankingMode === 'artists'} onClick={() => setSungRankingMode('artists')} className={`rounded-xl border px-4 py-3 text-sm font-black transition ${sungRankingMode === 'artists' ? 'border-orange-300/45 bg-orange-300 text-black' : 'border-white/10 bg-black/25 text-white/65 hover:text-white'}`}>歌手</button>
                     </div>
                     <div role="group" aria-label="点歌榜地点筛选" className="mt-4 grid grid-cols-2 gap-2 border-t border-white/10 pt-4">
                       {ROADSHOW_RANKING_LOCATIONS.map((location) => (
@@ -1925,11 +1982,32 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                 syncStatus={recordSyncStatus}
                 quizAssignments={quizAssignments}
                 onRecordsChange={commitSongRecords}
+                onOpenSongDetail={openSongDetail}
               />
             )}
           </section>
         )}
       </div>
+      )}
+      {popularActionSong && (
+        <div className="fixed inset-0 z-[80] grid place-items-center p-5">
+          <button type="button" aria-label="关闭歌曲操作弹窗" onClick={() => setPopularActionSong(null)} className="absolute inset-0 bg-black/65 backdrop-blur-md" />
+          <section role="dialog" aria-modal="true" aria-labelledby="popular-song-action-title" className="relative w-full max-w-sm overflow-hidden rounded-[1.75rem] border border-orange-200/20 bg-[#0d0a0d]/95 p-6 shadow-[0_30px_100px_rgba(0,0,0,.7)]">
+            <div className="pointer-events-none absolute -right-16 -top-20 h-44 w-44 rounded-full bg-orange-400/10 blur-3xl" />
+            <button type="button" aria-label="关闭歌曲操作" onClick={() => setPopularActionSong(null)} className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-full border border-white/10 text-white/40 transition hover:bg-white/10 hover:text-white"><X className="h-4 w-4" /></button>
+            <p className="text-[10px] font-black tracking-[.25em] text-orange-200/45">HOT SONG · QUICK ACTION</p>
+            <h2 id="popular-song-action-title" className="mt-3 pr-10 font-serif text-3xl font-black text-white">{popularActionSong.title}</h2>
+            <p className="mt-1 text-sm text-white/40">{popularActionSong.artist}</p>
+            <div className="mt-6 grid grid-cols-2 gap-3">
+              <button type="button" disabled={requestedId === popularActionSong.id} onClick={() => { void requestSong(popularActionSong); }} className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-orange-200/25 bg-orange-400 text-sm font-black text-black transition hover:bg-orange-300 disabled:border-emerald-200/20 disabled:bg-emerald-300/15 disabled:text-emerald-100">
+                {requestedId === popularActionSong.id ? <><Check className="h-4 w-4" /><span>已点</span></> : <><Plus className="h-4 w-4" /><span>点歌</span></>}
+              </button>
+              <button type="button" onClick={() => { const song = popularActionSong; setPopularActionSong(null); openSongDetail(song); }} className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-white/12 bg-white/[.055] text-sm font-black text-white/80 transition hover:border-orange-200/30 hover:bg-white/10 hover:text-white">
+                <Eye className="h-4 w-4" /><span>歌曲详情</span>
+              </button>
+            </div>
+          </section>
+        </div>
       )}
       <p className="sr-only" aria-live="polite">{requestedId ? `已点歌曲 ${catalogSongs.find((song) => song.id === requestedId)?.title ?? ''}` : syncMessage}</p>
       {syncMessage && (

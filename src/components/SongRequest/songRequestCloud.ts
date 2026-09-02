@@ -2,7 +2,14 @@ import { ensureSignIn, tcbApp } from '../../services/tcb';
 import type { VoteCounts } from './songRequest';
 import type { PublicQuizParticipantRankingItem, PublicQuizRankingItem, RoadshowLocation, RoadshowRecord } from './roadshow';
 import type { PublicPracticeRankingItem, SongRecord } from './songRecords';
-import type { SongScore } from './songScores';
+import {
+  isCloudScorePage,
+  parseSongScores,
+  toStoredSongScore,
+  withResolvedSongScorePages,
+  type SongScore,
+  type StoredSongScore,
+} from './songScores';
 import type { ArtistSettingsPayload, ArtistSettingsSnapshot } from './artistSettings';
 import type { QuizAssignments } from './songQuizLibrary';
 
@@ -112,22 +119,113 @@ export const deleteSongRecord = async (credentials: Credentials, id: string): Pr
   await callSync<Record<string, never>>({ action: 'songRecords:delete', ...credentials, id });
 };
 
-export const pullSongScores = async (credentials: Credentials): Promise<SongScore[]> => (
-  await callSync<{ scores: SongScore[] }>({ action: 'songScores:pull', ...credentials })
-).scores;
+const hashSongScorePathSegment = async (value: string): Promise<string> => {
+  const bytes = new TextEncoder().encode(value.trim().toLocaleLowerCase());
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+};
 
-export const saveSongScore = async (credentials: Credentials, score: SongScore): Promise<SongScore> => (
-  await callSync<{ score: SongScore }>({ action: 'songScores:save', ...credentials, score })
-).score;
+const dataUrlToBlob = (dataUrl: string): Blob => {
+  const match = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/]+={0,2})$/.exec(dataUrl);
+  if (!match) throw new Error('INVALID_SONG_SCORE');
+  const binary = atob(match[2]);
+  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  return new Blob([bytes], { type: match[1] });
+};
 
-export const deleteSongScore = async (credentials: Credentials, songId: string): Promise<void> => {
+const getScorePageUrls = async (pages: string[]): Promise<string[]> => {
+  if (!tcbApp) throw new Error('CLOUD_UNAVAILABLE');
+  const cloudPages = [...new Set(pages.filter(isCloudScorePage))];
+  const urlByFileId = new Map<string, string>();
+  for (let index = 0; index < cloudPages.length; index += 50) {
+    const fileList = cloudPages.slice(index, index + 50);
+    const response = await tcbApp.getTempFileURL({ fileList: fileList.map((fileID) => ({ fileID, maxAge: 86400 })) });
+    for (const item of response?.fileList ?? []) {
+      const fileId = item.fileID ?? item.fileid;
+      const url = item.tempFileURL ?? item.download_url;
+      if (fileId && url && (!item.code || item.code === 'SUCCESS')) urlByFileId.set(fileId, url);
+    }
+  }
+  return pages.map((page) => urlByFileId.get(page) ?? page);
+};
+
+const resolveSongScores = async (scores: StoredSongScore[]): Promise<SongScore[]> => {
+  const pages = scores.flatMap((score) => score.pages);
+  const resolved = await getScorePageUrls(pages);
+  let offset = 0;
+  return scores.map((score) => {
+    const pageUrls = resolved.slice(offset, offset + score.pages.length);
+    offset += score.pages.length;
+    return withResolvedSongScorePages(score, pageUrls);
+  });
+};
+
+const deleteSongScoreFiles = async (fileIds: string[]): Promise<void> => {
+  if (!tcbApp) throw new Error('CLOUD_UNAVAILABLE');
+  const unique = [...new Set(fileIds.filter(isCloudScorePage))];
+  for (let index = 0; index < unique.length; index += 50) {
+    await tcbApp.deleteFile({ fileList: unique.slice(index, index + 50) });
+  }
+};
+
+export const pullSongScores = async (credentials: Credentials): Promise<SongScore[]> => {
+  const scores = parseSongScores((await callSync<{ scores: SongScore[] }>({ action: 'songScores:pull', ...credentials })).scores);
+  if (scores.every((score) => score.pageUrls?.length === score.pages.length)) return scores;
+  return resolveSongScores(scores.map(toStoredSongScore));
+};
+
+export const syncSongScoreToCloud = async (
+  credentials: Credentials,
+  score: SongScore,
+  retiredFileIds: string[] = [],
+): Promise<SongScore> => {
+  if (!tcbApp) throw new Error('CLOUD_UNAVAILABLE');
+  await ensureSignIn();
+  const workspaceHash = await hashSongScorePathSegment(credentials.alias);
+  const songHash = await hashSongScorePathSegment(score.songId);
+  const uploadedFileIds: string[] = [];
+  try {
+    const pages: string[] = [];
+    for (const page of score.pages) {
+      if (!page.startsWith('data:image/')) {
+        pages.push(page);
+        continue;
+      }
+      const pageId = crypto.randomUUID();
+      const cloudPath = `song-request-scores/${workspaceHash}/${songHash}/${pageId}.jpg`;
+      const uploaded = await tcbApp.uploadFile({ cloudPath, filePath: dataUrlToBlob(page) });
+      if (!uploaded?.fileID) throw new Error('SCORE_UPLOAD_FAILED');
+      uploadedFileIds.push(uploaded.fileID);
+      pages.push(uploaded.fileID);
+    }
+    const uploadedScore: SongScore = { ...score, pages, pendingSync: false };
+    const stored = (await callSync<{ score: StoredSongScore }>({
+      action: 'songScores:save', ...credentials, score: toStoredSongScore(uploadedScore),
+    })).score;
+    if (retiredFileIds.length) void deleteSongScoreFiles(retiredFileIds).catch(() => undefined);
+    return withResolvedSongScorePages(stored, await getScorePageUrls(stored.pages));
+  } catch (error) {
+    if (uploadedFileIds.length) await deleteSongScoreFiles(uploadedFileIds).catch(() => undefined);
+    throw error;
+  }
+};
+
+export const saveSongScore = syncSongScoreToCloud;
+
+export const deleteSongScore = async (
+  credentials: Credentials,
+  songId: string,
+  fileIds: string[] = [],
+): Promise<void> => {
   await callSync<Record<string, never>>({ action: 'songScores:delete', ...credentials, songId });
+  if (fileIds.length) await deleteSongScoreFiles(fileIds).catch(() => undefined);
 };
 
 export const mapSongScoreSyncError = (error: unknown) => {
   const code = error instanceof Error ? error.message : 'SYNC_FAILED';
   if (code === 'PAYLOAD_TOO_LARGE') return '谱子图片过大，请减少页数或换更小的图片。';
   if (code === 'INVALID_SONG_SCORE') return '谱子内容格式无效，未保存。';
+  if (code === 'SCORE_UPLOAD_FAILED') return '谱子图片未能上传到云存储，已保留在本机等待重试。';
   if (code === 'AUTH_FAILED') return '私有空间已锁定，请先重新进入路演档案。';
   if (code === 'CLOUD_UNAVAILABLE') return '腾讯云暂时未连接，谱子尚未同步。';
   return '云端暂时没有回应，谱子尚未同步。';

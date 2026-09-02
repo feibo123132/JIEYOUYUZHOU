@@ -872,6 +872,10 @@ test('点歌榜提供已点已唱及歌曲歌手切换并由站主批量唱完',
   assert.match(station, /ROADSHOW_RANKING_LOCATIONS\.map/)
   assert.match(station, />歌手</)
   assert.match(station, />歌曲</)
+  assert.match(station, /useState<SungRankingMode>\('songs'\)/)
+  assert.match(station, /setRequestVoteView\('sung'\); setSungRankingMode\('songs'\)/)
+  const sungModeControls = station.slice(station.indexOf('aria-label="已唱排行类型切换"'), station.indexOf('aria-label="点歌榜地点筛选"'))
+  assert.ok(sungModeControls.indexOf('>歌曲</button>') < sungModeControls.indexOf('>歌手</button>'))
   assert.match(station, />唱完</)
   assert.match(station, /canManageFeaturedSongs && ranking\.length > 0/)
   assert.match(station, /finishCloudVotes\(songRecordSession\)/)
@@ -1378,6 +1382,32 @@ test('听歌识曲紧凑展示本场参与者且用户榜支持本地记录兜�
   assert.match(station, /cloudParticipants\.length \? cloudParticipants : localParticipants/)
 })
 
+test('路演听歌识曲歌曲在非答题状态可打开对应详情和谱子', () => {
+  const roadshowPanel = readFileSync(roadshowPanelUrl, 'utf8')
+  const station = readFileSync(stationUrl, 'utf8')
+  const recognitionEditor = roadshowPanel.slice(roadshowPanel.indexOf('const RecognitionSongListEditor'))
+
+  assert.match(roadshowPanel, /onOpenSongDetail\?: \(song: Song\) => void/)
+  assert.match(roadshowPanel, /resolveRoadshowSong\(songs, song\)/)
+  assert.match(recognitionEditor, /onClick=\{\(\) => participating \? toggleSong\(song\) : onOpenSongDetail\(song\)\}/)
+  assert.match(recognitionEditor, /disabled=\{participating && !selected && selectedSongIds\.length === 4\}/)
+  assert.match(recognitionEditor, /查看\$\{song\.title\}详情和谱子/)
+  assert.match(station, /onOpenSongDetail=\{openSongDetail\}/)
+})
+
+test('热门歌曲点击后先弹出点歌或查看详情的双操作弹窗', () => {
+  const station = readFileSync(stationUrl, 'utf8')
+
+  assert.match(station, /const \[popularActionSong, setPopularActionSong\] = useState<Song \| null>\(null\)/)
+  assert.match(station, /onSelectSong=\{setPopularActionSong\}/)
+  assert.match(station, /role="dialog" aria-modal="true"/)
+  assert.match(station, /void requestSong\(popularActionSong\)/)
+  assert.match(station, />点歌</)
+  assert.match(station, />歌曲详情</)
+  assert.match(station, /setPopularActionSong\(null\); openSongDetail\(song\)/)
+  assert.match(station, /aria-label="关闭歌曲操作弹窗"[^>]*onClick=\{\(\) => setPopularActionSong\(null\)\}/)
+})
+
 test('路演识曲面板以参与模式选择四首并在固定判定区记录对错', () => {
   const source = readFileSync(roadshowPanelUrl, 'utf8')
   const recognitionEditor = source.slice(source.indexOf('const RecognitionSongListEditor'))
@@ -1847,6 +1877,37 @@ test('歌曲详情页在路演右侧用谱子标签承载上传与翻谱功能',
   assert.match(panel, /aria-pressed=\{activeJournal === 'score'\}/)
   assert.match(panel, /activeJournal === 'score' && \(\s*<section data-song-score-panel/)
   assert.match(panel, /activeJournal !== 'score' && \(\s*<div className="grid items-start/)
+})
+
+test('谱子通过 CloudBase 云存储上传并只把文件引用写入云函数', () => {
+  const cloud = readFileSync(cloudAdapterUrl, 'utf8')
+
+  assert.match(cloud, /export const syncSongScoreToCloud = async/)
+  assert.match(cloud, /crypto\.subtle\.digest\('SHA-256'/)
+  assert.match(cloud, /song-request-scores\/\$\{workspaceHash\}\/\$\{songHash\}\/\$\{pageId\}\.jpg/)
+  assert.match(cloud, /tcbApp\.uploadFile\(\{ cloudPath, filePath:/)
+  assert.match(cloud, /tcbApp\.getTempFileURL\(\{ fileList:/)
+  assert.match(cloud, /tcbApp\.deleteFile\(\{ fileList:/)
+  assert.match(cloud, /toStoredSongScore\(uploadedScore\)/)
+  assert.doesNotMatch(cloud, /callSync<\{ score: SongScore \}>\(\{ action: 'songScores:save', \.\.\.credentials, score \}\)/)
+})
+
+test('谱子界面区分本机待同步与云端成功并自动迁移旧缓存', () => {
+  const station = readFileSync(stationUrl, 'utf8')
+  const panel = readFileSync(songDetailPanelUrl, 'utf8')
+
+  assert.match(station, /const \[scoreSyncStatus, setScoreSyncStatus\] = useState\(''\)/)
+  assert.match(station, /cachedScores\.filter\(isPendingSongScore\)/)
+  assert.match(station, /syncSongScoreToCloud\(songRecordSession, pendingScore\)/)
+  assert.match(station, /setScoreSyncStatus\('已同步到云端'\)/)
+  assert.match(station, /setScoreSyncStatus\('云端暂时未连接，谱子仅保存在本机'\)/)
+  assert.match(station, /scoreSyncStatus=\{scoreSyncStatus\}/)
+  assert.match(panel, /getSongScoreDisplayPages\(score\)/)
+  assert.match(panel, /appendSongScorePages\(song, score, added\)/)
+  assert.match(panel, /moveSongScorePage\(score, index, delta\)/)
+  assert.match(panel, /removeSongScorePage\(score, index\)/)
+  assert.match(panel, /仅保存在本机，等待同步/)
+  assert.doesNotMatch(panel, /setMessage\(`已添加 \$\{added\.length\} 页谱子/)
 })
 
 test('练习记录表单移除弹唱感想输入框但保留历史记录展示', () => {

@@ -25,7 +25,11 @@ song_request_song_records
 
 浏览器只调用云函数，不能绕过管理口令直接读取私有路演记录、练习记录或歌曲现场反馈。`song_request_song_records` 每条记录单独保存，并由云函数事务处理保存与软删除，避免多设备同时操作时互相覆盖。
 
-## 3. 部署云函数
+## 3. 云存储谱子
+
+谱子图片保存在 `song-request-scores/` 目录，数据库只保存 `cloud://` 文件引用。云存储继续使用 `PRIVATE`（仅创建者和管理员可读写）；其他设备由云函数鉴权后获取临时访问地址，不需要开放整个存储桶。
+
+## 4. 部署云函数
 
 代码目录：`cloudfunctions/songRequestSync`
 

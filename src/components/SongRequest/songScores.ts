@@ -6,8 +6,12 @@ export interface SongScore {
   songTitle: string;
   songArtist: string;
   pages: string[];
+  pageUrls?: string[];
+  pendingSync?: boolean;
   updatedAt: string;
 }
+
+export type StoredSongScore = Omit<SongScore, 'pageUrls' | 'pendingSync'>;
 
 export const SCORES_CACHE_PREFIX = 'jieyou-song-scores-v1:';
 export const SCORE_PAGE_LIMIT = 4;
@@ -17,13 +21,25 @@ export const SCORE_PAGE_CACHE_PREFIX = 'jieyou-song-score-page-v1:';
 interface ReadableStorage { getItem: (key: string) => string | null; }
 interface WritableStorage { setItem: (key: string, value: string) => void; }
 
-const isScorePage = (value: unknown): value is string => (
+const isLocalScorePage = (value: unknown): value is string => (
   typeof value === 'string'
   && value.length > 0
   && (
     (/^https:\/\/\S+$/i.test(value) && value.length <= 600)
     || /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value)
   )
+);
+
+export const isCloudScorePage = (value: unknown): value is string => (
+  typeof value === 'string'
+  && /^cloud:\/\/[^/\s]{1,180}\/song-request-scores\/[a-f0-9]{64}\/[a-f0-9]{64}\/[a-f0-9-]{16,64}\.jpg$/i.test(value)
+);
+
+const isScorePage = (value: unknown): value is string => isLocalScorePage(value) || isCloudScorePage(value);
+const isDisplayPage = (value: unknown): value is string => (
+  typeof value === 'string'
+  && value.length > 0
+  && ((/^https:\/\/\S+$/i.test(value) && value.length <= 2400) || /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value))
 );
 
 export const isValidSongScore = (value: unknown): value is SongScore => {
@@ -35,7 +51,13 @@ export const isValidSongScore = (value: unknown): value is SongScore => {
     && (score.songArtist === undefined || (typeof score.songArtist === 'string' && score.songArtist.length <= 100))
     && Array.isArray(score.pages) && score.pages.length >= 1 && score.pages.length <= SCORE_PAGE_LIMIT
     && score.pages.every(isScorePage)
-    && score.pages.join('').length <= SCORE_PAGES_TOTAL_LIMIT;
+    && score.pages.join('').length <= SCORE_PAGES_TOTAL_LIMIT
+    && (score.pageUrls === undefined || (
+      Array.isArray(score.pageUrls)
+      && score.pageUrls.length === score.pages.length
+      && score.pageUrls.every(isDisplayPage)
+    ))
+    && (score.pendingSync === undefined || typeof score.pendingSync === 'boolean');
 };
 
 export const parseSongScores = (value: unknown): SongScore[] => (
@@ -48,7 +70,60 @@ export const buildSongScore = (song: Song, pages: string[]): SongScore => ({
   songTitle: song.title,
   songArtist: song.artist,
   pages,
+  pendingSync: pages.some((page) => page.startsWith('data:image/')),
   updatedAt: new Date().toISOString(),
+});
+
+export const getSongScoreDisplayPages = (score: SongScore | null | undefined): string[] => (
+  score?.pageUrls?.length === score.pages.length ? score.pageUrls : score?.pages ?? []
+);
+
+export const isPendingSongScore = (score: SongScore): boolean => (
+  score.pendingSync === true || score.pages.some((page) => page.startsWith('data:image/'))
+);
+
+export const withResolvedSongScorePages = (score: SongScore, pageUrls: string[]): SongScore => ({
+  ...score,
+  pageUrls: pageUrls.length === score.pages.length ? pageUrls : undefined,
+});
+
+export const appendSongScorePages = (song: Song, score: SongScore | null | undefined, pages: string[]): SongScore => ({
+  ...(score ?? buildSongScore(song, [])),
+  id: `score-${song.id}`,
+  songId: song.id,
+  songTitle: song.title,
+  songArtist: song.artist,
+  pages: [...(score?.pages ?? []), ...pages],
+  pageUrls: [...getSongScoreDisplayPages(score), ...pages],
+  pendingSync: true,
+  updatedAt: new Date().toISOString(),
+});
+
+export const moveSongScorePage = (score: SongScore, index: number, delta: -1 | 1): SongScore => {
+  const target = index + delta;
+  if (index < 0 || target < 0 || index >= score.pages.length || target >= score.pages.length) return score;
+  const pages = [...score.pages];
+  [pages[index], pages[target]] = [pages[target], pages[index]];
+  const pageUrls = [...getSongScoreDisplayPages(score)];
+  [pageUrls[index], pageUrls[target]] = [pageUrls[target], pageUrls[index]];
+  return { ...score, pages, pageUrls, pendingSync: true, updatedAt: new Date().toISOString() };
+};
+
+export const removeSongScorePage = (score: SongScore, index: number): SongScore => ({
+  ...score,
+  pages: score.pages.filter((_, pageIndex) => pageIndex !== index),
+  pageUrls: getSongScoreDisplayPages(score).filter((_, pageIndex) => pageIndex !== index),
+  pendingSync: true,
+  updatedAt: new Date().toISOString(),
+});
+
+export const toStoredSongScore = (score: SongScore): StoredSongScore => ({
+  id: score.id,
+  songId: score.songId,
+  songTitle: score.songTitle,
+  songArtist: score.songArtist,
+  pages: score.pages,
+  updatedAt: score.updatedAt,
 });
 
 export const loadSongScoreCache = (storage: ReadableStorage, alias: string | null): SongScore[] => {

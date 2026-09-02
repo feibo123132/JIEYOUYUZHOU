@@ -4,7 +4,10 @@ import type { Song } from './songCatalog';
 import { findSongRoadshowHistory, type RoadshowRecord } from './roadshow';
 import { QUIZ_LEVELS, type QuizLevel } from './songQuizLibrary';
 import ScoreViewer from './ScoreViewer';
-import { buildSongScore, compressScoreImage, SCORE_PAGE_LIMIT, SCORE_PAGES_TOTAL_LIMIT, type SongScore } from './songScores';
+import {
+  appendSongScorePages, compressScoreImage, getSongScoreDisplayPages, moveSongScorePage,
+  removeSongScorePage, SCORE_PAGE_LIMIT, SCORE_PAGES_TOTAL_LIMIT, type SongScore,
+} from './songScores';
 import {
   averageMatchScore,
   getMatchQuality,
@@ -31,6 +34,7 @@ interface SongDetailPanelProps {
   quizBusy?: boolean;
   score?: SongScore | null;
   scoreBusy?: boolean;
+  scoreSyncStatus?: string;
   onQuizLevelChange: (level: QuizLevel) => void;
   onRecordsChange: (records: SongRecord[]) => void;
   onScoreChange: (songId: string, score: SongScore | null) => void;
@@ -69,7 +73,7 @@ const displayRoadshowDate = (value: string) => value.replace(/-/g, '/');
 
 const SongDetailPanel = ({
   song, records, roadshows = [], session, syncStatus = '', quizLevel, quizCounts,
-  canManageQuiz, quizBusy = false, score = null, scoreBusy = false, onQuizLevelChange, onRecordsChange,
+  canManageQuiz, quizBusy = false, score = null, scoreBusy = false, scoreSyncStatus = '', onQuizLevelChange, onRecordsChange,
   onScoreChange, onOpenPrivateSpace,
 }: SongDetailPanelProps) => {
   const songRecords = useMemo(() => sortSongRecords(records.filter((record) => record.songId === song.id)), [records, song.id]);
@@ -186,8 +190,9 @@ const SongDetailPanel = ({
     finally { setBusy(''); }
   };
 
-  const scorePages = score?.pages ?? [];
-  const scoreWorking = scoreBusyLocal || (scoreBusy ? '正在同步谱子到云端…' : '');
+  const scorePages = getSongScoreDisplayPages(score);
+  const scorePending = Boolean(score?.pendingSync);
+  const scoreWorking = scoreBusyLocal || (scoreBusy ? '正在同步谱子到云端…' : scoreSyncStatus);
 
   const addScorePages = async (files: FileList | null) => {
     if (!files?.length) return;
@@ -198,13 +203,14 @@ const SongDetailPanel = ({
     try {
       const added: string[] = [];
       for (const file of picked) added.push(await compressScoreImage(file));
-      const nextPages = [...scorePages, ...added];
-      if (nextPages.join('').length > SCORE_PAGES_TOTAL_LIMIT) {
+      const next = appendSongScorePages(song, score, added);
+      const localPagesSize = next.pages.filter((page) => page.startsWith('data:image/')).join('').length;
+      if (localPagesSize > SCORE_PAGES_TOTAL_LIMIT) {
         setMessage('谱子总大小超出云端限制，请删减页数或分段上传更小的图');
         return;
       }
-      onScoreChange(song.id, buildSongScore(song, nextPages));
-      setMessage(`已添加 ${added.length} 页谱子${files.length > picked.length ? `，超出上限忽略 ${files.length - picked.length} 张` : ''}`);
+      onScoreChange(song.id, next);
+      setMessage('图片已处理，正在同步到云端');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '谱子图片处理失败');
     } finally {
@@ -214,17 +220,15 @@ const SongDetailPanel = ({
   };
 
   const removeScorePage = (index: number) => {
-    const next = scorePages.filter((_, pageIndex) => pageIndex !== index);
-    if (next.length) onScoreChange(song.id, buildSongScore(song, next));
+    if (!score) return;
+    const next = removeSongScorePage(score, index);
+    if (next.pages.length) onScoreChange(song.id, next);
     else onScoreChange(song.id, null);
   };
 
   const moveScorePage = (index: number, delta: -1 | 1) => {
-    const target = index + delta;
-    if (target < 0 || target >= scorePages.length) return;
-    const next = [...scorePages];
-    [next[index], next[target]] = [next[target], next[index]];
-    onScoreChange(song.id, buildSongScore(song, next));
+    if (!score) return;
+    onScoreChange(song.id, moveSongScorePage(score, index, delta));
   };
 
   const removeAllScorePages = () => {
@@ -295,7 +299,7 @@ const SongDetailPanel = ({
                 <Stat label="最近" value={roadshowHistory[0] ? displayRoadshowDate(roadshowHistory[0].date) : '—'} />
               </> : <>
                 <Stat label="谱页" value={`${scorePages.length} 页`} />
-                <Stat label="状态" value={scorePages.length ? '已上传' : '待上传'} />
+                <Stat label="状态" value={scorePages.length ? (scorePending ? '待同步' : '已同步') : '待上传'} />
               </>}
             </div>
             <div data-journal-toolbar className="flex w-full flex-wrap items-center justify-end gap-3">
@@ -344,7 +348,7 @@ const SongDetailPanel = ({
             </label>
           </div>
         </div>
-        {scoreWorking && <p aria-live="polite" className="mt-3 text-[11px] font-bold text-orange-100/55">{scoreWorking}</p>}
+        {(scoreWorking || scorePending) && <p aria-live="polite" className="mt-3 text-[11px] font-bold text-orange-100/55">{scoreWorking || '仅保存在本机，等待同步'}</p>}
         {scorePages.length ? (
           <>
             <ol className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
