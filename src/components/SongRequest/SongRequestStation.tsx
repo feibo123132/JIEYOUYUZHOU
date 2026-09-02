@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import {
-  ArrowLeft, ArrowUpDown, CalendarDays, Check, ChevronLeft, ChevronRight, Disc3, Guitar,
-  GripVertical, Library, ListOrdered, Mic2, Plus, RotateCcw, Search, SlidersHorizontal, Sparkles, Target, Trash2, Trophy, Upload, X,
+  ArrowLeft, ArrowUpDown, CalendarDays, Check, ChevronLeft, ChevronRight, Disc3, Eye, Guitar,
+  GripVertical, Library, ListOrdered, Mic2, PenLine, Plus, RotateCcw, Search, SlidersHorizontal, Sparkles, Target, Trash2, Trophy, Upload, X,
 } from 'lucide-react';
 import useAppStore from '../../store/appStore';
 import { SONGS, type Song } from './songCatalog';
@@ -275,6 +275,10 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   const [draggedArtist, setDraggedArtist] = useState<string | null>(null);
   const [artistDropTarget, setArtistDropTarget] = useState<{ artist: string; placement: ArtistDropPlacement } | null>(null);
   const [songOrderMode, setSongOrderMode] = useState(false);
+  const [songEditMode, setSongEditMode] = useState(false);
+  const [showPracticeBadges, setShowPracticeBadges] = useState(() => {
+    try { return localStorage.getItem('jieyou_show_practice_badges') !== 'false'; } catch { return true; }
+  });
   const [draggedSongId, setDraggedSongId] = useState<string | null>(null);
   const [songDropTarget, setSongDropTarget] = useState<{ songId: string; placement: ArtistDropPlacement } | null>(null);
   const [adjustingArtist, setAdjustingArtist] = useState<string | null>(null);
@@ -834,12 +838,23 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   const handleRemoveSong = () => {
     if (!requireCatalogManager()) return;
     if (!selectedArtist) return;
-    const title = window.prompt(`请输入要从“${selectedArtist}”删除的歌名：`)?.trim();
+    const title = window.prompt(`请输入要从"${selectedArtist}"删除的歌名：`)?.trim();
     if (!title) return;
     const song = catalogSongs.find((item) => item.artist === selectedArtist && item.title === title);
     if (!song) return window.alert('没有找到该歌曲。');
-    if (!window.confirm(`确定删除“${title}”吗？`)) return;
+    if (!window.confirm(`确定删除"${title}"吗？`)) return;
     commitCatalog(removeCatalogSong(catalog, song.id));
+  };
+
+  const handleDeleteSongById = (songId: string) => {
+    if (!requireCatalogManager()) return;
+    const song = catalog.songs.find((s) => s.id === songId);
+    if (!song) return;
+    if (!window.confirm(`确定要删除歌曲「${song.title}」吗？`)) return;
+    const next = removeCatalogSong(catalog, songId);
+    commitCatalog(next);
+    syncCurrentArtistSettings(next.artists, customArtistAvatars, avatarAdjustments, next.songs.map((s) => s.id));
+    showSyncMessage(`已删除「${song.title}」并同步到站内`);
   };
 
   const moveVisibleArtist = (artist: string, direction: -1 | 1) => {
@@ -1011,6 +1026,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     if (activeSection === null) return onBack();
     if (selectedArtist) {
       setSongOrderMode(false);
+      setSongEditMode(false);
       clearSongDragState();
       setSelectedArtist(null);
       return;
@@ -1285,6 +1301,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   };
 
   const PracticeBadges = ({ song }: { song: Song }) => {
+    if (!showPracticeBadges) return null;
     const stats = songPracticeStats.get(song.id);
     if (!stats) return null;
     return (
@@ -1330,12 +1347,21 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                 <button type="button" aria-label={`${song.title}前移`} title="前移" disabled={index === 0} onClick={() => moveVisibleSong(song.id, -1)} className="grid h-8 w-8 place-items-center rounded-full border border-white/10 text-white/55 transition hover:border-orange-200/35 hover:text-orange-100 disabled:cursor-not-allowed disabled:opacity-20"><ChevronLeft className="h-4 w-4" /></button>
                 <button type="button" aria-label={`${song.title}后移`} title="后移" disabled={index === songs.length - 1} onClick={() => moveVisibleSong(song.id, 1)} className="grid h-8 w-8 place-items-center rounded-full border border-white/10 text-white/55 transition hover:border-orange-200/35 hover:text-orange-100 disabled:cursor-not-allowed disabled:opacity-20"><ChevronRight className="h-4 w-4" /></button>
               </span>
+            ) : songEditMode ? (
+              <button type="button" aria-label={`删除${song.title}`} title="删除" onClick={() => handleDeleteSongById(song.id)} className="grid h-8 w-8 place-items-center rounded-full border border-red-300/25 text-red-200/50 transition hover:border-red-300/50 hover:bg-red-300/10 hover:text-red-200">
+                <Trash2 className="h-4 w-4" />
+              </button>
             ) : (
               <span className="flex shrink-0 items-center gap-2"><QuizLevelControl song={song} /><FeaturedSongControl song={song} /><RequestButton song={song} /></span>
             )}
           </article>
         );
       })}
+      {songEditMode && (
+        <button type="button" onClick={handleAddSong} className="inline-flex items-center justify-center gap-2 rounded-2xl border border-dashed border-white/15 bg-black/20 p-3 text-xs font-bold text-white/45 transition hover:border-rose-200/30 hover:bg-rose-300/10 hover:text-rose-100">
+          <Plus className="h-4 w-4" />新增歌曲
+        </button>
+      )}
     </div>
   );
 
@@ -1505,15 +1531,29 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                   )}
                   {selectedArtist && (
                     <button type="button" onClick={handleSortByMatch} className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/30 px-3.5 py-2 text-xs font-bold text-white/55 transition hover:border-orange-200/35 hover:text-orange-100">
-                      <ArrowUpDown className="h-4 w-4" />按匹配度排序
+                      <ArrowUpDown className="h-4 w-4" />匹配度
                     </button>
                   )}
-                  <button type="button" onClick={selectedArtist ? handleAddSong : handleAddArtist} className="inline-flex items-center gap-1.5 rounded-full border border-rose-200/25 bg-rose-300/10 px-3.5 py-2 text-xs font-bold text-rose-100 transition hover:bg-rose-300/20">
-                    <Plus className="h-4 w-4" />{selectedArtist ? '新增歌曲' : '新增歌手'}
-                  </button>
-                  <button type="button" onClick={selectedArtist ? handleRemoveSong : handleRemoveArtist} className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/30 px-3.5 py-2 text-xs font-bold text-white/55 transition hover:border-red-300/30 hover:text-red-200">
-                    <Trash2 className="h-4 w-4" />{selectedArtist ? '删除歌曲' : '删除歌手'}
-                  </button>
+                  {selectedArtist && (
+                    <button type="button" aria-pressed={songEditMode} onClick={() => { clearSongDragState(); setSongOrderMode(false); setSongEditMode((current) => !current); }} className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-xs font-bold transition ${songEditMode ? 'border-orange-200/40 bg-orange-300 text-black' : 'border-white/10 bg-black/30 text-white/55 hover:text-white'}`}>
+                      <PenLine className="h-4 w-4" />{songEditMode ? '完成编辑' : '编辑歌曲'}
+                    </button>
+                  )}
+                  {selectedArtist && (
+                    <button type="button" aria-pressed={showPracticeBadges} onClick={() => { setShowPracticeBadges((current) => { const next = !current; try { localStorage.setItem('jieyou_show_practice_badges', String(next)); } catch { /* noop */ } return next; }); }} className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-xs font-bold transition ${showPracticeBadges ? 'border-sky-200/30 bg-sky-300/15 text-sky-100' : 'border-white/10 bg-black/30 text-white/55 hover:text-white'}`}>
+                      <Eye className="h-4 w-4" />{showPracticeBadges ? '隐藏徽章' : '显示徽章'}
+                    </button>
+                  )}
+                  {!selectedArtist && (
+                    <button type="button" onClick={handleAddArtist} className="inline-flex items-center gap-1.5 rounded-full border border-rose-200/25 bg-rose-300/10 px-3.5 py-2 text-xs font-bold text-rose-100 transition hover:bg-rose-300/20">
+                      <Plus className="h-4 w-4" />新增歌手
+                    </button>
+                  )}
+                  {!selectedArtist && (
+                    <button type="button" onClick={handleRemoveArtist} className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/30 px-3.5 py-2 text-xs font-bold text-white/55 transition hover:border-red-300/30 hover:text-red-200">
+                      <Trash2 className="h-4 w-4" />删除歌手
+                    </button>
+                  )}
                 </div>
               )}
             </div>
