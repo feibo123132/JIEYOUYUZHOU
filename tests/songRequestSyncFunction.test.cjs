@@ -137,9 +137,11 @@ test('validates public and private actions without rejecting platform metadata',
   assert.throws(() => validateRequest({ action: 'roadshows:register', alias: 'JIEYOU', password: '123' }), /INVALID_PASSWORD/);
 })
 
-test('谱子云函数只接收云存储文件引用，不再接收 Base64 图片', () => {
+test('谱子云函数逐页接收压缩图片，并只用云存储引用保存谱子', () => {
   const { validateRequest } = require(validationPath);
   const auth = { alias: 'JIEYOU', password: 'guitar-2026' };
+  const pageBytes = Buffer.from([0xff, 0xd8, 0xff, 0xdb, 0x00, 0x43]);
+  const pageDataUrl = `data:image/jpeg;base64,${pageBytes.toString('base64')}`;
   const fileId = `cloud://env-123/song-request-scores/${'a'.repeat(64)}/${'b'.repeat(64)}/123e4567-e89b-12d3-a456-426614174000.jpg`;
   const storedScore = {
     id: 'score-qing-tian', songId: 'qing-tian', songTitle: '晴天', songArtist: '周杰伦',
@@ -150,10 +152,66 @@ test('谱子云函数只接收云存储文件引用，不再接收 Base64 图片
   assert.deepEqual(validateRequest({ action: 'songScores:save', ...auth, score }), {
     action: 'songScores:save', ...auth, score: storedScore,
   });
+  assert.deepEqual(validateRequest({ action: 'songScores:uploadPage', ...auth, songId: 'qing-tian', pageDataUrl }), {
+    action: 'songScores:uploadPage', ...auth, songId: 'qing-tian', pageContent: pageBytes,
+  });
   assert.throws(() => validateRequest({
     action: 'songScores:save', ...auth,
     score: { ...score, pages: ['data:image/jpeg;base64,/9j/'] },
   }), /INVALID_SONG_SCORE/);
+  assert.throws(() => validateRequest({
+    action: 'songScores:uploadPage', ...auth, songId: 'qing-tian',
+    pageDataUrl: 'data:image/jpeg;base64,SGVsbG8=',
+  }), /INVALID_SONG_SCORE/);
+});
+
+test('已认证谱子图片由云函数上传，浏览器不再直传云存储', async () => {
+  const store = memoryStore();
+  const uploaded = [];
+  store.uploadSongScorePage = async (workspaceId, songId, pageContent) => {
+    uploaded.push({ workspaceId, songId, pageContent });
+    return `cloud://env-123/song-request-scores/${workspaceId}/${'b'.repeat(64)}/123e4567-e89b-12d3-a456-426614174000.jpg`;
+  };
+  const { createHandler } = loadFunction();
+  const handler = createHandler(store);
+  const auth = { alias: 'JIEYOU', password: 'guitar-2026' };
+  const pageBytes = Buffer.from([0xff, 0xd8, 0xff, 0xdb]);
+  await handler({ action: 'roadshows:register', ...auth });
+
+  const result = await handler({
+    action: 'songScores:uploadPage', ...auth, songId: 'qing-tian',
+    pageDataUrl: `data:image/jpeg;base64,${pageBytes.toString('base64')}`,
+  });
+
+  assert.equal(result.ok, true);
+  assert.match(result.fileId, /^cloud:\/\/env-123\/song-request-scores\//);
+  assert.equal(uploaded.length, 1);
+  assert.equal(uploaded[0].songId, 'qing-tian');
+  assert.deepEqual(uploaded[0].pageContent, pageBytes);
+});
+
+test('保存谱子时由云函数返回可显示的临时地址', async () => {
+  const store = memoryStore();
+  let saved;
+  store.saveSongScoreAtomically = async (_documentId, value) => { saved = structuredClone(value); };
+  store.resolveSongScores = async (scores) => scores.map((score) => ({
+    ...score,
+    pageUrls: score.pages.map(() => 'https://example.test/private-score.jpg'),
+  }));
+  const { createHandler } = loadFunction();
+  const handler = createHandler(store);
+  const auth = { alias: 'JIEYOU', password: 'guitar-2026' };
+  await handler({ action: 'roadshows:register', ...auth });
+  const fileId = `cloud://env-123/song-request-scores/${'a'.repeat(64)}/${'b'.repeat(64)}/123e4567-e89b-12d3-a456-426614174000.jpg`;
+
+  const result = await handler({
+    action: 'songScores:save', ...auth,
+    score: { id: 'score-qing-tian', songId: 'qing-tian', songTitle: '晴天', songArtist: '周杰伦', pages: [fileId] },
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.score.pageUrls, ['https://example.test/private-score.jpg']);
+  assert.equal(saved.workspaceId.length, 64);
 });
 
 test('validates global artist settings actions, revisions, images, and payload limits', () => {

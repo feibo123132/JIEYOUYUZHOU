@@ -245,10 +245,17 @@ function createHandler(store) {
         return { ok: true, scores: store.resolveSongScores ? await store.resolveSongScores(visibleScores) : visibleScores };
       }
 
+      if (request.action === 'songScores:uploadPage') {
+        const fileId = await store.uploadSongScorePage(id, request.songId, request.pageContent);
+        return { ok: true, fileId };
+      }
+
       if (request.action === 'songScores:save') {
         const saved = { ...request.score, workspaceId: id, updatedAt: store.now() };
         await store.saveSongScoreAtomically(songScoreDocumentId(id, saved.songId), saved);
-        return { ok: true, score: publicSongScore(saved) };
+        const publicSaved = publicSongScore(saved);
+        const resolved = store.resolveSongScores ? await store.resolveSongScores([publicSaved]) : [publicSaved];
+        return { ok: true, score: resolved[0] };
       }
 
       if (request.action === 'songScores:delete') {
@@ -438,6 +445,13 @@ exports.main = async (event) => {
           }
         }
         return scores.map((score) => ({ ...score, pageUrls: score.pages.map((page) => urlByFileId.get(page) || page) }));
+      },
+      async uploadSongScorePage(workspaceId, songId, pageContent) {
+        const songHash = crypto.createHash('sha256').update(songId.trim().toLocaleLowerCase()).digest('hex');
+        const cloudPath = `song-request-scores/${workspaceId}/${songHash}/${crypto.randomUUID()}.jpg`;
+        const uploaded = await app.uploadFile({ cloudPath, fileContent: pageContent });
+        if (!uploaded?.fileID) throw new Error('SCORE_UPLOAD_FAILED');
+        return uploaded.fileID;
       },
       saveSongScoreAtomically: (documentId, value) => db.runTransaction(async (transaction) => {
         const ref = transaction.collection('song_request_song_scores').doc(documentId);

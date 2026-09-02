@@ -1658,7 +1658,7 @@ test('歌手卡片按既定顺序使用人物照片并保留自定义歌手兜�
   assert.match(source, /avatar && avatarStyle \? <ArtistAvatarImage avatar=\{avatar\} adjustment=\{avatarStyle\}/)
   assert.match(source, /: <Mic2/)
   assert.match(source, /loading=\{index < 8 \? 'eager' : 'lazy'\}/)
-  assert.match(source, /fetchPriority=\{index < 8 \? 'high' : 'auto'\}/)
+  assert.doesNotMatch(source, /fetchPriority/)
 })
 
 test('歌手页将仅有一首歌的歌手归入一人一曲且保留歌曲数据', async () => {
@@ -1879,16 +1879,16 @@ test('歌曲详情页在路演右侧用谱子标签承载上传与翻谱功能',
   assert.match(panel, /activeJournal !== 'score' && \(\s*<div className="grid items-start/)
 })
 
-test('谱子通过 CloudBase 云存储上传并只把文件引用写入云函数', () => {
+test('谱子经已认证云函数上传并只把文件引用写入云端记录', () => {
   const cloud = readFileSync(cloudAdapterUrl, 'utf8')
 
   assert.match(cloud, /export const syncSongScoreToCloud = async/)
-  assert.match(cloud, /crypto\.subtle\.digest\('SHA-256'/)
-  assert.match(cloud, /song-request-scores\/\$\{workspaceHash\}\/\$\{songHash\}\/\$\{pageId\}\.jpg/)
-  assert.match(cloud, /tcbApp\.uploadFile\(\{ cloudPath, filePath:/)
+  assert.match(cloud, /action: 'songScores:uploadPage'/)
+  assert.doesNotMatch(cloud, /tcbApp\.uploadFile\(/)
   assert.match(cloud, /tcbApp\.getTempFileURL\(\{ fileList:/)
   assert.match(cloud, /tcbApp\.deleteFile\(\{ fileList:/)
   assert.match(cloud, /toStoredSongScore\(uploadedScore\)/)
+  assert.match(cloud, /parseSongScores\(\[saved\]\)\[0\]/)
   assert.doesNotMatch(cloud, /callSync<\{ score: SongScore \}>\(\{ action: 'songScores:save', \.\.\.credentials, score \}\)/)
 })
 
@@ -1899,6 +1899,7 @@ test('谱子界面区分本机待同步与云端成功并自动迁移旧缓存',
   assert.match(station, /const \[scoreSyncStatus, setScoreSyncStatus\] = useState\(''\)/)
   assert.match(station, /cachedScores\.filter\(isPendingSongScore\)/)
   assert.match(station, /syncSongScoreToCloud\(songRecordSession, pendingScore\)/)
+  assert.match(station, /if \(!pendingScore && !hasCloudSongScore\(previous\)\)/)
   assert.match(station, /setScoreSyncStatus\('已同步到云端'\)/)
   assert.match(station, /setScoreSyncStatus\('云端暂时未连接，谱子仅保存在本机'\)/)
   assert.match(station, /scoreSyncStatus=\{scoreSyncStatus\}/)

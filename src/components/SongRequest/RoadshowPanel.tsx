@@ -47,6 +47,7 @@ interface RoadshowPanelProps {
   syncStatus?: string;
   quizAssignments?: QuizAssignments;
   onRecordsChange?: (records: SongRecord[]) => void;
+  onOpenSongDetail?: (song: Song) => void;
 }
 
 type ArchiveView = 'practice' | 'roadshows';
@@ -77,6 +78,18 @@ const emptyRecord = (index: number): RoadshowRecord => ({
   updatedAt: new Date().toISOString(),
 });
 
+const resolveRoadshowSong = (songs: Song[], roadshowSong: RoadshowSong): Song => (
+  songs.find((song) => song.id === roadshowSong.catalogId)
+  ?? songs.find((song) => song.title === roadshowSong.title && song.artist === roadshowSong.artist)
+  ?? {
+    id: roadshowSong.catalogId ?? roadshowSong.id,
+    title: roadshowSong.title,
+    artist: roadshowSong.artist,
+    category: '路演歌曲',
+    featured: false,
+  }
+);
+
 const RoadshowPanel = ({
   defaultAlias = '',
   songs = SONGS,
@@ -84,6 +97,7 @@ const RoadshowPanel = ({
   syncStatus = '已同步',
   quizAssignments = {},
   onRecordsChange = () => undefined,
+  onOpenSongDetail = () => undefined,
 }: RoadshowPanelProps) => {
   const [credentials, setCredentials] = useState<Credentials | null>(() => readSession());
   const [alias, setAlias] = useState(() => readSession()?.alias || defaultAlias);
@@ -218,6 +232,7 @@ const RoadshowPanel = ({
         onBack={() => { setEditing(null); setMessage(''); }}
         onSave={() => void persistRecord()}
         onRecordAttempt={(record) => { void persistRecord(record); }}
+        onOpenSongDetail={(song) => onOpenSongDetail(resolveRoadshowSong(songs, song))}
         onDelete={() => void removeRecord(editing)}
         onLock={lock}
       />
@@ -284,11 +299,12 @@ interface EditorProps {
   onBack: () => void;
   onSave: () => void;
   onRecordAttempt: (record: RoadshowRecord) => void;
+  onOpenSongDetail: (song: RoadshowSong) => void;
   onDelete: () => void;
   onLock: () => void;
 }
 
-const RoadshowEditor = ({ record, allRecords, busy, message, quizAssignments, onChange, onBack, onSave, onRecordAttempt, onDelete, onLock }: EditorProps) => {
+const RoadshowEditor = ({ record, allRecords, busy, message, quizAssignments, onChange, onBack, onSave, onRecordAttempt, onOpenSongDetail, onDelete, onLock }: EditorProps) => {
   const updateList = (key: 'performanceSongs' | 'recognitionSongs', songs: RoadshowSong[]) => onChange({ ...record, [key]: songs });
   return (
     <section className="space-y-5">
@@ -309,7 +325,7 @@ const RoadshowEditor = ({ record, allRecords, busy, message, quizAssignments, on
       </div>
 
       <SongListEditor title="路演歌曲" description="本次准备演唱的歌曲" songs={record.performanceSongs} allRecords={allRecords} recordId={record.id} onChange={(songs) => updateList('performanceSongs', songs)} />
-      <RecognitionSongListEditor record={record} assignments={quizAssignments} allRecords={allRecords} busy={busy} onRecordAttempt={onRecordAttempt} />
+      <RecognitionSongListEditor record={record} assignments={quizAssignments} allRecords={allRecords} busy={busy} onRecordAttempt={onRecordAttempt} onOpenSongDetail={onOpenSongDetail} />
 
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-black/25 p-4">
         <button type="button" disabled={busy} onClick={onDelete} className="inline-flex items-center gap-2 text-sm font-bold text-red-300/70 hover:text-red-200 disabled:opacity-40"><Trash2 className="h-4 w-4" />删除这场路演</button>
@@ -350,12 +366,13 @@ const RECOGNITION_LEVEL_STYLES: Record<QuizLevel, string> = {
   hell: 'border-rose-300/20 bg-rose-400/[.045] text-rose-100',
 };
 
-const RecognitionSongListEditor = ({ record, assignments, allRecords, busy, onRecordAttempt }: {
+const RecognitionSongListEditor = ({ record, assignments, allRecords, busy, onRecordAttempt, onOpenSongDetail }: {
   record: RoadshowRecord;
   assignments: QuizAssignments;
   allRecords: RoadshowRecord[];
   busy: boolean;
   onRecordAttempt: (record: RoadshowRecord) => void;
+  onOpenSongDetail: (song: RoadshowSong) => void;
 }) => {
   const songs = record.recognitionSongs;
   const [participating, setParticipating] = useState(false);
@@ -499,7 +516,7 @@ const RecognitionSongListEditor = ({ record, assignments, allRecords, busy, onRe
                 const appearances = findSongAppearances(allRecords, song, record.id);
                 const attemptCount = countRecognitionAttemptsForSong(record, song);
                 const selected = selectedSongIds.includes(song.id);
-                return <button key={song.id} type="button" aria-pressed={selected} disabled={!participating || (!selected && selectedSongIds.length === 4)} onClick={() => toggleSong(song)} className={`group flex w-full items-center gap-2 rounded-xl border p-2.5 text-left transition disabled:cursor-default ${selected ? 'border-orange-200/50 bg-orange-300/15 shadow-[0_0_20px_rgba(251,146,60,.08)]' : 'border-white/10 bg-black/25 enabled:hover:border-white/25'}`}><span className="min-w-0 flex-1"><strong className="block truncate text-xs text-white/90">{song.title}</strong><small className="block truncate text-[10px] text-white/35">{song.artist || '未填写歌手'}{appearances.length ? ` · 曾用于：${appearances.join('、')}` : ''}</small></span>{attemptCount > 0 && <span className="shrink-0 rounded-full border border-white/10 bg-white/[.055] px-2 py-1 text-[10px] font-black tabular-nums text-white/45">{attemptCount}次</span>}{selected && <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-orange-300 text-[10px] font-black text-black">{selectedSongIds.indexOf(song.id) + 1}</span>}</button>;
+                return <button key={song.id} type="button" aria-label={participating ? `选择${song.title}` : `查看${song.title}详情和谱子`} aria-pressed={participating ? selected : undefined} disabled={participating && !selected && selectedSongIds.length === 4} onClick={() => participating ? toggleSong(song) : onOpenSongDetail(song)} className={`group flex w-full items-center gap-2 rounded-xl border p-2.5 text-left transition disabled:cursor-default ${selected ? 'border-orange-200/50 bg-orange-300/15 shadow-[0_0_20px_rgba(251,146,60,.08)]' : 'border-white/10 bg-black/25 enabled:hover:border-white/25'}`}><span className="min-w-0 flex-1"><strong className="block truncate text-xs text-white/90">{song.title}</strong><small className="block truncate text-[10px] text-white/35">{song.artist || '未填写歌手'}{appearances.length ? ` · 曾用于：${appearances.join('、')}` : ''}</small></span>{attemptCount > 0 && <span className="shrink-0 rounded-full border border-white/10 bg-white/[.055] px-2 py-1 text-[10px] font-black tabular-nums text-white/45">{attemptCount}次</span>}{selected && <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-orange-300 text-[10px] font-black text-black">{selectedSongIds.indexOf(song.id) + 1}</span>}</button>;
               })}
               {!groups[level.id].length && <p className="py-5 text-center text-[10px] text-white/20">暂无歌曲</p>}
             </div>

@@ -15,14 +15,24 @@ const cloudPage = 'cloud://jieyou.bucket/song-request-scores/aaaaaaaaaaaaaaaaaaa
 const cloudUrl = 'https://example.test/temporary-score.jpg';
 const localPage = 'data:image/jpeg;base64,/9j/2Q==';
 
+test('没有上传谱子时显示页列表为空且不崩溃', async () => {
+  const { getSongScoreDisplayPages } = await import(moduleUrl.href);
+
+  assert.deepEqual(getSongScoreDisplayPages(null), []);
+  assert.deepEqual(getSongScoreDisplayPages(undefined), []);
+});
+
 test('旧 Base64 谱页会保留为待迁移数据，云文件引用视为已同步', async () => {
-  const { buildSongScore, isPendingSongScore, parseSongScores } = await import(moduleUrl.href);
+  const { buildSongScore, hasCloudSongScore, isPendingSongScore, parseSongScores } = await import(moduleUrl.href);
 
   const legacy = buildSongScore(song, [localPage]);
   const synced = buildSongScore(song, [cloudPage]);
 
   assert.equal(isPendingSongScore(legacy), true);
   assert.equal(isPendingSongScore(synced), false);
+  assert.equal(hasCloudSongScore(legacy), false);
+  assert.equal(hasCloudSongScore(synced), true);
+  assert.equal(hasCloudSongScore(null), false);
   assert.equal(parseSongScores([legacy])[0].pages[0], localPage);
   assert.equal(parseSongScores([synced])[0].pages[0], cloudPage);
 });

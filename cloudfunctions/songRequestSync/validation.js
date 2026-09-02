@@ -13,6 +13,7 @@ const ACTIONS = new Set([
   'songRecords:saveBatch',
   'songRecords:delete',
   'songScores:pull',
+  'songScores:uploadPage',
   'songScores:save',
   'songScores:delete',
   'artistSettings:pull',
@@ -24,8 +25,10 @@ const ACTIONS = new Set([
 ]);
 
 const ARTIST_SETTINGS_REQUEST_LIMIT = 5 * 1024 * 1024;
+const SONG_SCORE_UPLOAD_REQUEST_LIMIT = 4_700_000;
 const DEFAULT_REQUEST_LIMIT = 256 * 1024;
 const ARTIST_AVATAR_LIMIT = 1024 * 1024;
+const SONG_SCORE_PAGE_BYTES_LIMIT = 3_500_000;
 const SONG_SCORE_PAGE_LIMIT = 4;
 const ROADSHOW_LOCATIONS = new Set(['医大（武鸣）', '医大（本部）', '南湖']);
 
@@ -215,9 +218,22 @@ const validateSongScore = (value) => {
   return score;
 };
 
+const validateSongScorePage = (value) => {
+  if (typeof value !== 'string') throw new Error('INVALID_SONG_SCORE');
+  const match = /^data:image\/jpeg;base64,([A-Za-z0-9+/]+={0,2})$/.exec(value);
+  if (!match) throw new Error('INVALID_SONG_SCORE');
+  const bytes = Buffer.from(match[1], 'base64');
+  if (!bytes.length || bytes.length > SONG_SCORE_PAGE_BYTES_LIMIT || !validImageMagic('jpeg', bytes)) {
+    throw new Error('INVALID_SONG_SCORE');
+  }
+  return bytes;
+};
+
 function validateRequest(event) {
   if (!event || typeof event !== 'object' || !ACTIONS.has(event.action)) throw new Error('INVALID_ACTION');
-  const requestLimit = event.action === 'artistSettings:push' ? ARTIST_SETTINGS_REQUEST_LIMIT : DEFAULT_REQUEST_LIMIT;
+  const requestLimit = event.action === 'artistSettings:push'
+    ? ARTIST_SETTINGS_REQUEST_LIMIT
+    : event.action === 'songScores:uploadPage' ? SONG_SCORE_UPLOAD_REQUEST_LIMIT : DEFAULT_REQUEST_LIMIT;
   if (Buffer.byteLength(JSON.stringify(event), 'utf8') > requestLimit) throw new Error('PAYLOAD_TOO_LARGE');
 
   if (event.action === 'votes:pull' || event.action === 'roadshows:publicQuizRanking') {
@@ -266,6 +282,13 @@ function validateRequest(event) {
     const records = event.records.map(validateSongRecord);
     if (records.some((record) => record.kind !== 'practice') || new Set(records.map((record) => record.id)).size !== records.length) throw new Error('INVALID_SONG_RECORD');
     return { ...base, records };
+  }
+  if (event.action === 'songScores:uploadPage') {
+    return {
+      ...base,
+      songId: cleanText(event.songId, 100, 'INVALID_SONG_SCORE'),
+      pageContent: validateSongScorePage(event.pageDataUrl),
+    };
   }
   if (event.action === 'songScores:save') return { ...base, score: validateSongScore(event.score) };
   if (event.action === 'songScores:delete') return { ...base, songId: cleanText(event.songId, 100, 'INVALID_SONG_SCORE') };

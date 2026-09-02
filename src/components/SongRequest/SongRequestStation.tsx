@@ -29,7 +29,7 @@ import PopularSongBarrage from './PopularSongBarrage';
 import { createInitialBarragePreferences, setBarragePreference } from '../StarrySky/barragePreferences';
 import { calculateAvatarCropLayout } from './avatarCrop';
 import {
-  isCloudScorePage, isPendingSongScore, loadSongScoreCache, parseSongScores, saveSongScoreCache,
+  hasCloudSongScore, isCloudScorePage, isPendingSongScore, loadSongScoreCache, parseSongScores, saveSongScoreCache,
   type SongScore,
 } from './songScores';
 import {
@@ -121,12 +121,11 @@ const getDefaultAvatarAdjustment = (avatar: { position: string; scale: number })
   return { x, y, scale: avatar.scale, rotation: 0 };
 };
 
-const ArtistAvatarImage = ({ avatar, adjustment, alt = '', loading, fetchPriority }: {
+const ArtistAvatarImage = ({ avatar, adjustment, alt = '', loading }: {
   avatar: ArtistAvatar;
   adjustment: AvatarAdjustment;
   alt?: string;
   loading?: 'eager' | 'lazy';
-  fetchPriority?: 'high' | 'low' | 'auto';
 }) => {
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
   useEffect(() => setNaturalSize(null), [avatar.src]);
@@ -138,7 +137,6 @@ const ArtistAvatarImage = ({ avatar, adjustment, alt = '', loading, fetchPriorit
     src={avatar.src}
     alt={alt}
     loading={loading}
-    fetchPriority={fetchPriority}
     decoding="async"
     onLoad={(event) => {
       const image = event.currentTarget;
@@ -835,6 +833,10 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
       return;
     }
     try { saveSongScoreCache(window.localStorage, songRecordSession.alias, updated); } catch {}
+    if (!pendingScore && !hasCloudSongScore(previous)) {
+      setScoreSyncStatus('已从本机删除');
+      return;
+    }
     setScoreBusy(true);
     setScoreSyncStatus('正在同步谱子到云端…');
     const retainedFileIds = new Set(pendingScore?.pages.filter(isCloudScorePage) ?? []);
@@ -1904,7 +1906,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                         const cardContent = <>
                           <span className="relative grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-full border border-rose-200/20 bg-rose-300/10">
                             {avatar && avatarStyle ? (
-                              <ArtistAvatarImage avatar={avatar} adjustment={avatarStyle} loading={index < 8 ? 'eager' : 'lazy'} fetchPriority={index < 8 ? 'high' : 'auto'} />
+                              <ArtistAvatarImage avatar={avatar} adjustment={avatarStyle} loading={index < 8 ? 'eager' : 'lazy'} />
                             ) : <Mic2 className="h-5 w-5 text-rose-200" />}
                           </span>
                           <span className="min-w-0 flex-1"><strong className="block truncate">{artist}</strong><small className="text-white/35">{songs.length} 首</small></span>

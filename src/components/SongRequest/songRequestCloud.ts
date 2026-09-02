@@ -119,20 +119,6 @@ export const deleteSongRecord = async (credentials: Credentials, id: string): Pr
   await callSync<Record<string, never>>({ action: 'songRecords:delete', ...credentials, id });
 };
 
-const hashSongScorePathSegment = async (value: string): Promise<string> => {
-  const bytes = new TextEncoder().encode(value.trim().toLocaleLowerCase());
-  const digest = await crypto.subtle.digest('SHA-256', bytes);
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
-};
-
-const dataUrlToBlob = (dataUrl: string): Blob => {
-  const match = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/]+={0,2})$/.exec(dataUrl);
-  if (!match) throw new Error('INVALID_SONG_SCORE');
-  const binary = atob(match[2]);
-  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
-  return new Blob([bytes], { type: match[1] });
-};
-
 const getScorePageUrls = async (pages: string[]): Promise<string[]> => {
   if (!tcbApp) throw new Error('CLOUD_UNAVAILABLE');
   const cloudPages = [...new Set(pages.filter(isCloudScorePage))];
@@ -181,8 +167,6 @@ export const syncSongScoreToCloud = async (
 ): Promise<SongScore> => {
   if (!tcbApp) throw new Error('CLOUD_UNAVAILABLE');
   await ensureSignIn();
-  const workspaceHash = await hashSongScorePathSegment(credentials.alias);
-  const songHash = await hashSongScorePathSegment(score.songId);
   const uploadedFileIds: string[] = [];
   try {
     const pages: string[] = [];
@@ -191,19 +175,21 @@ export const syncSongScoreToCloud = async (
         pages.push(page);
         continue;
       }
-      const pageId = crypto.randomUUID();
-      const cloudPath = `song-request-scores/${workspaceHash}/${songHash}/${pageId}.jpg`;
-      const uploaded = await tcbApp.uploadFile({ cloudPath, filePath: dataUrlToBlob(page) });
-      if (!uploaded?.fileID) throw new Error('SCORE_UPLOAD_FAILED');
-      uploadedFileIds.push(uploaded.fileID);
-      pages.push(uploaded.fileID);
+      const uploaded = await callSync<{ fileId: string }>({
+        action: 'songScores:uploadPage', ...credentials, songId: score.songId, pageDataUrl: page,
+      });
+      if (!uploaded.fileId || !isCloudScorePage(uploaded.fileId)) throw new Error('SCORE_UPLOAD_FAILED');
+      uploadedFileIds.push(uploaded.fileId);
+      pages.push(uploaded.fileId);
     }
     const uploadedScore: SongScore = { ...score, pages, pendingSync: false };
-    const stored = (await callSync<{ score: StoredSongScore }>({
+    const saved = (await callSync<{ score: SongScore }>({
       action: 'songScores:save', ...credentials, score: toStoredSongScore(uploadedScore),
     })).score;
+    const synced = parseSongScores([saved])[0];
+    if (!synced) throw new Error('INVALID_SONG_SCORE');
     if (retiredFileIds.length) void deleteSongScoreFiles(retiredFileIds).catch(() => undefined);
-    return withResolvedSongScorePages(stored, await getScorePageUrls(stored.pages));
+    return synced;
   } catch (error) {
     if (uploadedFileIds.length) await deleteSongScoreFiles(uploadedFileIds).catch(() => undefined);
     throw error;

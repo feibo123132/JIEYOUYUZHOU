@@ -75,11 +75,15 @@ export const buildSongScore = (song: Song, pages: string[]): SongScore => ({
 });
 
 export const getSongScoreDisplayPages = (score: SongScore | null | undefined): string[] => (
-  score?.pageUrls?.length === score.pages.length ? score.pageUrls : score?.pages ?? []
+  score && score.pageUrls?.length === score.pages.length ? score.pageUrls : score?.pages ?? []
 );
 
 export const isPendingSongScore = (score: SongScore): boolean => (
   score.pendingSync === true || score.pages.some((page) => page.startsWith('data:image/'))
+);
+
+export const hasCloudSongScore = (score: SongScore | null | undefined): boolean => (
+  Boolean(score?.pages.some(isCloudScorePage))
 );
 
 export const withResolvedSongScorePages = (score: SongScore, pageUrls: string[]): SongScore => ({
