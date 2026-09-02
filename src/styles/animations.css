@@ -96,23 +96,40 @@
   }
 }
 
-/* 自定义滚动条 */
+/* 自定义滚动条：平时隐身，hover/滚动时显形 */
 ::-webkit-scrollbar {
-  width: 8px;
+  width: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.1);
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.3);
-  border-radius: 4px;
+  background: transparent;
+  border-radius: 999px;
+  transition: background 0.25s ease;
+}
+
+:hover::-webkit-scrollbar-thumb,
+:active::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.22);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.42);
 }
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+*:hover {
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+}
+
 @keyframes breathSlow {
   0% { transform: scale(0.94); }
   50% { transform: scale(1.08); }

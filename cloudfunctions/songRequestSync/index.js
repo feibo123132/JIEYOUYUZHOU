@@ -169,7 +169,8 @@ function createHandler(store) {
       }
       if (request.action === 'votes:increment') {
         const owner = await store.getWorkspace(workspaceId(FEATURED_SONGS_OWNER_ALIAS));
-        return { ok: true, count: await store.incrementVote(request.songId, latestRoadshowLocation(owner)) };
+        const location = ROADSHOW_LOCATION_KEYS[request.location] ? request.location : latestRoadshowLocation(owner);
+        return { ok: true, count: await store.incrementVote(request.songId, location), location: location || null };
       }
 
       if (request.action === 'roadshows:register') {
@@ -330,17 +331,23 @@ exports.main = async (event) => {
       async incrementVote(songId, location) {
         const ref = votes.doc(songId);
         const locationKey = location ? ROADSHOW_LOCATION_KEYS[location] : null;
-        const increment = { count: command.inc(1), updatedAt: new Date().toISOString() };
-        if (locationKey) increment[`locationCounts.${locationKey}`] = command.inc(1);
+        let data = {};
         try {
-          await ref.update(increment);
-        } catch (error) {
-          if (!/not found|does not exist/i.test(String(error?.message))) throw error;
-          await ref.set({ count: 1, ...(locationKey ? { locationCounts: { [locationKey]: 1 } } : {}), updatedAt: new Date().toISOString() });
-        }
-        const result = await ref.get();
-        const value = Array.isArray(result.data) ? result.data[0] : result.data;
-        return Number(value?.count) || 1;
+          const doc = await ref.get();
+          data = Array.isArray(doc.data) ? (doc.data[0] ?? {}) : (doc.data ?? {});
+        } catch { /* 文档可能不存在，忽略错误 */ }
+        const currentCount = Number(data.count) || 0;
+        const currentLocationCounts = data.locationCounts || {};
+        const newCount = currentCount + 1;
+        const newLocationCounts = locationKey
+          ? { ...currentLocationCounts, [locationKey]: (Number(currentLocationCounts[locationKey]) || 0) + 1 }
+          : currentLocationCounts;
+        await ref.set({
+          count: newCount,
+          ...(Object.keys(newLocationCounts).length > 0 ? { locationCounts: newLocationCounts } : {}),
+          updatedAt: new Date().toISOString(),
+        });
+        return newCount;
       },
       async finishVotesAtomically(ownerWorkspaceId) {
         const pendingSnapshot = await readVoteCounts();

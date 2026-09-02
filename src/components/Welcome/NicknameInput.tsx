@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Sparkles, User } from 'lucide-react';
 import type { ThemeConfig } from '../../themes/themeConfig';
+import { readSyncedNickname } from './nicknameSync';
 
 interface NicknameInputProps {
   theme: ThemeConfig;
@@ -10,7 +11,11 @@ interface NicknameInputProps {
 }
 
 const NicknameInput: React.FC<NicknameInputProps> = ({ theme, onSubmit, isLoading = false, initialNickname = '' }) => {
-  const [nickname, setNickname] = useState(initialNickname);
+  const [nickname, setNickname] = useState(() => (
+    typeof window === 'undefined'
+      ? initialNickname
+      : readSyncedNickname(window.localStorage) || initialNickname
+  ));
   const [error, setError] = useState('');
   const isLife = theme.id === 'life';
 

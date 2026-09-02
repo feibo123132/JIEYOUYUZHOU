@@ -9,6 +9,8 @@
 - 三层数据：内置 SONGS（songCatalog.ts，只读）/ localStorage 可编辑目录（EditableCatalog v7）/ 云端 artistSettings（站主 2421415030@qq.com 通过 requireCatalogManager 管理）。
 - 练习记录：SongRecord 联合类型，`kind: 'practice'` 含 matchScore(70–100) 整数；`averageMatchScore` 返回保留 1 位小数的均值或 null。
 - 排序/同步路径：`commitCatalog`（本地持久化）→ `commitSongOrder`（权限校验+持久化+`syncCurrentArtistSettings` 云同步）。
+- 点歌/投票系统：云函数 `songRequestSync`，votes 集合按 songId 为文档：`count`（总榜）+ `locationCounts.{medicalWuming|medicalMain|nanhu}`（分地点）；`votes:pull` 按 request.location 读对应桶，无地点读 count；`votes:finishAll`（唱完）把待唱累加到站主 workspace 的 `sungVoteCounts`/`sungVoteCountsByLocation`。归类决策**后端权威**：优先 request.location（validation 已放行），否则按 `latestRoadshowLocation(owner)` 取站主最近路演地点，无路演则只进总榜。`incrementCloudVote` 返回 `{ count, location }` 供前端提示去向。
+- 练习徽章：`songPracticeStats` memo 聚合 `{count, score}`；显示开关持久化在 `localStorage` `jieyou_show_practice_badges`。
 
 ## 用户偏好
 - 中文输出，结构化（标题/视角/正文/引用/小结），精良 HTML 排版与考究动效，禁用 Inter 字体。

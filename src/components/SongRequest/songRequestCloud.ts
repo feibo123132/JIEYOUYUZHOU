@@ -34,9 +34,9 @@ export const pullCloudVoteState = async (location?: RoadshowLocation): Promise<C
 
 export const pullCloudVotes = async (location?: RoadshowLocation): Promise<VoteCounts> => (await pullCloudVoteState(location)).counts;
 
-export const incrementCloudVote = async (songId: string): Promise<number> => (
-  await callSync<{ count: number }>({ action: 'votes:increment', songId })
-).count;
+export const incrementCloudVote = async (songId: string, location?: RoadshowLocation): Promise<{ count: number; location: RoadshowLocation | null }> => (
+  await callSync<{ count: number; location: RoadshowLocation | null }>({ action: 'votes:increment', songId, ...(location ? { location } : {}) })
+);
 
 export const finishCloudVotes = async (credentials: Credentials): Promise<CloudVoteState> => {
   const result = await callSync<CloudVoteState>({ action: 'votes:finishAll', ...credentials });

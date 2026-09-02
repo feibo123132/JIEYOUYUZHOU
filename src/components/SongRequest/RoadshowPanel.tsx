@@ -4,6 +4,8 @@ import { SONGS } from './songCatalog';
 import type { Song } from './songCatalog';
 import DailyPracticePanel from './DailyPracticePanel';
 import {
+  buildQuizParticipantRanking,
+  countRecognitionAttemptsForSong,
   findSongAppearances,
   createRecognitionAttempt,
   groupRoadshowRecognitionSongs,
@@ -12,6 +14,7 @@ import {
   ROADSHOW_CACHE_KEY,
   ROADSHOW_LOCATIONS,
   ROADSHOW_SESSION_KEY,
+  preserveRecognitionParticipantNames,
   upsertRecognitionAttempt,
   type RoadshowRecord,
   type RoadshowSong,
@@ -30,6 +33,7 @@ import {
   type SongRecord,
 } from './songRecords';
 import { QUIZ_LEVELS, type QuizAssignments, type QuizLevel } from './songQuizLibrary';
+import { saveSyncedNickname } from '../Welcome/nicknameSync';
 
 interface Credentials {
   alias: string;
@@ -148,12 +152,13 @@ const RoadshowPanel = ({
     setEditing(candidate);
     setBusy(true);
     try {
-      const saved = await saveRoadshow(credentials, {
+      const serverSaved = await saveRoadshow(credentials, {
         ...candidate,
         title: candidate.title.trim(),
         location: candidate.location?.trim() ?? '',
         weather: candidate.weather?.trim() ?? '',
       });
+      const saved = preserveRecognitionParticipantNames(candidate, serverSaved);
       const next = [...records];
       const index = next.findIndex((item) => item.id === saved.id);
       if (index >= 0) next[index] = saved; else next.push(saved);
@@ -368,6 +373,7 @@ const RecognitionSongListEditor = ({ record, assignments, allRecords, busy, onRe
   });
   const hasAnswer = (songId: string) => Object.prototype.hasOwnProperty.call(answers, songId);
   const roundComplete = selectedSongIds.length === 4 && selectedSongIds.every(hasAnswer);
+  const participants = buildQuizParticipantRanking([record]);
 
   useEffect(() => {
     setParticipating(false);
@@ -401,6 +407,7 @@ const RecognitionSongListEditor = ({ record, assignments, allRecords, busy, onRe
   const startParticipation = () => {
     const name = participantInput.trim();
     if (!name) return;
+    if (typeof window !== 'undefined') saveSyncedNickname(window.localStorage, name);
     setParticipantName(name);
     setParticipating(true);
     setJoining(false);
@@ -448,6 +455,12 @@ const RecognitionSongListEditor = ({ record, assignments, allRecords, busy, onRe
           </button>
         )}
       </div>
+      {participants.length > 0 && (
+        <div className="mt-3 flex items-center gap-2 overflow-x-auto text-[10px] text-white/40">
+          <span className="shrink-0 font-bold text-white/30">已参与 {participants.length}</span>
+          {participants.map((participant) => <span key={participant.participantName.toLocaleLowerCase()} title={`${participant.participantName}：答题 ${participant.answerCount} 次，正确率 ${participant.accuracy}%`} className="shrink-0 rounded-full border border-white/10 bg-white/[.04] px-2.5 py-1"><b className="font-bold text-white/65">{participant.participantName}</b><small className="ml-1 text-white/30">· {participant.answerCount}题</small></span>)}
+        </div>
+      )}
       {participating && (
         <section className="mt-5 rounded-2xl border border-orange-200/15 bg-[radial-gradient(circle_at_top_left,rgba(251,146,60,.12),transparent_45%),rgba(0,0,0,.28)] p-4 sm:p-5">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -484,8 +497,9 @@ const RecognitionSongListEditor = ({ record, assignments, allRecords, busy, onRe
             <div className="space-y-2">
               {paginated.items.map((song) => {
                 const appearances = findSongAppearances(allRecords, song, record.id);
+                const attemptCount = countRecognitionAttemptsForSong(record, song);
                 const selected = selectedSongIds.includes(song.id);
-                return <button key={song.id} type="button" aria-pressed={selected} disabled={!participating || (!selected && selectedSongIds.length === 4)} onClick={() => toggleSong(song)} className={`group flex w-full items-center gap-2 rounded-xl border p-2.5 text-left transition disabled:cursor-default ${selected ? 'border-orange-200/50 bg-orange-300/15 shadow-[0_0_20px_rgba(251,146,60,.08)]' : 'border-white/10 bg-black/25 enabled:hover:border-white/25'}`}><span className="min-w-0 flex-1"><strong className="block truncate text-xs text-white/90">{song.title}</strong><small className="block truncate text-[10px] text-white/35">{song.artist || '未填写歌手'}{appearances.length ? ` · 曾用于：${appearances.join('、')}` : ''}</small></span>{selected && <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-orange-300 text-[10px] font-black text-black">{selectedSongIds.indexOf(song.id) + 1}</span>}</button>;
+                return <button key={song.id} type="button" aria-pressed={selected} disabled={!participating || (!selected && selectedSongIds.length === 4)} onClick={() => toggleSong(song)} className={`group flex w-full items-center gap-2 rounded-xl border p-2.5 text-left transition disabled:cursor-default ${selected ? 'border-orange-200/50 bg-orange-300/15 shadow-[0_0_20px_rgba(251,146,60,.08)]' : 'border-white/10 bg-black/25 enabled:hover:border-white/25'}`}><span className="min-w-0 flex-1"><strong className="block truncate text-xs text-white/90">{song.title}</strong><small className="block truncate text-[10px] text-white/35">{song.artist || '未填写歌手'}{appearances.length ? ` · 曾用于：${appearances.join('、')}` : ''}</small></span>{attemptCount > 0 && <span className="shrink-0 rounded-full border border-white/10 bg-white/[.055] px-2 py-1 text-[10px] font-black tabular-nums text-white/45">{attemptCount}次</span>}{selected && <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-orange-300 text-[10px] font-black text-black">{selectedSongIds.indexOf(song.id) + 1}</span>}</button>;
               })}
               {!groups[level.id].length && <p className="py-5 text-center text-[10px] text-white/20">暂无歌曲</p>}
             </div>

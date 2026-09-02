@@ -1322,6 +1322,62 @@ test('路演识曲作答记录参与者且公开榜单数据只接收有效统�
   ]), [{ participantName: '小安', score: 2, answerCount: 3, correctCount: 2, accuracy: 66.7 }])
 })
 
+test('歌曲右侧只显示当前路演内的累计作答次数', async () => {
+  const { countRecognitionAttemptsForSong } = await loadRoadshowModule()
+  const song = { id: 'catalog:a', catalogId: 'a', title: '晴天', artist: '周杰伦', source: 'catalog' }
+  const currentRoadshow = {
+    id: 'current', title: '本次路演', date: '2026-09-02', updatedAt: '2026-09-02T12:00:00.000Z',
+    performanceSongs: [], recognitionSongs: [song], recognitionAttempts: [
+      { id: 'attempt-1', catalogId: 'a', title: '晴天', artist: '周杰伦', correct: true, answeredAt: '2026-09-02T12:00:00.000Z' },
+      { id: 'attempt-2', catalogId: 'a', title: '晴天', artist: '周杰伦', correct: false, answeredAt: '2026-09-02T12:05:00.000Z' },
+      { id: 'attempt-3', catalogId: 'b', title: '稻香', artist: '周杰伦', correct: true, answeredAt: '2026-09-02T12:10:00.000Z' },
+    ],
+  }
+  const previousRoadshow = {
+    ...currentRoadshow,
+    id: 'previous',
+    recognitionAttempts: [{ id: 'old', catalogId: 'a', title: '晴天', artist: '周杰伦', correct: true, answeredAt: '2026-09-01T12:00:00.000Z' }],
+  }
+
+  assert.equal(countRecognitionAttemptsForSong(currentRoadshow, song), 2)
+  assert.equal(countRecognitionAttemptsForSong(previousRoadshow, song), 1)
+
+  const source = readFileSync(roadshowPanelUrl, 'utf8')
+  const recognitionEditor = source.slice(source.indexOf('const RecognitionSongListEditor'))
+  assert.match(recognitionEditor, /countRecognitionAttemptsForSong\(record, song\)/)
+  assert.match(recognitionEditor, /\{attemptCount\}次/)
+})
+
+test('本地可汇总实名参与者并保留旧云函数响应中丢失的用户名', async () => {
+  const { buildQuizParticipantRanking, preserveRecognitionParticipantNames } = await loadRoadshowModule()
+  const attempts = [
+    { id: 'a-1', participantName: 'JIEYOU', title: '晴天', artist: '周杰伦', correct: true, answeredAt: '2026-09-02T12:00:00.000Z' },
+    { id: 'a-2', participantName: 'jieyou', title: '成都', artist: '赵雷', correct: false, answeredAt: '2026-09-02T12:01:00.000Z' },
+    { id: 'a-3', participantName: '小安', title: '情歌', artist: '梁静茹', correct: true, answeredAt: '2026-09-02T12:02:00.000Z' },
+  ]
+  const candidate = { id: 'current', title: '本次路演', date: '2026-09-02', updatedAt: '', performanceSongs: [], recognitionSongs: [], recognitionAttempts: attempts }
+  const serverSaved = { ...candidate, recognitionAttempts: attempts.map(({ participantName: _participantName, ...attempt }) => attempt) }
+
+  const preserved = preserveRecognitionParticipantNames(candidate, serverSaved)
+  assert.deepEqual(preserved.recognitionAttempts?.map((attempt) => attempt.participantName), ['JIEYOU', 'jieyou', '小安'])
+  assert.deepEqual(buildQuizParticipantRanking([preserved]), [
+    { participantName: '小安', score: 1, answerCount: 1, correctCount: 1, accuracy: 100 },
+    { participantName: 'JIEYOU', score: 1, answerCount: 2, correctCount: 1, accuracy: 50 },
+  ])
+})
+
+test('听歌识曲紧凑展示本场参与者且用户榜支持本地记录兜底', () => {
+  const roadshowPanel = readFileSync(roadshowPanelUrl, 'utf8')
+  const station = readFileSync(new URL('../src/components/SongRequest/SongRequestStation.tsx', import.meta.url), 'utf8')
+  const recognitionEditor = roadshowPanel.slice(roadshowPanel.indexOf('const RecognitionSongListEditor'))
+
+  assert.match(recognitionEditor, /buildQuizParticipantRanking\(\[record\]\)/)
+  assert.match(recognitionEditor, /已参与 \{participants\.length\}/)
+  assert.match(recognitionEditor, /participant\.participantName/)
+  assert.match(station, /buildQuizParticipantRanking\(localRoadshows\)/)
+  assert.match(station, /cloudParticipants\.length \? cloudParticipants : localParticipants/)
+})
+
 test('路演识曲面板以参与模式选择四首并在固定判定区记录对错', () => {
   const source = readFileSync(roadshowPanelUrl, 'utf8')
   const recognitionEditor = source.slice(source.indexOf('const RecognitionSongListEditor'))

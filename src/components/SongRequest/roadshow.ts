@@ -212,6 +212,60 @@ export const upsertRecognitionAttempt = (
   return { ...record, recognitionAttempts: attempts };
 };
 
+export const countRecognitionAttemptsForSong = (
+  record: Pick<RoadshowRecord, 'recognitionAttempts'>,
+  song: Pick<RoadshowSong, 'catalogId' | 'title' | 'artist'>,
+): number => (record.recognitionAttempts ?? []).filter((attempt) => {
+  if (song.catalogId && attempt.catalogId) return song.catalogId === attempt.catalogId;
+  return attempt.title === song.title && attempt.artist === song.artist;
+}).length;
+
+export const preserveRecognitionParticipantNames = (
+  candidate: RoadshowRecord,
+  saved: RoadshowRecord,
+): RoadshowRecord => {
+  const participantNames = new Map(
+    (candidate.recognitionAttempts ?? [])
+      .filter((attempt) => Boolean(attempt.participantName))
+      .map((attempt) => [attempt.id, attempt.participantName] as const),
+  );
+  const recognitionAttempts = (saved.recognitionAttempts ?? candidate.recognitionAttempts ?? []).map((attempt) => {
+    const participantName = participantNames.get(attempt.id);
+    return participantName ? { ...attempt, participantName } : attempt;
+  });
+  return { ...saved, recognitionAttempts };
+};
+
+export const buildQuizParticipantRanking = (
+  records: Pick<RoadshowRecord, 'recognitionAttempts'>[],
+): PublicQuizParticipantRankingItem[] => {
+  const attempts = records.flatMap((record) => record.recognitionAttempts ?? [])
+    .filter((attempt) => Boolean(attempt.participantName?.trim()))
+    .sort((left, right) => left.answeredAt.localeCompare(right.answeredAt) || left.id.localeCompare(right.id));
+  const groups = new Map<string, Omit<PublicQuizParticipantRankingItem, 'accuracy'>>();
+  for (const attempt of attempts) {
+    const participantName = attempt.participantName!.trim();
+    const key = participantName.toLocaleLowerCase();
+    const current = groups.get(key) ?? { participantName, score: 0, answerCount: 0, correctCount: 0 };
+    current.answerCount += 1;
+    if (attempt.correct) {
+      current.correctCount += 1;
+      current.score += 1;
+    }
+    groups.set(key, current);
+  }
+  return [...groups.values()].map((entry) => ({
+    ...entry,
+    accuracy: Math.round((entry.correctCount / entry.answerCount) * 1000) / 10,
+  })).sort((left, right) => (
+    right.score - left.score
+    || right.accuracy - left.accuracy
+    || right.answerCount - left.answerCount
+    || left.participantName.localeCompare(right.participantName, 'zh-CN', { sensitivity: 'base' })
+    || left.participantName.localeCompare(right.participantName, 'zh-CN')
+  )).slice(0, 500);
+};
+
 export const parsePublicQuizRanking = (value: unknown): PublicQuizRankingItem[] => {
   if (!Array.isArray(value)) return [];
   return value.filter((entry): entry is PublicQuizRankingItem => {
