@@ -28,6 +28,7 @@ function memoryStore() {
   const workspaces = new Map();
   const votes = new Map();
   const songRecords = new Map();
+  const locationKeys = { '医大（武鸣）': 'medicalWuming', '医大（本部）': 'medicalMain', '南湖': 'nanhu' };
   let artistSettings = null;
   return {
     workspaces,
@@ -42,20 +43,33 @@ function memoryStore() {
     setQuizLibraryAssignments: async (id, assignments, updatedAt) => {
       workspaces.set(id, { ...workspaces.get(id), quizLibraryAssignments: structuredClone(assignments), updatedAt });
     },
-    getVotes: async () => Object.fromEntries(votes),
-    incrementVote: async (songId) => {
-      const count = (votes.get(songId) ?? 0) + 1;
-      votes.set(songId, count);
-      return count;
+    getVotes: async (location) => Object.fromEntries([...votes.entries()].flatMap(([songId, vote]) => {
+      const count = location ? vote.locationCounts?.[locationKeys[location]] || 0 : vote.count;
+      return count > 0 ? [[songId, count]] : [];
+    })),
+    incrementVote: async (songId, location) => {
+      const current = votes.get(songId) || { count: 0, locationCounts: {} };
+      const key = locationKeys[location];
+      const next = {
+        count: current.count + 1,
+        locationCounts: { ...current.locationCounts, ...(key ? { [key]: (current.locationCounts[key] || 0) + 1 } : {}) },
+      };
+      votes.set(songId, next);
+      return next.count;
     },
     finishVotesAtomically: async (ownerWorkspaceId) => {
       const workspace = workspaces.get(ownerWorkspaceId);
       const sungCounts = { ...(workspace?.sungVoteCounts || {}) };
-      for (const [songId, count] of votes) {
-        if (count > 0) sungCounts[songId] = (sungCounts[songId] || 0) + count;
+      const sungVoteCountsByLocation = structuredClone(workspace?.sungVoteCountsByLocation || {});
+      for (const [songId, vote] of votes) {
+        if (vote.count > 0) sungCounts[songId] = (sungCounts[songId] || 0) + vote.count;
+        for (const [key, count] of Object.entries(vote.locationCounts || {})) {
+          sungVoteCountsByLocation[key] ||= {};
+          sungVoteCountsByLocation[key][songId] = (sungVoteCountsByLocation[key][songId] || 0) + count;
+        }
       }
       votes.clear();
-      workspaces.set(ownerWorkspaceId, { ...workspace, sungVoteCounts });
+      workspaces.set(ownerWorkspaceId, { ...workspace, sungVoteCounts: sungCounts, sungVoteCountsByLocation });
       return { counts: {}, sungCounts: structuredClone(sungCounts) };
     },
     getSongRecords: async (workspaceId) => [...songRecords.values()]
@@ -116,7 +130,9 @@ test('validates public and private actions without rejecting platform metadata',
   assert.deepEqual(validateRequest({ action: 'votes:finishAll', alias: '2421415030@qq.com', password: 'guitar-2026' }), {
     action: 'votes:finishAll', alias: '2421415030@qq.com', password: 'guitar-2026',
   });
-  assert.deepEqual(validateRequest({ action: 'roadshows:publicQuizRanking' }), { action: 'roadshows:publicQuizRanking' });
+  assert.deepEqual(validateRequest({ action: 'roadshows:publicQuizRanking', location: '医大（武鸣）' }), { action: 'roadshows:publicQuizRanking', location: '医大（武鸣）' });
+  assert.deepEqual(validateRequest({ action: 'votes:pull', location: '南湖' }), { action: 'votes:pull', location: '南湖' });
+  assert.throws(() => validateRequest({ action: 'votes:pull', location: '其他' }), /INVALID_LOCATION/);
   assert.throws(() => validateRequest({ action: 'roadshows:register', alias: '', password: '123456' }), /INVALID_ALIAS/);
   assert.throws(() => validateRequest({ action: 'roadshows:register', alias: 'JIEYOU', password: '123' }), /INVALID_PASSWORD/);
 })
@@ -282,6 +298,26 @@ test('识曲歌库仅允许固定管理员发布并可公开读取', async () =>
   assert.deepEqual(await handler({ action: 'quizLibrary:pull' }), { ok: true, assignments: { a: 'warmup', b: 'hell' } });
 });
 
+test('segments pending and sung vote counts by the owner latest roadshow location while preserving totals', async () => {
+  const store = memoryStore();
+  const { createHandler } = loadFunction();
+  const handler = createHandler(store);
+  const owner = { alias: '2421415030@qq.com', password: 'guitar-2026' };
+  const roadshow = (id, date, location) => ({
+    id, title: id, date, location, updatedAt: `${date}T12:00:00.000Z`, performanceSongs: [], recognitionSongs: [],
+  });
+
+  await handler({ action: 'roadshows:register', ...owner });
+  await handler({ action: 'roadshows:save', ...owner, record: roadshow('武鸣场', '2026-09-01', '医大（武鸣）') });
+  await handler({ action: 'votes:increment', songId: 'qing-tian' });
+  assert.deepEqual(await handler({ action: 'votes:pull', location: '医大（武鸣）' }), { ok: true, counts: { 'qing-tian': 1 }, sungCounts: {} });
+  assert.deepEqual(await handler({ action: 'votes:pull', location: '南湖' }), { ok: true, counts: {}, sungCounts: {} });
+  assert.deepEqual(await handler({ action: 'votes:pull' }), { ok: true, counts: { 'qing-tian': 1 }, sungCounts: {} });
+
+  await handler({ action: 'votes:finishAll', ...owner });
+  assert.deepEqual(await handler({ action: 'votes:pull', location: '医大（武鸣）' }), { ok: true, counts: {}, sungCounts: { 'qing-tian': 1 } });
+});
+
 test('识曲歌库校验四档、数量并合并清理后的重复歌曲编号', () => {
   const { validateRequest } = require(validationPath);
   const owner = { alias: '2421415030@qq.com', password: 'guitar-2026' };
@@ -372,8 +408,8 @@ test('publishes a quiz ranking from roadshow answers without exposing private wo
     id: attempt, catalogId: id, title, artist, correct, answeredAt: `2026-09-01T12:00:0${attempt.slice(-1)}.000Z`,
     ...(participantName ? { participantName } : {}),
   });
-  const roadshow = (id, recognitionAttempts) => ({
-    id, title: id, date: '2026-09-01', updatedAt: '2026-09-01T12:00:00.000Z',
+  const roadshow = (id, recognitionAttempts, location = '医大（武鸣）') => ({
+    id, title: id, date: '2026-09-01', location, updatedAt: '2026-09-01T12:00:00.000Z',
     performanceSongs: [], recognitionSongs: [], recognitionAttempts,
   });
 
@@ -386,7 +422,7 @@ test('publishes a quiz ranking from roadshow answers without exposing private wo
   ]) });
   await handler({ action: 'roadshows:save', ...second, record: roadshow('第二场', [
     song('a', '晴天', '周杰伦', true, 'attempt-4', 'alice'),
-  ]) });
+  ], '南湖') });
 
   const result = await handler({ action: 'roadshows:publicQuizRanking' });
   assert.deepEqual(result, { ok: true, ranking: [
@@ -397,6 +433,11 @@ test('publishes a quiz ranking from roadshow answers without exposing private wo
     { participantName: '小安', score: 1, answerCount: 2, correctCount: 1, accuracy: 50 },
   ] });
   assert.doesNotMatch(JSON.stringify(result), /alias|password|workspaceId|answeredAt/);
+  const wuming = await handler({ action: 'roadshows:publicQuizRanking', location: '医大（武鸣）' });
+  assert.deepEqual(wuming.ranking, [
+    { songId: 'b', songTitle: '江南', songArtist: '林俊杰', answerCount: 1, correctCount: 1, accuracy: 100 },
+    { songId: 'a', songTitle: '晴天', songArtist: '周杰伦', answerCount: 2, correctCount: 1, accuracy: 50 },
+  ]);
 })
 
 test('participant ranking applies every tie-break and caps results at 500', () => {

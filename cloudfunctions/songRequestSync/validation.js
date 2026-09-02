@@ -29,6 +29,13 @@ const ARTIST_AVATAR_LIMIT = 1024 * 1024;
 const SONG_SCORES_REQUEST_LIMIT = 5 * 1024 * 1024;
 const SONG_SCORE_PAGE_LIMIT = 4;
 const SONG_SCORE_PAGES_TOTAL_LIMIT = 4600000;
+const ROADSHOW_LOCATIONS = new Set(['医大（武鸣）', '医大（本部）', '南湖']);
+
+const optionalRankingLocation = (value) => {
+  if (value === undefined) return {};
+  if (!ROADSHOW_LOCATIONS.has(value)) throw new Error('INVALID_LOCATION');
+  return { location: value };
+};
 
 const cleanText = (value, max, error) => {
   if (typeof value !== 'string') throw new Error(error);
@@ -225,8 +232,10 @@ function validateRequest(event) {
     : DEFAULT_REQUEST_LIMIT;
   if (Buffer.byteLength(JSON.stringify(event), 'utf8') > requestLimit) throw new Error('PAYLOAD_TOO_LARGE');
 
-  if (event.action === 'votes:pull' || event.action === 'songRecords:publicRanking'
-    || event.action === 'roadshows:publicQuizRanking'
+  if (event.action === 'votes:pull' || event.action === 'roadshows:publicQuizRanking') {
+    return { action: event.action, ...optionalRankingLocation(event.location) };
+  }
+  if (event.action === 'songRecords:publicRanking'
     || event.action === 'artistSettings:pull' || event.action === 'featuredSongs:pull'
     || event.action === 'quizLibrary:pull') return { action: event.action };
   if (event.action === 'votes:increment') {

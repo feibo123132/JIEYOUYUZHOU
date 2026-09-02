@@ -1,6 +1,6 @@
 import { ensureSignIn, tcbApp } from '../../services/tcb';
 import type { VoteCounts } from './songRequest';
-import type { PublicQuizParticipantRankingItem, PublicQuizRankingItem, RoadshowRecord } from './roadshow';
+import type { PublicQuizParticipantRankingItem, PublicQuizRankingItem, RoadshowLocation, RoadshowRecord } from './roadshow';
 import type { PublicPracticeRankingItem, SongRecord } from './songRecords';
 import type { SongScore } from './songScores';
 import type { ArtistSettingsPayload, ArtistSettingsSnapshot } from './artistSettings';
@@ -27,12 +27,12 @@ const callSync = async <T>(data: Record<string, unknown>): Promise<CloudResult<T
   return result as CloudResult<T>;
 };
 
-export const pullCloudVoteState = async (): Promise<CloudVoteState> => {
-  const result = await callSync<{ counts: VoteCounts; sungCounts?: VoteCounts }>({ action: 'votes:pull' });
+export const pullCloudVoteState = async (location?: RoadshowLocation): Promise<CloudVoteState> => {
+  const result = await callSync<{ counts: VoteCounts; sungCounts?: VoteCounts }>({ action: 'votes:pull', ...(location ? { location } : {}) });
   return { counts: result.counts, sungCounts: result.sungCounts ?? {} };
 };
 
-export const pullCloudVotes = async (): Promise<VoteCounts> => (await pullCloudVoteState()).counts;
+export const pullCloudVotes = async (location?: RoadshowLocation): Promise<VoteCounts> => (await pullCloudVoteState(location)).counts;
 
 export const incrementCloudVote = async (songId: string): Promise<number> => (
   await callSync<{ count: number }>({ action: 'votes:increment', songId })
@@ -70,14 +70,14 @@ export const pullRoadshows = async (credentials: Credentials): Promise<RoadshowR
   await callSync<{ records: RoadshowRecord[] }>({ action: 'roadshows:pull', ...credentials })
 ).records;
 
-export const pullPublicQuizRanking = async (): Promise<{
+export const pullPublicQuizRanking = async (location?: RoadshowLocation): Promise<{
   ranking: PublicQuizRankingItem[];
   participantRanking: PublicQuizParticipantRankingItem[];
 }> => {
   const result = await callSync<{
     ranking?: PublicQuizRankingItem[];
     participantRanking?: PublicQuizParticipantRankingItem[];
-  }>({ action: 'roadshows:publicQuizRanking' });
+  }>({ action: 'roadshows:publicQuizRanking', ...(location ? { location } : {}) });
   return {
     ranking: Array.isArray(result.ranking) ? result.ranking : [],
     participantRanking: Array.isArray(result.participantRanking) ? result.participantRanking : [],

@@ -1,6 +1,11 @@
 import type { Song } from './songCatalog.ts';
 import type { QuizAssignments, QuizLevel } from './songQuizLibrary.ts';
 
+export const ROADSHOW_LOCATIONS = ['医大（武鸣）', '医大（本部）', '南湖'] as const;
+export const ROADSHOW_RANKING_LOCATIONS = ['总榜', ...ROADSHOW_LOCATIONS] as const;
+export type RoadshowLocation = (typeof ROADSHOW_LOCATIONS)[number];
+export type RoadshowRankingLocation = (typeof ROADSHOW_RANKING_LOCATIONS)[number];
+
 export interface RoadshowSong {
   id: string;
   catalogId?: string;

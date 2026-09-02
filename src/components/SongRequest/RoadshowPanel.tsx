@@ -10,6 +10,7 @@ import {
   paginateRoadshowSongs,
   parseRoadshowCache,
   ROADSHOW_CACHE_KEY,
+  ROADSHOW_LOCATIONS,
   ROADSHOW_SESSION_KEY,
   upsertRecognitionAttempt,
   type RoadshowRecord,
@@ -294,7 +295,10 @@ const RoadshowEditor = ({ record, allRecords, busy, message, quizAssignments, on
         <div className="mt-5 grid grid-cols-4 gap-3">
           <input aria-label="第几次路演" value={record.title} onChange={(event) => onChange({ ...record, title: event.target.value })} maxLength={60} className="h-12 min-w-0 rounded-xl border border-white/10 bg-black/35 px-4 font-serif text-xl font-black outline-none focus:border-orange-300/45" />
           <input aria-label="路演时间" type="date" value={record.date} onClick={(event) => event.currentTarget.showPicker?.()} onChange={(event) => onChange({ ...record, date: event.target.value })} className="h-12 min-w-0 cursor-pointer rounded-xl border border-white/10 bg-black/35 px-4 outline-none focus:border-orange-300/45" />
-          <input aria-label="路演地点" value={record.location ?? ''} onChange={(event) => onChange({ ...record, location: event.target.value })} maxLength={80} placeholder="路演地点（可选）" className="h-12 min-w-0 rounded-xl border border-white/10 bg-black/35 px-4 outline-none placeholder:text-white/25 focus:border-orange-300/45" />
+          <select aria-label="路演地点" value={record.location ?? ''} onChange={(event) => onChange({ ...record, location: event.target.value })} className="h-12 min-w-0 rounded-xl border border-white/10 bg-black/35 px-4 text-white outline-none focus:border-orange-300/45 [color-scheme:dark]">
+            <option value="">路演地点（可选）</option>
+            {ROADSHOW_LOCATIONS.map((location) => <option key={location} value={location}>{location}</option>)}
+          </select>
           <input aria-label="路演天气" value={record.weather ?? ''} onChange={(event) => onChange({ ...record, weather: event.target.value })} maxLength={40} placeholder="路演天气（可选）" className="h-12 min-w-0 rounded-xl border border-white/10 bg-black/35 px-4 outline-none placeholder:text-white/25 focus:border-orange-300/45" />
         </div>
       </div>

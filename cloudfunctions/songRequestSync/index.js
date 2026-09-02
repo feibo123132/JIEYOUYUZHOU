@@ -8,12 +8,26 @@ const PUBLIC_ERRORS = new Set([
   'INVALID_FEATURED_SONGS',
   'INVALID_QUIZ_LIBRARY',
   'INVALID_SONG_SCORE',
+  'INVALID_LOCATION',
 ]);
 
 const FEATURED_SONGS_OWNER_ALIAS = '2421415030@qq.com';
+const ROADSHOW_LOCATION_KEYS = Object.freeze({
+  '医大（武鸣）': 'medicalWuming',
+  '医大（本部）': 'medicalMain',
+  '南湖': 'nanhu',
+});
 const cleanVoteCounts = (value) => value && typeof value === 'object' && !Array.isArray(value)
   ? Object.fromEntries(Object.entries(value).filter(([, count]) => Number.isInteger(count) && count > 0))
   : {};
+const cleanLocationVoteCounts = (value) => Object.fromEntries(Object.values(ROADSHOW_LOCATION_KEYS).map((key) => [
+  key, cleanVoteCounts(value?.[key]),
+]));
+const latestRoadshowLocation = (workspace) => {
+  const records = Array.isArray(workspace?.roadshows) ? workspace.roadshows.filter((record) => !record.deletedAt && ROADSHOW_LOCATION_KEYS[record.location]) : [];
+  records.sort((left, right) => String(right.date || '').localeCompare(String(left.date || '')) || String(right.updatedAt || '').localeCompare(String(left.updatedAt || '')));
+  return records[0]?.location;
+};
 const workspaceId = (alias) => crypto.createHash('sha256').update(alias.trim().toLocaleLowerCase()).digest('hex');
 const passwordHash = (password, salt) => crypto.scryptSync(password, salt, 32).toString('hex');
 const songRecordDocumentId = (workspace, record) => crypto.createHash('sha256').update(`${workspace}:${record}`).digest('hex');
@@ -127,13 +141,18 @@ function createHandler(store) {
       const request = validateRequest(event);
       if (request.action === 'votes:pull') {
         const owner = await store.getWorkspace(workspaceId(FEATURED_SONGS_OWNER_ALIAS));
-        return { ok: true, counts: await store.getVotes(), sungCounts: cleanVoteCounts(owner?.sungVoteCounts) };
+        const locationKey = request.location ? ROADSHOW_LOCATION_KEYS[request.location] : null;
+        return {
+          ok: true,
+          counts: await store.getVotes(request.location),
+          sungCounts: cleanVoteCounts(locationKey ? owner?.sungVoteCountsByLocation?.[locationKey] : owner?.sungVoteCounts),
+        };
       }
       if (request.action === 'songRecords:publicRanking') {
         return { ok: true, ranking: buildPublicPracticeRanking(await store.getAllSongRecords()) };
       }
       if (request.action === 'roadshows:publicQuizRanking') {
-        const roadshows = await store.getAllRoadshows();
+        const roadshows = (await store.getAllRoadshows()).filter((record) => !request.location || record.location === request.location);
         return { ok: true, ranking: buildPublicQuizRanking(roadshows), participantRanking: buildPublicQuizParticipantRanking(roadshows) };
       }
       if (request.action === 'artistSettings:pull') {
@@ -149,7 +168,8 @@ function createHandler(store) {
         return { ok: true, assignments: assignments && typeof assignments === 'object' && !Array.isArray(assignments) ? assignments : null };
       }
       if (request.action === 'votes:increment') {
-        return { ok: true, count: await store.incrementVote(request.songId) };
+        const owner = await store.getWorkspace(workspaceId(FEATURED_SONGS_OWNER_ALIAS));
+        return { ok: true, count: await store.incrementVote(request.songId, latestRoadshowLocation(owner)) };
       }
 
       if (request.action === 'roadshows:register') {
@@ -278,14 +298,15 @@ exports.main = async (event) => {
     const songScores = db.collection('song_request_song_scores');
     const artistSettings = db.collection('song_request_artist_settings');
     const command = db.command;
-    const readVoteCounts = async () => {
+    const readVoteCounts = async (location) => {
       const pageSize = 1000;
       const counts = {};
+      const locationKey = location ? ROADSHOW_LOCATION_KEYS[location] : null;
       for (let offset = 0; ; offset += pageSize) {
         const result = await votes.skip(offset).limit(pageSize).get();
         const page = result.data || [];
         for (const item of page) {
-          const count = Number(item.count) || 0;
+          const count = Number(locationKey ? item.locationCounts?.[locationKey] : item.count) || 0;
           if (count > 0) counts[item._id] = count;
         }
         if (page.length < pageSize) return counts;
@@ -305,13 +326,16 @@ exports.main = async (event) => {
       setFeaturedSongIds: (id, songIds, updatedAt) => workspaces.doc(id).update({ featuredSongIds: songIds, updatedAt }),
       setQuizLibraryAssignments: (id, assignments, updatedAt) => workspaces.doc(id).update({ quizLibraryAssignments: assignments, updatedAt }),
       getVotes: readVoteCounts,
-      async incrementVote(songId) {
+      async incrementVote(songId, location) {
         const ref = votes.doc(songId);
+        const locationKey = location ? ROADSHOW_LOCATION_KEYS[location] : null;
+        const increment = { count: command.inc(1), updatedAt: new Date().toISOString() };
+        if (locationKey) increment[`locationCounts.${locationKey}`] = command.inc(1);
         try {
-          await ref.update({ count: command.inc(1), updatedAt: new Date().toISOString() });
+          await ref.update(increment);
         } catch (error) {
           if (!/not found|does not exist/i.test(String(error?.message))) throw error;
-          await ref.set({ count: 1, updatedAt: new Date().toISOString() });
+          await ref.set({ count: 1, ...(locationKey ? { locationCounts: { [locationKey]: 1 } } : {}), updatedAt: new Date().toISOString() });
         }
         const result = await ref.get();
         const value = Array.isArray(result.data) ? result.data[0] : result.data;
@@ -326,6 +350,7 @@ exports.main = async (event) => {
           const currentWorkspace = Array.isArray(workspaceResult.data) ? workspaceResult.data[0] : workspaceResult.data;
           if (!currentWorkspace) throw new Error('AUTH_FAILED');
           const nextSungCounts = cleanVoteCounts(currentWorkspace.sungVoteCounts);
+          const nextSungCountsByLocation = cleanLocationVoteCounts(currentWorkspace.sungVoteCountsByLocation);
           for (const songId of songIds) {
             const voteRef = transaction.collection('song_request_votes').doc(songId);
             const voteResult = await voteRef.get();
@@ -333,11 +358,16 @@ exports.main = async (event) => {
             const count = Number(currentVote?.count) || 0;
             if (count <= 0) continue;
             nextSungCounts[songId] = (nextSungCounts[songId] || 0) + count;
-            await voteRef.set({ count: 0, updatedAt: new Date().toISOString() });
+            for (const locationKey of Object.values(ROADSHOW_LOCATION_KEYS)) {
+              const locationCount = Number(currentVote?.locationCounts?.[locationKey]) || 0;
+              if (locationCount > 0) nextSungCountsByLocation[locationKey][songId] = (nextSungCountsByLocation[locationKey][songId] || 0) + locationCount;
+            }
+            await voteRef.set({ count: 0, locationCounts: {}, updatedAt: new Date().toISOString() });
           }
           await workspaceRef.set(buildWritableWorkspace({
             ...currentWorkspace,
             sungVoteCounts: nextSungCounts,
+            sungVoteCountsByLocation: nextSungCountsByLocation,
             updatedAt: new Date().toISOString(),
           }));
           return nextSungCounts;
