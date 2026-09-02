@@ -16,6 +16,7 @@ test('CloudBase deployment config points directly at the small function director
     runtime: 'Nodejs20.19',
     handler: 'index.main',
     installDependency: true,
+    timeout: 60,
   }]);
 });
 
@@ -188,6 +189,22 @@ test('已认证谱子图片由云函数上传，浏览器不再直传云存储',
   assert.equal(uploaded.length, 1);
   assert.equal(uploaded[0].songId, 'qing-tian');
   assert.deepEqual(uploaded[0].pageContent, pageBytes);
+});
+
+test('谱子图片云存储失败时返回可识别的错误，而不是笼统同步失败', async () => {
+  const store = memoryStore();
+  store.uploadSongScorePage = async () => { throw new Error('SCORE_UPLOAD_FAILED'); };
+  const { createHandler } = loadFunction();
+  const handler = createHandler(store);
+  const auth = { alias: 'JIEYOU', password: 'guitar-2026' };
+  await handler({ action: 'roadshows:register', ...auth });
+
+  const result = await handler({
+    action: 'songScores:uploadPage', ...auth, songId: 'qing-tian',
+    pageDataUrl: `data:image/jpeg;base64,${Buffer.from([0xff, 0xd8, 0xff, 0xdb]).toString('base64')}`,
+  });
+
+  assert.deepEqual(result, { ok: false, error: 'SCORE_UPLOAD_FAILED' });
 });
 
 test('保存谱子时由云函数返回可显示的临时地址', async () => {

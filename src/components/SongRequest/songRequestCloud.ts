@@ -28,10 +28,17 @@ type CloudResult<T> = { ok: true } & T;
 const callSync = async <T>(data: Record<string, unknown>): Promise<CloudResult<T>> => {
   if (!tcbApp) throw new Error('CLOUD_UNAVAILABLE');
   await ensureSignIn();
-  const response = await tcbApp.callFunction({ name: 'songRequestSync', data });
-  const result = response?.result as ({ ok?: boolean; error?: string } & T) | undefined;
-  if (!result?.ok) throw new Error(result?.error || 'SYNC_FAILED');
-  return result as CloudResult<T>;
+  try {
+    const response = await tcbApp.callFunction({ name: 'songRequestSync', data });
+    const result = response?.result as ({ ok?: boolean; error?: string } & T) | undefined;
+    if (!result?.ok) throw new Error(result?.error || 'SYNC_FAILED');
+    return result as CloudResult<T>;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error ?? '');
+    if (/timeout|timed out|deadline|超时/i.test(detail)) throw new Error('CLOUD_TIMEOUT');
+    if (/payload too large|request entity too large|\b413\b|请求体过大/i.test(detail)) throw new Error('PAYLOAD_TOO_LARGE');
+    throw error instanceof Error ? error : new Error('SYNC_FAILED');
+  }
 };
 
 export const pullCloudVoteState = async (location?: RoadshowLocation): Promise<CloudVoteState> => {
@@ -212,6 +219,7 @@ export const mapSongScoreSyncError = (error: unknown) => {
   if (code === 'PAYLOAD_TOO_LARGE') return '谱子图片过大，请减少页数或换更小的图片。';
   if (code === 'INVALID_SONG_SCORE') return '谱子内容格式无效，未保存。';
   if (code === 'SCORE_UPLOAD_FAILED') return '谱子图片未能上传到云存储，已保留在本机等待重试。';
+  if (code === 'CLOUD_TIMEOUT') return '谱子上传超时，已保留在本机；请保持页面开启后重试。';
   if (code === 'AUTH_FAILED') return '私有空间已锁定，请先重新进入路演档案。';
   if (code === 'CLOUD_UNAVAILABLE') return '腾讯云暂时未连接，谱子尚未同步。';
   return '云端暂时没有回应，谱子尚未同步。';

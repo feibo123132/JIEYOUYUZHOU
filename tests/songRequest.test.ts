@@ -18,6 +18,7 @@ const songQuizLibraryUrl = new URL('../src/components/SongRequest/songQuizLibrar
 const indexCssUrl = new URL('../src/index.css', import.meta.url)
 const appUrl = new URL('../src/App.tsx', import.meta.url)
 const avatarCropUrl = new URL('../src/components/SongRequest/avatarCrop.ts', import.meta.url)
+const tcbServiceUrl = new URL('../src/services/tcb.ts', import.meta.url)
 
 const songs = [
   { id: 'a', title: '晴天', artist: '周杰伦', category: '华语', featured: true },
@@ -1881,14 +1882,17 @@ test('歌曲详情页在路演右侧用谱子标签承载上传与翻谱功能',
 
 test('谱子经已认证云函数上传并只把文件引用写入云端记录', () => {
   const cloud = readFileSync(cloudAdapterUrl, 'utf8')
+  const tcbService = readFileSync(tcbServiceUrl, 'utf8')
 
   assert.match(cloud, /export const syncSongScoreToCloud = async/)
+  assert.match(tcbService, /cloudbase\.init\(\{ env: envId, timeout: 70_000 \}\)/)
   assert.match(cloud, /action: 'songScores:uploadPage'/)
   assert.doesNotMatch(cloud, /tcbApp\.uploadFile\(/)
   assert.match(cloud, /tcbApp\.getTempFileURL\(\{ fileList:/)
   assert.match(cloud, /tcbApp\.deleteFile\(\{ fileList:/)
   assert.match(cloud, /toStoredSongScore\(uploadedScore\)/)
   assert.match(cloud, /parseSongScores\(\[saved\]\)\[0\]/)
+  assert.match(cloud, /code === 'CLOUD_TIMEOUT'/)
   assert.doesNotMatch(cloud, /callSync<\{ score: SongScore \}>\(\{ action: 'songScores:save', \.\.\.credentials, score \}\)/)
 })
 

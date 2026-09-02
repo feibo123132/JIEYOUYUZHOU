@@ -15,7 +15,7 @@ export let tcbDb: any = null;
 if (envId) {
   try {
     console.log(`>>> 准备初始化 TCB SDK，使用的 envId 是: "${envId}"`);
-    tcbApp = cloudbase.init({ env: envId });
+    tcbApp = cloudbase.init({ env: envId, timeout: 70_000 });
     tcbAuth = tcbApp.auth({ persistence: 'local' });
     tcbDb = tcbApp.database();
     console.log('>>> TCB SDK 初始化成功！实例已创建。');
