@@ -23,7 +23,7 @@ test('the two themes use distinct content storage', () => {
 test('theme hub cards use concise English eyebrow labels', () => {
   assert.equal(getThemeConfig('jieyou').hub.eyebrow, 'GENTLE RELIEF')
   assert.equal(getThemeConfig('life').hub.eyebrow, 'HAPPY MOMENTS')
-  assert.equal(getThemeConfig('life').hub.description, '那些微小却无比真实的幸福，同样值得被看见')
+  assert.equal(getThemeConfig('life').hub.description, '那些无比真实的幸福瞬间，无论大小，都同样值得被看见')
 })
 
 test('life REST routes never fall back to generic JIEYOU endpoints', () => {

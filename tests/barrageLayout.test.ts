@@ -43,14 +43,14 @@ test('intimate barrage layout uses a smaller horizontal gap and safe vertical ga
   assert.deepEqual(regular, {
     desktopLaneCount: 8,
     mobileLaneCount: 6,
-    horizontalGap: 'clamp(5rem, 12vw, 14rem)',
+    horizontalGap: 'clamp(2.8125rem, 6.75vw, 7.875rem)',
     staticGap: '.75rem',
     minimumVerticalGap: 0,
   })
   assert.deepEqual(intimate, {
     desktopLaneCount: 16,
     mobileLaneCount: 12,
-    horizontalGap: 'clamp(1.25rem, 3vw, 3.5rem)',
+    horizontalGap: 'clamp(0.9375rem, 2.25vw, 2.625rem)',
     staticGap: '.375rem',
     minimumVerticalGap: 10,
   })
@@ -62,11 +62,11 @@ test('intimate barrage layout uses a smaller horizontal gap and safe vertical ga
   const intimateClamp = parseClamp(intimate.horizontalGap)
   assert.deepEqual(
     intimateClamp,
-    [2.5, 6, 7].map((value) => value / 2),
+    [0.9375, 2.25, 2.625],
   )
   assert.deepEqual(
     intimateClamp,
-    regularClamp.map((value) => value / 4),
+    regularClamp.map((value) => value / 3),
   )
   assert.equal(parseFloat(intimate.staticGap), parseFloat(regular.staticGap) / 2)
 })

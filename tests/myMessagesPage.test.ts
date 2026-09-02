@@ -74,7 +74,7 @@ test('我的留言页使用用户名标题、精简返回文案和留言计数',
 
   assert.match(page, />\s*星空\s*</)
   assert.match(page, /\{nickname\}的留言/)
-  assert.match(page, /那些在星空留下的思绪或记忆，似乎让我看到了当时的自己/)
+  assert.match(page, /那些在星空留下的思绪或回忆，似乎……让我看到了当时的自己/)
   assert.match(page, /\{messages\.length\}<span[^>]*>条<\/span>/)
   assert.doesNotMatch(page, />\s*返回星空\s*</)
   assert.doesNotMatch(page, /条留言/)

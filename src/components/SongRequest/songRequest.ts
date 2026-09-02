@@ -128,6 +128,44 @@ export const insertCatalogSong = (
   return songs.every((item, index) => item.id === catalog.songs[index]?.id) ? catalog : { ...catalog, songs };
 };
 
+export const sortCatalogByMatchScore = (
+  catalog: EditableCatalog,
+  records: Array<{ songId: string; matchScore: number }>,
+): EditableCatalog => {
+  const scoresBySong = new Map<string, number[]>();
+  for (const record of records) {
+    scoresBySong.set(record.songId, [...(scoresBySong.get(record.songId) ?? []), record.matchScore]);
+  }
+  const avgScore = (songId: string): number | null => {
+    const scores = scoresBySong.get(songId) ?? [];
+    if (!scores.length) return null;
+    return Math.round((scores.reduce((sum, s) => sum + s, 0) / scores.length) * 10) / 10;
+  };
+  const byArtist = new Map<string, Song[]>();
+  for (const song of catalog.songs) {
+    byArtist.set(song.artist, [...(byArtist.get(song.artist) ?? []), song]);
+  }
+  const sortedSongs: Song[] = [];
+  for (const artist of catalog.artists) {
+    const songs = byArtist.get(artist) ?? [];
+    songs.sort((a, b) => {
+      const scoreA = avgScore(a.id);
+      const scoreB = avgScore(b.id);
+      if (scoreA === null && scoreB === null) return 0;
+      if (scoreB === null) return -1;
+      if (scoreA === null) return 1;
+      return scoreB - scoreA;
+    });
+    sortedSongs.push(...songs);
+    byArtist.delete(artist);
+  }
+  for (const songs of byArtist.values()) sortedSongs.push(...songs);
+  const sameOrder =
+    sortedSongs.length === catalog.songs.length &&
+    sortedSongs.every((song, index) => song.id === catalog.songs[index]?.id);
+  return sameOrder ? catalog : { ...catalog, songs: sortedSongs };
+};
+
 const isSong = (value: unknown): value is Song => {
   if (!value || typeof value !== 'object') return false;
   const song = value as Partial<Song>;

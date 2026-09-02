@@ -6,6 +6,7 @@ import {
   createEditableCatalog,
   insertCatalogSong,
   moveCatalogSong,
+  sortCatalogByMatchScore,
 } from '../src/components/SongRequest/songRequest.ts'
 import {
   createArtistSettingsPayload,
@@ -52,4 +53,25 @@ test('歌手详情页提供歌曲调整排序模式并接入同步队列', () =>
   assert.match(source, /insertCatalogSong\(catalog, sourceSongId, targetSongId, placement\)/)
   assert.match(source, /moveCatalogSong\(catalog, songId, targetSong\.id\)/)
   assert.match(source, /queueArtistSettings\(createArtistSettingsPayload\([\s\S]*songOrder/)
+})
+
+test('歌曲按练习匹配度降序排列，未练习歌曲置底且不跨歌手', () => {
+  const catalog = createEditableCatalog(songs)
+  const records = [
+    { songId: 'a', matchScore: 80 },
+    { songId: 'a', matchScore: 90 },
+    { songId: 'b', matchScore: 70 },
+  ]
+  // a 平均 85 → 周杰伦组内第一；c 无记录 → 组内置底；b 单独一组保持 70
+  assert.deepEqual(sortCatalogByMatchScore(catalog, records).songs.map((song) => song.id), ['a', 'c', 'b'])
+})
+
+test('歌单顺序已与匹配度一致时返回原引用', () => {
+  const preSorted = createEditableCatalog([songs[0], songs[2], songs[1]]) // a, c, b
+  const records = [
+    { songId: 'a', matchScore: 80 },
+    { songId: 'a', matchScore: 90 },
+    { songId: 'b', matchScore: 70 },
+  ]
+  assert.equal(sortCatalogByMatchScore(preSorted, records), preSorted)
 })

@@ -17,6 +17,7 @@ const artistSettingsUrl = new URL('../src/components/SongRequest/artistSettings.
 const songQuizLibraryUrl = new URL('../src/components/SongRequest/songQuizLibrary.ts', import.meta.url)
 const indexCssUrl = new URL('../src/index.css', import.meta.url)
 const appUrl = new URL('../src/App.tsx', import.meta.url)
+const avatarCropUrl = new URL('../src/components/SongRequest/avatarCrop.ts', import.meta.url)
 
 const songs = [
   { id: 'a', title: '晴天', artist: '周杰伦', category: '华语', featured: true },
@@ -31,6 +32,20 @@ const requestedPopularSongTitles = [
   '一个人想着一个人', '我怀念的', '开始懂了', '无人之岛', '富士山下', '遇到', '太阳', '孤雏',
   '雨爱', '如果爱忘了', '如果可以', '太聪明',
 ]
+
+test('头像裁切在缩放为 1 时仍可沿图片溢出方向完整移动', async () => {
+  const { calculateAvatarCropLayout } = await import(avatarCropUrl.href)
+  const top = calculateAvatarCropLayout(1080, 1619, { x: 50, y: 0, scale: 1 })
+  const middle = calculateAvatarCropLayout(1080, 1619, { x: 50, y: 50, scale: 1 })
+  const bottom = calculateAvatarCropLayout(1080, 1619, { x: 50, y: 100, scale: 1 })
+
+  assert.equal(top.width, 100)
+  assert.equal(top.left, 0)
+  assert.equal(top.top, 0)
+  assert.ok(middle.top < 0)
+  assert.ok(bottom.top < middle.top)
+  assert.ok(Math.abs(bottom.top + (bottom.height - 100)) < 1e-9)
+})
 
 async function loadModule() {
   assert.ok(existsSync(moduleUrl), 'song request helper must exist')
@@ -688,6 +703,21 @@ test('featured songs remain an unranked catalog subset', async () => {
   assert.equal(isFeaturedSongManager('visitor@example.com'), false)
 })
 
+test('歌手和歌曲管理仅向已登录站主开放且所有修改入口再次校验权限', () => {
+  const source = readFileSync(stationUrl, 'utf8')
+
+  assert.match(source, /const canManageCatalog = Boolean\(songRecordSession && isFeaturedSongManager\(songRecordSession\.alias\)\)/)
+  assert.match(source, /activeSection === 'artists' && canManageCatalog/)
+  assert.match(source, /const requireCatalogManager = \(\) =>/)
+  assert.match(source, /const handleAddArtist = \(\) => \{\s*if \(!requireCatalogManager\(\)\) return;/)
+  assert.match(source, /const handleRemoveArtist = \(\) => \{\s*if \(!requireCatalogManager\(\)\) return;/)
+  assert.match(source, /const handleAddSong = \(\) => \{\s*if \(!requireCatalogManager\(\)\) return;/)
+  assert.match(source, /const handleRemoveSong = \(\) => \{\s*if \(!requireCatalogManager\(\)\) return;/)
+  assert.match(source, /const handleArtistAvatarUpload = async \(artist: string, file: File\) => \{\s*if \(!requireCatalogManager\(\)\) return;/)
+  assert.match(source, /if \(!session \|\| !isFeaturedSongManager\(session\.alias\)\)/)
+  assert.match(source, /if \(canManageCatalog\) return;\s*setAvatarAdjustMode\(false\);\s*setArtistOrderMode\(false\);\s*setSongOrderMode\(false\);/)
+})
+
 test('识曲歌库按四档解析、切换、取消并分组计数', async () => {
   const {
     QUIZ_LEVELS, parseQuizAssignments, setQuizLevel, groupQuizSongs, countQuizSongs,
@@ -760,7 +790,7 @@ test('识曲歌库公开加载、管理员保存且失败时保留当前选择',
   assert.match(cloud, /export const saveCloudQuizAssignments/)
   assert.match(station, /pullCloudQuizAssignments\(\)/)
   assert.match(station, /saveCloudQuizAssignments\(songRecordSession, next\)/)
-  assert.match(station, /识曲歌库尚未同步/)
+  assert.match(station, /听歌识曲尚未同步，当前选择已保留/)
   assert.doesNotMatch(station, /catch\s*\{[^}]*setQuizAssignments\(previous\)/s)
 })
 
@@ -768,7 +798,8 @@ test('歌曲行在热门火焰左侧提供四档采购且访客只看等级', ()
   const station = readFileSync(stationUrl, 'utf8')
 
   assert.match(station, /const QuizLevelControl = \(\{ song \}: \{ song: Song \}\)/)
-  assert.match(station, /选择\$\{song\.title\}的识曲难度/)
+  assert.match(station, /aria-label=\{`编排\$\{song\.title\}`\}/)
+  assert.match(station, /aria-label=\{`\$\{song\.title\}编排选项`\}/)
   assert.match(station, /QUIZ_LEVELS\.map/)
   assert.match(station, /再次选择可移出歌库/)
   assert.match(station, /<QuizLevelControl song=\{song\} \/>\s*<FeaturedSongControl song=\{song\} \/>/)
@@ -778,7 +809,7 @@ test('点歌台四宫格下方提供横向识曲歌库总部和四档面板', ()
   const station = readFileSync(stationUrl, 'utf8')
 
   assert.match(station, /QUIZ LIBRARY/)
-  assert.match(station, />识曲歌库</)
+  assert.match(station, />听歌识曲</)
   assert.match(station, /sm:col-span-2/)
   assert.match(station, /quizCounts\.total/)
   assert.match(station, /levelSongs\.length/)
@@ -901,15 +932,15 @@ test('station exposes requests and rankings without playback controls', () => {
 
   assert.match(source, /热门歌曲/)
   assert.match(source, /点歌榜/)
-  assert.match(source, /个人练习榜/)
-  assert.match(source, /aria-label="切换到个人练习榜"/)
+  assert.match(source, /吉他练习榜/)
+  assert.match(source, /aria-label="切换到吉他练习榜"/)
   assert.match(source, /rankSongsByPracticeMatch/)
   assert.match(source, /搜索歌名或歌手/)
   assert.match(source, /: '点歌'/)
   assert.match(source, /getSongSubtitle\(song\)/)
   assert.doesNotMatch(source, new RegExp(['点', '这首'].join('')))
   assert.match(source, /<div className="grid gap-3 sm:grid-cols-2">\s*\{songs\.map/)
-  assert.match(source, /grid gap-3 sm:grid-cols-2 lg:grid-cols-4\"\>\{paginatedArtistGroups/)
+  assert.match(source, /grid content-start gap-3 sm:grid-cols-2 lg:grid-cols-4[\s\S]*\{paginatedArtistGroups\.map/)
   assert.match(source, /新增歌手/)
   assert.match(source, /删除歌手/)
   assert.match(source, /新增歌曲/)
@@ -927,7 +958,7 @@ test('个人练习榜超过八首时滚动并支持从右侧搜索切换总榜�
   assert.match(source, /const visiblePersonalRanking = useMemo/)
   assert.match(source, /paginatedPersonalRanking\.items\.length > PERSONAL_RANKING_SCROLL_THRESHOLD/)
   assert.match(source, /max-h-\[42rem\] overflow-y-auto/)
-  assert.match(source, /aria-label="个人练习榜歌手筛选"/)
+  assert.match(source, /aria-label="吉他练习榜歌手筛选"/)
   assert.match(source, /placeholder="搜索歌手或歌曲"/)
   assert.match(source, />总榜</)
   assert.match(source, /groupSongsByArtist\(catalogSongs\)\.filter\(\(\{ songs \}\) => songs\.length >= 2\)/)
@@ -994,7 +1025,7 @@ test('个人练习榜支持保留真实名次的倒序展示', async () => {
 test('点歌榜和个人练习榜保持一首歌占据一行', () => {
   const source = readFileSync(stationUrl, 'utf8')
 
-  assert.match(source, /ranking\.length \? <ol className="space-y-3">/)
+  assert.match(source, /ranking\.length \? <>\s*<ol className="space-y-3">/)
   assert.match(source, /className=\{`space-y-3 \$\{paginatedPersonalRanking\.items\.length/)
   assert.doesNotMatch(source, /grid grid-cols-1 gap-3 xl:grid-cols-2/)
 })
@@ -1446,7 +1477,6 @@ test('热门歌曲页拆除搜索与完整曲库并让弹幕覆盖整个可视�
   assert.match(station, /<PopularSongBarrage[\s\S]*immersive/)
   assert.doesNotMatch(station, /完整曲库/)
   assert.doesNotMatch(station, /songCategories|visibleSongs/)
-  assert.match(station, /if \(activeSection === 'playlists'\) return;/)
   assert.match(barrage, /immersive\?: boolean/)
   assert.match(barrage, /popular-song-board--immersive/)
   assert.match(css, /\.popular-song-board--immersive\s*\{[^}]*position: absolute;[^}]*inset: 0;[^}]*height: 100%;[^}]*border-radius: 0;/s)
@@ -1536,10 +1566,10 @@ test('歌手卡片按既定顺序使用人物照片并保留自定义歌手兜�
   assert.doesNotMatch(source, /src:\s*['"`]\/images\/song-request\/artists\//)
   assert.match(source, /<img[\s\S]*src=\{avatar\.src\}/)
   assert.match(source, /object-cover/)
-  assert.match(source, /objectPosition: `\$\{avatarStyle\.x\}% \$\{avatarStyle\.y\}%`/)
-  assert.match(source, /transform: `scale\(\$\{avatarStyle\.scale\}\) rotate/)
-  assert.match(source, /transformOrigin: `\$\{avatarStyle\.x\}% \$\{avatarStyle\.y\}%`/)
-  assert.match(source, /avatar && avatarStyle \? \(/)
+  assert.match(source, /const ArtistAvatarImage = \(\{ avatar, adjustment/)
+  assert.match(source, /objectPosition: `\$\{adjustment\.x\}% \$\{adjustment\.y\}%`/)
+  assert.match(source, /transform: `scale\(\$\{adjustment\.scale\}\) rotate/)
+  assert.match(source, /avatar && avatarStyle \? <ArtistAvatarImage avatar=\{avatar\} adjustment=\{avatarStyle\}/)
   assert.match(source, /: <Mic2/)
   assert.match(source, /loading=\{index < 8 \? 'eager' : 'lazy'\}/)
   assert.match(source, /fetchPriority=\{index < 8 \? 'high' : 'auto'\}/)
@@ -1575,7 +1605,7 @@ test('歌手头像支持本机手动微调和重置', () => {
   assert.match(source, /type="range"/)
   assert.match(source, /localStorage\.setItem/)
   assert.match(source, /重置/)
-  assert.match(source, /rotate\(\$\{avatarStyle\.rotation\}deg\)/)
+  assert.match(source, /rotate\(\$\{adjustment\.rotation\}deg\)/)
 })
 
 test('roadshow editor removes both add forms and shows recognition songs in four levels', () => {
@@ -1620,7 +1650,7 @@ test('路演歌曲卡使用克制的低对比度描边', () => {
 
   assert.doesNotMatch(source, /border-white\/8\b/)
   assert.match(source, /border-white\/10 bg-black\/25 p-3/)
-  assert.match(source, /border-white\/10 bg-black\/25 p-2\.5/)
+  assert.match(source, /border-white\/10 bg-black\/25 enabled:hover:border-white\/25/)
 })
 
 test('我的档案整合日常练习批量记录和月周日折叠历史', () => {

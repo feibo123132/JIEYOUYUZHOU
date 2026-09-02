@@ -163,7 +163,7 @@ test('publishes and transactionally protects one global artist settings snapshot
   const store = memoryStore();
   const { createHandler } = loadFunction();
   const handler = createHandler(store);
-  const owner = { alias: 'JIEYOU', password: 'guitar-2026' };
+  const owner = { alias: '2421415030@qq.com', password: 'guitar-2026' };
   const other = { alias: 'OTHER', password: 'guitar-2026' };
   await handler({ action: 'roadshows:register', ...owner });
   await handler({ action: 'roadshows:register', ...other });
@@ -183,6 +183,22 @@ test('publishes and transactionally protects one global artist settings snapshot
   assert.deepEqual(second.snapshot.artistOrder, ['林俊杰', '周杰伦']);
   assert.notEqual(second.snapshot.updatedAt, 'client-time');
   assert.deepEqual(await handler({ action: 'artistSettings:push', ...owner, expectedRevision: 1, snapshot: artistSettingsPayload() }), { ok: false, error: 'CONFLICT' });
+})
+
+test('rejects a non-owner before the global artist settings document exists', async () => {
+  const store = memoryStore();
+  const { createHandler } = loadFunction();
+  const handler = createHandler(store);
+  const visitor = { alias: 'VISITOR', password: 'guitar-2026' };
+  await handler({ action: 'roadshows:register', ...visitor });
+
+  assert.deepEqual(await handler({
+    action: 'artistSettings:push',
+    ...visitor,
+    expectedRevision: null,
+    snapshot: artistSettingsPayload(),
+  }), { ok: false, error: 'AUTH_FAILED' });
+  assert.equal(store.artistSettings, null);
 })
 
 test('artist settings writes hide whether a private workspace exists', async () => {
@@ -214,8 +230,8 @@ test('artist settings datastore failures remain sync failures and never look emp
   const { createHandler } = loadFunction();
   assert.deepEqual(await createHandler(readStore)({ action: 'artistSettings:pull' }), { ok: false, error: 'SYNC_FAILED' });
   const writeHandler = createHandler(writeStore);
-  await writeHandler({ action: 'roadshows:register', alias: 'JIEYOU', password: 'guitar-2026' });
-  assert.deepEqual(await writeHandler({ action: 'artistSettings:push', alias: 'JIEYOU', password: 'guitar-2026', expectedRevision: null, snapshot: artistSettingsPayload() }), { ok: false, error: 'SYNC_FAILED' });
+  await writeHandler({ action: 'roadshows:register', alias: '2421415030@qq.com', password: 'guitar-2026' });
+  assert.deepEqual(await writeHandler({ action: 'artistSettings:push', alias: '2421415030@qq.com', password: 'guitar-2026', expectedRevision: null, snapshot: artistSettingsPayload() }), { ok: false, error: 'SYNC_FAILED' });
 })
 
 test('increments and pulls public song request votes', async () => {

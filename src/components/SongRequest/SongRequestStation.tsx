@@ -10,7 +10,7 @@ import {
   getPersonalRankingPodiumSize, getRankingMedalTone, getSongSubtitle, incrementSongVote, isFeaturedSongManager,
   insertCatalogArtist, insertCatalogSong, loadEditableCatalog, loadSungVoteCounts, loadVoteCounts, rankArtistsByVotes, rankSongsByVotes,
   moveCatalogArtist, moveCatalogSong, removeCatalogArtist, removeCatalogSong, saveEditableCatalog, saveSungVoteCounts, saveVoteCounts,
-  orderPersonalRankingItems, paginateRankingItems, togglePersonalRankingRandom, togglePersonalRankingReverse,
+  orderPersonalRankingItems, paginateRankingItems, sortCatalogByMatchScore, togglePersonalRankingRandom, togglePersonalRankingReverse,
   type EditableCatalog, type RankingDisplayMode, type VoteCounts,
 } from './songRequest';
 import {
@@ -27,12 +27,13 @@ import RoadshowPanel from './RoadshowPanel';
 import SongDetailPanel from './SongDetailPanel';
 import PopularSongBarrage from './PopularSongBarrage';
 import { createInitialBarragePreferences, setBarragePreference } from '../StarrySky/barragePreferences';
+import { calculateAvatarCropLayout } from './avatarCrop';
 import {
   loadSongScoreCache, parseSongScores, saveSongScoreCache,
   type SongScore,
 } from './songScores';
 import {
-  getMatchQuality, loadSongRecordCache, parsePublicPracticeRanking, parseSongRecords, rankSongsByPracticeMatch, readSongRecordSession, recoverSongsFromRecords,
+  averageMatchScore, getMatchQuality, loadSongRecordCache, parsePublicPracticeRanking, parseSongRecords, rankSongsByPracticeMatch, readSongRecordSession, recoverSongsFromRecords,
   saveSongRecordCache, SONG_REQUEST_SESSION_EVENT,
   type PublicPracticeRankingItem, type SongRecord, type SongRecordSession,
 } from './songRecords';
@@ -117,6 +118,46 @@ const CUSTOM_ARTIST_AVATARS_KEY = 'jieyou-custom-artist-avatars-v1';
 const getDefaultAvatarAdjustment = (avatar: { position: string; scale: number }): AvatarAdjustment => {
   const [x = 50, y = 50] = avatar.position.split(' ').map((value) => Number.parseFloat(value));
   return { x, y, scale: avatar.scale, rotation: 0 };
+};
+
+const ArtistAvatarImage = ({ avatar, adjustment, alt = '', loading, fetchPriority }: {
+  avatar: ArtistAvatar;
+  adjustment: AvatarAdjustment;
+  alt?: string;
+  loading?: 'eager' | 'lazy';
+  fetchPriority?: 'high' | 'low' | 'auto';
+}) => {
+  const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
+  useEffect(() => setNaturalSize(null), [avatar.src]);
+  const layout = naturalSize
+    ? calculateAvatarCropLayout(naturalSize.width, naturalSize.height, adjustment)
+    : null;
+
+  return <img
+    src={avatar.src}
+    alt={alt}
+    loading={loading}
+    fetchPriority={fetchPriority}
+    decoding="async"
+    onLoad={(event) => {
+      const image = event.currentTarget;
+      if (image.naturalWidth > 0 && image.naturalHeight > 0) {
+        setNaturalSize({ width: image.naturalWidth, height: image.naturalHeight });
+      }
+    }}
+    className={layout ? 'absolute max-w-none' : 'h-full w-full object-cover'}
+    style={layout ? {
+      width: `${layout.width}%`,
+      height: `${layout.height}%`,
+      left: `${layout.left}%`,
+      top: `${layout.top}%`,
+      transform: `rotate(${adjustment.rotation}deg)`,
+      transformOrigin: 'center',
+    } : {
+      objectPosition: `${adjustment.x}% ${adjustment.y}%`,
+      transform: `scale(${adjustment.scale}) rotate(${adjustment.rotation}deg)`,
+    }}
+  />;
 };
 
 const loadAvatarAdjustments = (): Record<string, AvatarAdjustment> => {
@@ -208,6 +249,12 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   const [songRecordSession, setSongRecordSession] = useState<SongRecordSession | null>(() => (
     typeof window === 'undefined' ? null : readSongRecordSession(window.sessionStorage)
   ));
+  const canManageCatalog = Boolean(songRecordSession && isFeaturedSongManager(songRecordSession.alias));
+  const requireCatalogManager = () => {
+    if (canManageCatalog) return true;
+    showSyncMessage('仅站主登录后可以修改歌手、歌曲和头像设置。');
+    return false;
+  };
   const [songRecords, setSongRecords] = useState<SongRecord[]>(() => (
     typeof window === 'undefined' ? [] : loadSongRecordCache(window.localStorage, readSongRecordSession(window.sessionStorage))
   ));
@@ -250,6 +297,18 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   const artistSettingsSessionRef = useRef<SongRecordSession | null>(songRecordSession);
   const artistSettingsPushRef = useRef<Promise<void> | null>(null);
 
+  useEffect(() => {
+    if (canManageCatalog) return;
+    setAvatarAdjustMode(false);
+    setArtistOrderMode(false);
+    setSongOrderMode(false);
+    setAdjustingArtist(null);
+    setDraggedArtist(null);
+    setArtistDropTarget(null);
+    setDraggedSongId(null);
+    setSongDropTarget(null);
+  }, [canManageCatalog]);
+
   const applyCloudArtistSettings = (snapshot: ReturnType<typeof parseArtistSettingsSnapshot>) => {
     if (!snapshot) return;
     artistSettingsRevisionRef.current = snapshot.revision;
@@ -278,8 +337,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
       while (true) {
         const draft = loadArtistSettingsDraft(window.localStorage);
         const session = artistSettingsSessionRef.current;
-        if (!draft || !session) {
-          if (draft && !session) showSyncMessage('歌手设置已保存在本地，进入私有空间后将同步全站。');
+        if (!draft || !session || !isFeaturedSongManager(session.alias)) {
           return;
         }
         try {
@@ -324,6 +382,11 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   };
 
   const queueArtistSettings = (snapshot: ArtistSettingsPayload) => {
+    const session = artistSettingsSessionRef.current;
+    if (!session || !isFeaturedSongManager(session.alias)) {
+      showSyncMessage('仅站主登录后可以修改全站歌手设置。');
+      return;
+    }
     const previous = loadArtistSettingsDraft(window.localStorage);
     const draft = createArtistSettingsDraft(previous, previous?.baseRevision ?? artistSettingsRevisionRef.current, snapshot);
     saveArtistSettingsDraft(window.localStorage, draft);
@@ -332,12 +395,16 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
 
   useEffect(() => {
     artistSettingsSessionRef.current = songRecordSession;
-    if (songRecordSession && artistSettingsInitializedRef.current && loadArtistSettingsDraft(window.localStorage)) void runArtistSettingsPush();
-  }, [songRecordSession]);
+    if (!canManageCatalog) {
+      clearArtistSettingsDraft(window.localStorage);
+      return;
+    }
+    if (artistSettingsInitializedRef.current && loadArtistSettingsDraft(window.localStorage)) void runArtistSettingsPush();
+  }, [songRecordSession, canManageCatalog]);
 
   useEffect(() => {
     const retryArtistSettingsPush = () => {
-      if (!artistSettingsInitializedRef.current || !artistSettingsSessionRef.current
+      if (!artistSettingsInitializedRef.current || !isFeaturedSongManager(artistSettingsSessionRef.current?.alias)
         || !loadArtistSettingsDraft(window.localStorage)) return;
       void runArtistSettingsPush();
     };
@@ -366,8 +433,9 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
       if (value !== null && !cloud) throw new Error('INVALID_ARTIST_SETTINGS');
       artistSettingsRevisionRef.current = cloud?.revision ?? null;
       const draft = loadArtistSettingsDraft(window.localStorage);
+      const hasManagerSession = isFeaturedSongManager(artistSettingsSessionRef.current?.alias);
       const decision = resolveArtistSettingsPull({
-        cloud, local, draft, hasSession: Boolean(artistSettingsSessionRef.current),
+        cloud, local, draft, hasSession: hasManagerSession,
         defaultArtistOrder: defaultCatalog.artists,
         defaultSongOrder: defaultCatalog.songs.map((song) => song.id),
       });
@@ -380,7 +448,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
           window.localStorage,
           rebaseArtistSettingsDraft(decision.draft, decision.cloud?.revision ?? null),
         );
-        if (artistSettingsSessionRef.current) void runArtistSettingsPush();
+        if (hasManagerSession) void runArtistSettingsPush();
         return;
       }
       if (decision.kind === 'push-draft') {
@@ -393,17 +461,19 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
         return;
       }
       if (cloud === null && hasCustomArtistSettings(local, defaultCatalog.artists, defaultCatalog.songs.map((song) => song.id))) {
-        saveArtistSettingsDraft(window.localStorage, createArtistSettingsDraft(null, null, local));
-        if (artistSettingsSessionRef.current) void runArtistSettingsPush();
-        else showSyncMessage('歌手设置已保存在本地，进入私有空间后将同步全站。');
+        if (hasManagerSession) {
+          saveArtistSettingsDraft(window.localStorage, createArtistSettingsDraft(null, null, local));
+          void runArtistSettingsPush();
+        }
       }
     }).catch(() => {
       if (!active) return;
-      const retryDraft = ensureArtistSettingsRetryDraft(
+      const hasManagerSession = isFeaturedSongManager(artistSettingsSessionRef.current?.alias);
+      const retryDraft = hasManagerSession ? ensureArtistSettingsRetryDraft(
         window.localStorage, local, defaultCatalog.artists, artistSettingsRevisionRef.current,
         defaultCatalog.songs.map((song) => song.id),
-      );
-      if (retryDraft && artistSettingsSessionRef.current) void runArtistSettingsPush();
+      ) : null;
+      if (retryDraft) void runArtistSettingsPush();
       showSyncMessage(retryDraft
         ? '全站歌手设置暂时未连接，本地修改已排队并将在恢复后自动同步。'
         : '全站歌手设置暂时未连接，当前仍使用本地设置。');
@@ -635,6 +705,20 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
       : artistGroups.slice((artistPage - 1) * ARTISTS_PER_PAGE, artistPage * ARTISTS_PER_PAGE)
   ), [artistGroups, artistOrderMode, artistPage]);
 
+  const songPracticeStats = useMemo(() => {
+    const bySong = new Map<string, Array<{ matchScore: number }>>();
+    for (const record of songRecords) {
+      if (record.kind === 'practice') {
+        bySong.set(record.songId, [...(bySong.get(record.songId) ?? []), record]);
+      }
+    }
+    const map = new Map<string, { count: number; score: number | null }>();
+    for (const [songId, records] of bySong) {
+      map.set(songId, { count: records.length, score: averageMatchScore(records) });
+    }
+    return map;
+  }, [songRecords]);
+
   useEffect(() => {
     setArtistPage(1);
   }, [artistLanguageFilter, query]);
@@ -653,9 +737,13 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     avatars = customArtistAvatars,
     adjustments = avatarAdjustments,
     songOrder = catalog.songs.map((song) => song.id),
-  ) => queueArtistSettings(createArtistSettingsPayload(artists, avatars, adjustments, songOrder));
+  ) => {
+    if (!requireCatalogManager()) return;
+    queueArtistSettings(createArtistSettingsPayload(artists, avatars, adjustments, songOrder));
+  };
 
   const commitSongOrder = (next: EditableCatalog) => {
+    if (!requireCatalogManager()) return;
     if (next === catalog) return;
     commitCatalog(next);
     syncCurrentArtistSettings(
@@ -664,6 +752,18 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
       avatarAdjustments,
       next.songs.map((song) => song.id),
     );
+  };
+
+  const handleSortByMatch = () => {
+    if (!requireCatalogManager()) return;
+    const practiceRecords = songRecords.filter((record) => record.kind === 'practice');
+    const sorted = sortCatalogByMatchScore(catalog, practiceRecords);
+    if (sorted === catalog) {
+      showSyncMessage('当前歌单已按匹配度排序');
+      return;
+    }
+    commitSongOrder(sorted);
+    showSyncMessage('已按匹配度重新排序并同步到站内');
   };
 
   const commitSongRecords = (next: SongRecord[]) => {
@@ -699,6 +799,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   };
 
   const handleAddArtist = () => {
+    if (!requireCatalogManager()) return;
     const artist = window.prompt('请输入新歌手名：')?.trim();
     if (!artist) return;
     if (catalog.artists.includes(artist)) return window.alert('该歌手已存在。');
@@ -706,6 +807,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   };
 
   const handleRemoveArtist = () => {
+    if (!requireCatalogManager()) return;
     const artist = window.prompt('请输入要删除的歌手名：')?.trim();
     if (!artist) return;
     if (!catalog.artists.includes(artist)) return window.alert('没有找到该歌手。');
@@ -715,6 +817,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   };
 
   const handleAddSong = () => {
+    if (!requireCatalogManager()) return;
     if (!selectedArtist) return;
     const title = window.prompt(`请输入要添加给“${selectedArtist}”的歌名：`)?.trim();
     if (!title) return;
@@ -729,6 +832,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   };
 
   const handleRemoveSong = () => {
+    if (!requireCatalogManager()) return;
     if (!selectedArtist) return;
     const title = window.prompt(`请输入要从“${selectedArtist}”删除的歌名：`)?.trim();
     if (!title) return;
@@ -739,6 +843,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   };
 
   const moveVisibleArtist = (artist: string, direction: -1 | 1) => {
+    if (!requireCatalogManager()) return;
     const currentIndex = artistGroups.findIndex((group) => group.artist === artist);
     const targetArtist = artistGroups[currentIndex + direction]?.artist;
     if (!targetArtist) return;
@@ -759,6 +864,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   };
 
   const handleArtistDragStart = (event: DragEvent<HTMLElement>, artist: string) => {
+    if (!requireCatalogManager()) return;
     event.dataTransfer.effectAllowed = 'move';
     event.dataTransfer.setData('text/plain', artist);
     setDraggedArtist(artist);
@@ -766,6 +872,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   };
 
   const handleArtistDragOver = (event: DragEvent<HTMLElement>, targetArtist: string) => {
+    if (!canManageCatalog) return;
     const sourceArtist = draggedArtist || event.dataTransfer.getData('text/plain');
     if (!artistOrderMode || !sourceArtist || sourceArtist === targetArtist) return;
     event.preventDefault();
@@ -777,6 +884,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   };
 
   const handleArtistDrop = (event: DragEvent<HTMLElement>, targetArtist: string) => {
+    if (!requireCatalogManager()) return;
     event.preventDefault();
     const sourceArtist = draggedArtist || event.dataTransfer.getData('text/plain');
     const placement = artistDropTarget?.artist === targetArtist
@@ -802,6 +910,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   };
 
   const moveVisibleSong = (songId: string, direction: -1 | 1) => {
+    if (!requireCatalogManager()) return;
     if (!selectedArtist) return;
     const songs = catalog.songs.filter((song) => song.artist === selectedArtist);
     const currentIndex = songs.findIndex((song) => song.id === songId);
@@ -811,6 +920,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   };
 
   const handleSongDragStart = (event: DragEvent<HTMLElement>, songId: string) => {
+    if (!requireCatalogManager()) return;
     event.dataTransfer.effectAllowed = 'move';
     event.dataTransfer.setData('text/plain', songId);
     setDraggedSongId(songId);
@@ -818,6 +928,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   };
 
   const handleSongDragOver = (event: DragEvent<HTMLElement>, targetSongId: string) => {
+    if (!canManageCatalog) return;
     const sourceSongId = draggedSongId || event.dataTransfer.getData('text/plain');
     if (!songOrderMode || !sourceSongId || sourceSongId === targetSongId) return;
     event.preventDefault();
@@ -831,6 +942,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   };
 
   const handleSongDrop = (event: DragEvent<HTMLElement>, targetSongId: string) => {
+    if (!requireCatalogManager()) return;
     event.preventDefault();
     const sourceSongId = draggedSongId || event.dataTransfer.getData('text/plain');
     const placement = songDropTarget?.songId === targetSongId
@@ -854,6 +966,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   };
 
   const updateAvatarAdjustment = (artist: string, patch: Partial<AvatarAdjustment>) => {
+    if (!requireCatalogManager()) return;
     const avatar = getArtistAvatar(artist);
     if (!avatar) return;
     setAvatarAdjustments((current) => {
@@ -864,6 +977,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   };
 
   const resetAvatarAdjustment = (artist: string) => {
+    if (!requireCatalogManager()) return;
     setAvatarAdjustments((current) => {
       const next = { ...current };
       delete next[artist];
@@ -873,6 +987,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   };
 
   const handleArtistAvatarUpload = async (artist: string, file: File) => {
+    if (!requireCatalogManager()) return;
     try {
       const src = await resizeArtistAvatar(file);
       const nextAvatars = { ...customArtistAvatars, [artist]: src };
@@ -1169,6 +1284,17 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     );
   };
 
+  const PracticeBadges = ({ song }: { song: Song }) => {
+    const stats = songPracticeStats.get(song.id);
+    if (!stats) return null;
+    return (
+      <span className="inline-flex shrink-0 items-center gap-1">
+        <span className="rounded-md bg-white/[0.08] px-1 py-[1px] text-[10px] font-medium text-white/45">{stats.count}次</span>
+        <span className="rounded-md bg-white/[0.08] px-1 py-[1px] text-[10px] font-medium text-white/45">{stats.score}</span>
+      </span>
+    );
+  };
+
   const SongRows = ({ songs }: { songs: Song[] }) => (
     <div className="grid gap-3 sm:grid-cols-2">
       {songs.map((song, index) => {
@@ -1192,11 +1318,11 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
             {songOrderMode && <GripVertical className="h-5 w-5 shrink-0 text-orange-200/45" aria-hidden="true" />}
             {songOrderMode ? (
               <span className="min-w-0 flex-1 rounded-xl px-2 py-2 text-left">
-                <h3 className="truncate font-bold text-orange-50">{song.title}</h3><p title={song.hotComment} className="mt-1 truncate text-xs text-white/40">{getSongSubtitle(song)}</p>
+                <span className="flex min-w-0 items-center gap-2"><h3 className="truncate font-bold text-orange-50">{song.title}</h3><PracticeBadges song={song} /></span><p title={song.hotComment} className="mt-1 truncate text-xs text-white/40">{getSongSubtitle(song)}</p>
               </span>
             ) : (
               <button type="button" onClick={() => openSongDetail(song)} className="min-w-0 flex-1 rounded-xl px-2 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-orange-300/50">
-                <h3 className="truncate font-bold transition group-hover:text-orange-100">{song.title}</h3><p title={song.hotComment} className="mt-1 truncate text-xs text-white/40">{getSongSubtitle(song)}</p>
+                <span className="flex min-w-0 items-center gap-2"><h3 className="truncate font-bold transition group-hover:text-orange-100">{song.title}</h3><PracticeBadges song={song} /></span><p title={song.hotComment} className="mt-1 truncate text-xs text-white/40">{getSongSubtitle(song)}</p>
               </button>
             )}
             {songOrderMode ? (
@@ -1362,7 +1488,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                   <Sparkles className="h-4 w-4" />{roadshowBusyId === 'quiz-batch' ? '选取中' : '一键选歌'}
                 </button>
               )}
-              {activeSection === 'artists' && (
+              {activeSection === 'artists' && canManageCatalog && (
                 <div className="flex shrink-0 flex-wrap justify-end gap-2">
                   {!selectedArtist && <>
                     <button type="button" aria-pressed={artistOrderMode} onClick={() => { if (artistOrderMode) syncCurrentArtistSettings(); clearArtistDragState(); setArtistOrderMode((current) => !current); setAvatarAdjustMode(false); setAdjustingArtist(null); }} className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-xs font-bold transition ${artistOrderMode ? 'border-orange-200/40 bg-orange-300 text-black' : 'border-white/10 bg-black/30 text-white/55 hover:text-white'}`}>
@@ -1375,6 +1501,11 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                   {selectedArtist && (
                     <button type="button" aria-pressed={songOrderMode} onClick={() => { clearSongDragState(); setSongOrderMode((current) => !current); }} className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-xs font-bold transition ${songOrderMode ? 'border-orange-200/40 bg-orange-300 text-black' : 'border-white/10 bg-black/30 text-white/55 hover:text-white'}`}>
                       <ListOrdered className="h-4 w-4" />{songOrderMode ? '完成排序' : '调整排序'}
+                    </button>
+                  )}
+                  {selectedArtist && (
+                    <button type="button" onClick={handleSortByMatch} className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/30 px-3.5 py-2 text-xs font-bold text-white/55 transition hover:border-orange-200/35 hover:text-orange-100">
+                      <ArrowUpDown className="h-4 w-4" />按匹配度排序
                     </button>
                   )}
                   <button type="button" onClick={selectedArtist ? handleAddSong : handleAddArtist} className="inline-flex items-center gap-1.5 rounded-full border border-rose-200/25 bg-rose-300/10 px-3.5 py-2 text-xs font-bold text-rose-100 transition hover:bg-rose-300/20">
@@ -1521,8 +1652,8 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                         const avatarStyle = getAvatarStyle(artist);
                         return (
                           <button key={artist} type="button" aria-pressed={personalRankingArtist === artist} onClick={() => setPersonalRankingArtist(artist)} className={`flex min-w-0 items-center gap-2 rounded-xl border p-2.5 text-left transition ${personalRankingArtist === artist ? 'border-orange-300/50 bg-orange-300/12' : 'border-white/10 bg-black/25 hover:border-orange-200/25'}`}>
-                            <span className="grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-full border border-orange-200/15 bg-orange-300/10">
-                              {avatar && avatarStyle ? <img src={avatar.src} alt="" className="h-full w-full object-cover" style={{ objectPosition: `${avatarStyle.x}% ${avatarStyle.y}%`, transform: `scale(${avatarStyle.scale}) rotate(${avatarStyle.rotation}deg)`, transformOrigin: `${avatarStyle.x}% ${avatarStyle.y}%` }} /> : <Mic2 className="h-4 w-4 text-orange-200/70" />}
+                            <span className="relative grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-full border border-orange-200/15 bg-orange-300/10">
+                              {avatar && avatarStyle ? <ArtistAvatarImage avatar={avatar} adjustment={avatarStyle} /> : <Mic2 className="h-4 w-4 text-orange-200/70" />}
                             </span>
                             <span className="min-w-0 flex-1"><strong className="block truncate text-xs text-white/85">{artist}</strong><small className="text-[10px] text-white/35">{songs.length} 首</small></span>
                             <ChevronRight className="h-3.5 w-3.5 shrink-0 text-white/25" />
@@ -1644,9 +1775,9 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                         const dropPlacement = artistDropTarget?.artist === artist ? artistDropTarget.placement : null;
                         const cardClass = `relative flex min-w-0 items-center gap-4 rounded-2xl border bg-black/30 p-4 text-left transition ${adjustingArtist === artist ? 'border-orange-300/70 ring-2 ring-orange-300/15' : 'border-white/10 hover:border-rose-300/35'}`;
                         const cardContent = <>
-                          <span className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-full border border-rose-200/20 bg-rose-300/10">
+                          <span className="relative grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-full border border-rose-200/20 bg-rose-300/10">
                             {avatar && avatarStyle ? (
-                              <img src={avatar.src} alt="" loading={index < 8 ? 'eager' : 'lazy'} fetchPriority={index < 8 ? 'high' : 'auto'} decoding="async" className="h-full w-full object-cover" style={{ objectPosition: `${avatarStyle.x}% ${avatarStyle.y}%`, transform: `scale(${avatarStyle.scale}) rotate(${avatarStyle.rotation}deg)`, transformOrigin: `${avatarStyle.x}% ${avatarStyle.y}%` }} />
+                              <ArtistAvatarImage avatar={avatar} adjustment={avatarStyle} loading={index < 8 ? 'eager' : 'lazy'} fetchPriority={index < 8 ? 'high' : 'auto'} />
                             ) : <Mic2 className="h-5 w-5 text-rose-200" />}
                           </span>
                           <span className="min-w-0 flex-1"><strong className="block truncate">{artist}</strong><small className="text-white/35">{songs.length} 首</small></span>
@@ -1854,8 +1985,8 @@ const AvatarAdjustmentPanel = ({ artist, avatar, adjustment, onUpload, onChange,
   return (
     <section className="rounded-[1.5rem] border border-orange-200/20 bg-black/45 p-4 sm:p-5">
       <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
-        <span className="mx-auto grid h-24 w-24 shrink-0 place-items-center overflow-hidden rounded-full border border-orange-200/30 bg-black sm:mx-0">
-          {avatar && adjustment ? <img src={avatar.src} alt={`${artist}头像预览`} className="h-full w-full object-cover" style={{ objectPosition: `${adjustment.x}% ${adjustment.y}%`, transform: `scale(${adjustment.scale}) rotate(${adjustment.rotation}deg)`, transformOrigin: `${adjustment.x}% ${adjustment.y}%` }} /> : <Mic2 className="h-8 w-8 text-orange-200/55" />}
+        <span className="relative mx-auto grid h-24 w-24 shrink-0 place-items-center overflow-hidden rounded-full border border-orange-200/30 bg-black sm:mx-0">
+          {avatar && adjustment ? <ArtistAvatarImage avatar={avatar} adjustment={adjustment} alt={`${artist}头像预览`} /> : <Mic2 className="h-8 w-8 text-orange-200/55" />}
         </span>
         <div className="min-w-0 flex-1">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">

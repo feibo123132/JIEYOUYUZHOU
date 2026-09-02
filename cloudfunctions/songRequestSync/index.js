@@ -211,6 +211,7 @@ function createHandler(store) {
         return { ok: true, assignments: request.assignments };
       }
       if (request.action === 'artistSettings:push') {
+        if (id !== workspaceId(FEATURED_SONGS_OWNER_ALIAS)) throw new Error('AUTH_FAILED');
         const saved = await store.saveArtistSettingsAtomically(id, request.expectedRevision, request.snapshot);
         return { ok: true, snapshot: publicArtistSettings(saved) };
       }
