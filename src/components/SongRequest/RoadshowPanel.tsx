@@ -320,7 +320,7 @@ const RoadshowEditor = ({ record, allRecords, busy, message, quizAssignments, on
             <option value="">路演地点（可选）</option>
             {ROADSHOW_LOCATIONS.map((location) => <option key={location} value={location}>{location}</option>)}
           </select>
-          <input aria-label="路演天气" value={record.weather ?? ''} onChange={(event) => onChange({ ...record, weather: event.target.value })} maxLength={40} placeholder="路演天气（可选）" className="h-12 min-w-0 rounded-xl border border-white/10 bg-black/35 px-4 outline-none placeholder:text-white/25 focus:border-orange-300/45" />
+          <input aria-label="天气" value={record.weather ?? ''} onChange={(event) => onChange({ ...record, weather: event.target.value })} maxLength={40} placeholder="天气（可选）" className="h-12 min-w-0 rounded-xl border border-white/10 bg-black/35 px-4 outline-none placeholder:text-white/25 focus:border-orange-300/45" />
         </div>
       </div>
 

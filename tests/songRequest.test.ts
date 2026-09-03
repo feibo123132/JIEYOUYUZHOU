@@ -1728,8 +1728,8 @@ test('路演基本信息四项同排并把地点限制为三个固定选项', as
   assert.match(source, /<select aria-label="路演地点"/)
   assert.match(source, /ROADSHOW_LOCATIONS\.map/)
   assert.doesNotMatch(source, /<input aria-label="路演地点"/)
-  assert.match(source, /aria-label="路演天气"/)
-  assert.match(source, /placeholder="路演天气（可选）"/)
+  assert.match(source, /aria-label="天气"/)
+  assert.match(source, /placeholder="天气（可选）"/)
 })
 
 test('路演歌曲卡使用克制的低对比度描边', () => {
