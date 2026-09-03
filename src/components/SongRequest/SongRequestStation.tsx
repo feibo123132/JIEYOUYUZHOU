@@ -212,6 +212,8 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   const [query, setQuery] = useState('');
   const [artistLanguageFilter, setArtistLanguageFilter] = useState<ArtistLanguageFilter>('chinese');
   const [artistPage, setArtistPage] = useState(1);
+  const [showHotSongs, setShowHotSongs] = useState(false);
+  const [hotSongsPage, setHotSongsPage] = useState(1);
   const [catalog, setCatalog] = useState<EditableCatalog>(() => (
     typeof window === 'undefined' ? createEditableCatalog(SONGS) : loadEditableCatalog(window.localStorage, SONGS)
   ));
@@ -278,6 +280,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   const [artistDropTarget, setArtistDropTarget] = useState<{ artist: string; placement: ArtistDropPlacement } | null>(null);
   const [songOrderMode, setSongOrderMode] = useState(false);
   const [songEditMode, setSongEditMode] = useState(false);
+  const [artistEditMode, setArtistEditMode] = useState(false);
   const [showPracticeBadges, setShowPracticeBadges] = useState(() => {
     try { return localStorage.getItem('jieyou_show_practice_badges') !== 'false'; } catch { return true; }
   });
@@ -752,6 +755,12 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
       : artistGroups.slice((artistPage - 1) * ARTISTS_PER_PAGE, artistPage * ARTISTS_PER_PAGE)
   ), [artistGroups, artistOrderMode, artistPage]);
 
+  const HOT_SONGS_PER_PAGE = 14;
+  const hotSongsPageCount = Math.max(1, Math.ceil(providedSongs.length / HOT_SONGS_PER_PAGE));
+  const paginatedHotSongs = useMemo(() => (
+    providedSongs.slice((hotSongsPage - 1) * HOT_SONGS_PER_PAGE, hotSongsPage * HOT_SONGS_PER_PAGE)
+  ), [providedSongs, hotSongsPage]);
+
   const songSearchResults = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return [];
@@ -774,6 +783,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
 
   useEffect(() => {
     setArtistPage(1);
+    setHotSongsPage(1);
   }, [artistLanguageFilter, query]);
 
   useEffect(() => {
@@ -893,8 +903,13 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     if (!requireCatalogManager()) return;
     const artist = window.prompt('请输入要删除的歌手名：')?.trim();
     if (!artist) return;
+    handleRemoveArtistByName(artist);
+  };
+
+  const handleRemoveArtistByName = (artist: string) => {
+    if (!requireCatalogManager()) return;
     if (!catalog.artists.includes(artist)) return window.alert('没有找到该歌手。');
-    if (!window.confirm(`确定删除“${artist}”及其全部歌曲吗？`)) return;
+    if (!window.confirm(`确定删除"${artist}"及其全部歌曲吗？`)) return;
     commitCatalog(removeCatalogArtist(catalog, artist));
     if (selectedArtist === artist) setSelectedArtist(null);
   };
@@ -1610,12 +1625,12 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
 
             {activeSection === 'ranking' && (
               <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
-                <div data-request-ranking-panel className="relative flex min-h-[calc(100svh-12rem)] flex-col rounded-[1.75rem] border border-white/10 bg-black/35 p-5 sm:p-7">
+                <div data-request-ranking-panel className="relative flex h-[calc(100svh-14rem)] min-h-[28rem] flex-col overflow-hidden rounded-[1.75rem] border border-white/10 bg-black/35 p-5 sm:p-7">
                   {rankingView === 'requests' ? (
-                    <div className="flex flex-1 flex-col gap-4">
+                    <div className="flex min-h-0 flex-1 flex-col gap-4">
                       {requestVoteView === 'pending' ? (
                         ranking.length ? <>
-                          <div className={`${ranking.length > REQUEST_RANKING_SCROLL_THRESHOLD ? 'max-h-[42rem] overflow-y-auto overscroll-contain pr-2' : ''}`}>
+                          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-2">
                             <ol className="space-y-3">{ranking.map(({ song, count }, index) => (
                               <li key={song.id} className="flex items-center gap-4 rounded-2xl border border-white/10 bg-white/[.035] p-4">
                                 <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-full font-serif font-black ${RANKING_MEDAL_CLASSES[getRankingMedalTone(index, 3)]}`}>{index + 1}</span>
@@ -1625,7 +1640,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                             ))}</ol>
                           </div>
                           {canManageFeaturedSongs && ranking.length > 0 && (
-                            <div className="mt-auto flex justify-center pt-6">
+                            <div className="flex shrink-0 justify-center pt-4">
                               <button type="button" disabled={finishingVotes} onClick={() => void finishAllRequestedSongs()} className="inline-flex items-center justify-center gap-2 rounded-full border border-orange-200/35 bg-orange-300 px-7 py-3 text-sm font-black text-black transition hover:bg-orange-200 disabled:cursor-wait disabled:opacity-55">
                                 <Check className="h-4 w-4" /><span>唱完</span>{finishingVotes && <small className="font-normal">处理中…</small>}
                               </button>
@@ -1840,11 +1855,6 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                         </button>
                       )}
                       {selectedArtist && (
-                        <button type="button" onClick={handleSortByMatch} className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/30 px-3.5 py-2 text-xs font-bold text-white/55 transition hover:border-orange-200/35 hover:text-orange-100">
-                          <ArrowUpDown className="h-4 w-4" />匹配度
-                        </button>
-                      )}
-                      {selectedArtist && (
                         <button type="button" aria-pressed={songEditMode} onClick={() => { clearSongDragState(); setSongOrderMode(false); setSongEditMode((current) => !current); }} className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-xs font-bold transition ${songEditMode ? 'border-orange-200/40 bg-orange-300 text-black' : 'border-white/10 bg-black/30 text-white/55 hover:text-white'}`}>
                           <PenLine className="h-4 w-4" />{songEditMode ? '完成编辑' : '编辑歌曲'}
                         </button>
@@ -1855,32 +1865,41 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                         </button>
                       )}
                       {!selectedArtist && (
-                        <button type="button" onClick={handleAddArtist} className="inline-flex items-center gap-1.5 rounded-full border border-rose-200/25 bg-rose-300/10 px-3.5 py-2 text-xs font-bold text-rose-100 transition hover:bg-rose-300/20">
-                          <Plus className="h-4 w-4" />新增歌手
+                        <button type="button" aria-pressed={artistEditMode} onClick={() => { clearArtistDragState(); setArtistOrderMode(false); setAvatarAdjustMode(false); setAdjustingArtist(null); setArtistEditMode((current) => !current); }} className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-xs font-bold transition ${artistEditMode ? 'border-orange-200/40 bg-orange-300 text-black' : 'border-white/10 bg-black/30 text-white/55 hover:text-white'}`}>
+                          <PenLine className="h-4 w-4" />{artistEditMode ? '完成编辑' : '编辑歌手'}
                         </button>
                       )}
                       {!selectedArtist && (
-                        <button type="button" onClick={handleRemoveArtist} className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/30 px-3.5 py-2 text-xs font-bold text-white/55 transition hover:border-red-300/30 hover:text-red-200">
-                          <Trash2 className="h-4 w-4" />删除歌手
+                        <button type="button" onClick={handleSortByMatch} className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/30 px-3.5 py-2 text-xs font-bold text-white/55 transition hover:border-orange-200/35 hover:text-orange-100">
+                          <ArrowUpDown className="h-4 w-4" />匹配度
                         </button>
                       )}
                     </div>
                   )}
                 </div>
                 {!selectedArtist && (
-                  <div role="tablist" aria-label="歌手语种筛选" className="flex items-center gap-2 overflow-x-auto pb-1">
+                  <div role="tablist" aria-label="歌手与歌曲视图切换" className="flex items-center gap-2 overflow-x-auto pb-1">
                     {ARTIST_LANGUAGE_FILTERS.map((item) => (
                       <button
                         key={item.value}
                         type="button"
                         role="tab"
-                        aria-selected={artistLanguageFilter === item.value}
-                        onClick={() => setArtistLanguageFilter(item.value)}
-                        className={`shrink-0 rounded-full border px-4 py-2 text-xs font-bold transition ${artistLanguageFilter === item.value ? 'border-orange-300/45 bg-orange-300 text-black shadow-[0_8px_24px_rgba(251,146,60,.16)]' : 'border-white/10 bg-black/30 text-white/45 hover:border-orange-200/25 hover:text-white/75'}`}
+                        aria-selected={!showHotSongs && artistLanguageFilter === item.value}
+                        onClick={() => { setShowHotSongs(false); setArtistLanguageFilter(item.value); }}
+                        className={`shrink-0 rounded-full border px-4 py-2 text-xs font-bold transition ${!showHotSongs && artistLanguageFilter === item.value ? 'border-orange-300/45 bg-orange-300 text-black shadow-[0_8px_24px_rgba(251,146,60,.16)]' : 'border-white/10 bg-black/30 text-white/45 hover:border-orange-200/25 hover:text-white/75'}`}
                       >
                         {item.label}
                       </button>
                     ))}
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={showHotSongs}
+                      onClick={() => setShowHotSongs(true)}
+                      className={`shrink-0 rounded-full border px-4 py-2 text-xs font-bold transition ${showHotSongs ? 'border-orange-300/45 bg-orange-300 text-black shadow-[0_8px_24px_rgba(251,146,60,.16)]' : 'border-white/10 bg-black/30 text-white/45 hover:border-orange-200/25 hover:text-white/75'}`}
+                    >
+                      热门歌曲
+                    </button>
                   </div>
                 )}
                 {avatarAdjustMode && !selectedArtist && (
@@ -1905,6 +1924,36 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                   </>
                 ) : songSearchResults.length > 0 ? (
                   <SongRows songs={songSearchResults} />
+                ) : showHotSongs ? (
+                  <>
+                    <SongRows songs={paginatedHotSongs} />
+                    {providedSongs.length > HOT_SONGS_PER_PAGE && (
+                      <nav aria-label="热门歌曲分页" className="mt-5 flex flex-wrap items-center justify-center gap-3 text-xs text-white/45">
+                        <span>共 {providedSongs.length} 首</span>
+                        <span className="flex items-center gap-2 rounded-full border border-white/10 bg-black/30 p-1">
+                          <button
+                            type="button"
+                            aria-label="上一页热门歌曲"
+                            disabled={hotSongsPage === 1}
+                            onClick={() => setHotSongsPage((current) => Math.max(1, current - 1))}
+                            className="grid h-8 w-8 place-items-center rounded-full text-white/60 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-20"
+                          >
+                            <ChevronLeft className="h-4 w-4" />
+                          </button>
+                          <strong className="min-w-14 text-center font-bold text-white/70">{hotSongsPage} / {hotSongsPageCount}</strong>
+                          <button
+                            type="button"
+                            aria-label="下一页热门歌曲"
+                            disabled={hotSongsPage === hotSongsPageCount}
+                            onClick={() => setHotSongsPage((current) => Math.min(hotSongsPageCount, current + 1))}
+                            className="grid h-8 w-8 place-items-center rounded-full text-white/60 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-20"
+                          >
+                            <ChevronRight className="h-4 w-4" />
+                          </button>
+                        </span>
+                      </nav>
+                    )}
+                  </>
                 ) : (
                   <>
                     {artistOrderMode && (
@@ -1956,11 +2005,23 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                           </article>
                         );
                         return (
-                          <button key={artist} type="button" onClick={() => avatarAdjustMode ? setAdjustingArtist(artist) : setSelectedArtist(artist)} className={cardClass}>
-                            {cardContent}<ChevronRight className="h-4 w-4 shrink-0 text-white/25" />
+                          <button key={artist} type="button" onClick={() => avatarAdjustMode ? setAdjustingArtist(artist) : artistEditMode ? undefined : setSelectedArtist(artist)} className={cardClass}>
+                            {cardContent}
+                            {artistEditMode ? (
+                              <button type="button" aria-label={`删除${artist}`} title="删除" onClick={(e) => { e.stopPropagation(); handleRemoveArtistByName(artist); }} className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-red-300/25 text-red-200/50 transition hover:border-red-300/50 hover:bg-red-300/10 hover:text-red-200">
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            ) : (
+                              <ChevronRight className="h-4 w-4 shrink-0 text-white/25" />
+                            )}
                           </button>
                         );
                       })}</div>
+                      {artistEditMode && (
+                        <button type="button" onClick={handleAddArtist} className="inline-flex items-center justify-center gap-2 rounded-2xl border border-dashed border-white/15 bg-black/20 p-3 text-xs font-bold text-white/45 transition hover:border-rose-200/30 hover:bg-rose-300/10 hover:text-rose-100">
+                          <Plus className="h-4 w-4" />新增歌手
+                        </button>
+                      )}
                       {!artistOrderMode && artistGroups.length > ARTISTS_PER_PAGE && (
                         <nav aria-label="歌手分页" className="mt-5 flex flex-wrap items-center justify-center gap-3 text-xs text-white/45">
                           <span>共 {artistGroups.length} 位歌手</span>

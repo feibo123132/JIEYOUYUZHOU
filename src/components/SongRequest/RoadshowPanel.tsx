@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CalendarDays, Check, ChevronRight, Cloud, Guitar, Lock, Plus, Save, Trash2, UsersRound, X } from 'lucide-react';
+import { CalendarDays, Check, ChevronRight, Cloud, Guitar, Lock, Plus, Save, Search, Trash2, UsersRound, X } from 'lucide-react';
 import { SONGS } from './songCatalog';
 import type { Song } from './songCatalog';
 import DailyPracticePanel from './DailyPracticePanel';
@@ -8,6 +8,7 @@ import {
   countRecognitionAttemptsForSong,
   findSongAppearances,
   createRecognitionAttempt,
+  createRoadshowSong,
   groupRoadshowRecognitionSongs,
   groupPerformanceSongsByMatchTier,
   paginateRoadshowSongs,
@@ -35,6 +36,7 @@ import {
   getMatchQuality,
   readSongRecordSession,
   SONG_REQUEST_SESSION_EVENT,
+  type MatchQuality,
   type PracticeRecord,
   type SongRecord,
 } from './songRecords';
@@ -232,6 +234,7 @@ const RoadshowPanel = ({
         record={editing}
         allRecords={records}
         songRecords={songRecords}
+        catalogSongs={songs}
         busy={busy}
         message={message}
         quizAssignments={quizAssignments}
@@ -300,6 +303,7 @@ interface EditorProps {
   record: RoadshowRecord;
   allRecords: RoadshowRecord[];
   songRecords: SongRecord[];
+  catalogSongs: Song[];
   busy: boolean;
   message: string;
   quizAssignments: QuizAssignments;
@@ -312,7 +316,7 @@ interface EditorProps {
   onLock: () => void;
 }
 
-const RoadshowEditor = ({ record, allRecords, songRecords, busy, message, quizAssignments, onChange, onBack, onSave, onRecordAttempt, onOpenSongDetail, onDelete, onLock }: EditorProps) => {
+const RoadshowEditor = ({ record, allRecords, songRecords, catalogSongs, busy, message, quizAssignments, onChange, onBack, onSave, onRecordAttempt, onOpenSongDetail, onDelete, onLock }: EditorProps) => {
   const updateList = (key: 'performanceSongs' | 'recognitionSongs', songs: RoadshowSong[]) => onChange({ ...record, [key]: songs });
   return (
     <section className="space-y-5">
@@ -332,7 +336,7 @@ const RoadshowEditor = ({ record, allRecords, songRecords, busy, message, quizAs
         </div>
       </div>
 
-      <SongListEditor title="路演歌曲" description="本次准备演唱的歌曲" songs={record.performanceSongs} allRecords={allRecords} recordId={record.id} songRecords={songRecords} onChange={(songs) => updateList('performanceSongs', songs)} />
+      <SongListEditor title="路演歌曲" description="本次准备演唱的歌曲" songs={record.performanceSongs} allRecords={allRecords} recordId={record.id} songRecords={songRecords} catalogSongs={catalogSongs} onChange={(songs) => updateList('performanceSongs', songs)} />
       <RecognitionSongListEditor record={record} assignments={quizAssignments} allRecords={allRecords} busy={busy} onRecordAttempt={onRecordAttempt} onOpenSongDetail={onOpenSongDetail} />
 
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-black/25 p-4">
@@ -350,6 +354,7 @@ interface SongListEditorProps {
   allRecords: RoadshowRecord[];
   recordId: string;
   songRecords: SongRecord[];
+  catalogSongs: Song[];
   onChange: (songs: RoadshowSong[]) => void;
 }
 
@@ -367,9 +372,27 @@ const PERFORMANCE_TIER_LABEL: Record<PerformanceMatchTier, string> = {
   good: 'text-[#4ade80]',
 };
 
-const SongListEditor = ({ title, description, songs, allRecords, recordId, songRecords, onChange }: SongListEditorProps) => {
+const MATCH_TONE_CLASS: Record<MatchQuality['tone'], string> = {
+  white: 'text-white/50',
+  green: 'text-[#4ade80]',
+  lightBlue: 'text-[#7dd3fc]',
+  darkBlue: 'text-[#2563eb]',
+  purple: 'text-[#c084fc]',
+  gold: 'text-[#fbbf24]',
+};
+
+const renderMatchScore = (score: number | null) => {
+  if (score === null) return <span className="shrink-0 text-[10px] font-black text-white/25">未练习</span>;
+  const quality = getMatchQuality(score);
+  if (!quality) return <span className="shrink-0 text-[10px] font-black text-white/25">未练习</span>;
+  return <span className={`shrink-0 text-[10px] font-black ${MATCH_TONE_CLASS[quality.tone]}`}>{quality.label} {score}</span>;
+};
+
+const SongListEditor = ({ title, description, songs, allRecords, recordId, songRecords, catalogSongs, onChange }: SongListEditorProps) => {
   const [tierPages, setTierPages] = useState<Record<PerformanceMatchTier, number>>({ rareLegend: 1, fineDeep: 1, fineLight: 1, good: 1 });
   const [unrankedPage, setUnrankedPage] = useState(1);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerQuery, setPickerQuery] = useState('');
 
   const scoreResolver = useMemo(() => {
     const practiceMap = new Map<string, PracticeRecord[]>();
@@ -377,7 +400,7 @@ const SongListEditor = ({ title, description, songs, allRecords, recordId, songR
       if (record.kind !== 'practice') continue;
       practiceMap.set(record.songId, [...(practiceMap.get(record.songId) ?? []), record]);
     }
-    return (song: RoadshowSong): number | null => {
+    return (song: Pick<RoadshowSong, 'catalogId' | 'title' | 'artist'>): number | null => {
       if (song.catalogId) {
         const practices = practiceMap.get(song.catalogId);
         if (practices?.length) return averageMatchScore(practices);
@@ -397,6 +420,19 @@ const SongListEditor = ({ title, description, songs, allRecords, recordId, songR
     () => groupPerformanceSongsByMatchTier(songs, (song) => scoreResolver(song)),
     [songs, scoreResolver],
   );
+
+  const pickerResults = useMemo(() => {
+    const keyword = pickerQuery.trim().toLocaleLowerCase();
+    if (!keyword) return [];
+    return catalogSongs
+      .filter((song) => `${song.title} ${song.artist}`.toLocaleLowerCase().includes(keyword))
+      .slice(0, 30)
+      .map((song) => ({
+        song,
+        score: scoreResolver({ catalogId: song.id, title: song.title, artist: song.artist }),
+        added: songs.some((item) => (item.catalogId && item.catalogId === song.id) || (item.title === song.title && item.artist === song.artist)),
+      }));
+  }, [catalogSongs, pickerQuery, scoreResolver, songs]);
 
   const renderSongRow = (song: RoadshowSong) => {
     const appearances = findSongAppearances(allRecords, song, recordId);
@@ -432,8 +468,41 @@ const SongListEditor = ({ title, description, songs, allRecords, recordId, songR
           <h3 className="font-serif text-2xl font-black">{title}</h3>
           <p className="mt-1 text-xs text-white/35">{description}</p>
         </div>
-        <strong className="text-xs text-white/30">{songs.length} 首</strong>
+        <div className="flex items-center gap-3">
+          <strong className="text-xs text-white/30">{songs.length} 首</strong>
+          <button type="button" onClick={() => { setPickerOpen((open) => !open); setPickerQuery(''); }} className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-bold transition ${pickerOpen ? 'border-orange-200/40 bg-orange-300 text-black' : 'border-orange-200/25 bg-orange-300/10 text-orange-100 hover:bg-orange-300/20'}`}>
+            <Plus className="h-3.5 w-3.5" />从歌库添加
+          </button>
+        </div>
       </div>
+      {pickerOpen && (
+        <div className="mt-4 rounded-2xl border border-white/10 bg-black/25 p-3">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/25" />
+            <input autoFocus value={pickerQuery} onChange={(event) => setPickerQuery(event.target.value)} placeholder="搜索歌名或歌手，跨歌手选歌…" className="h-10 w-full rounded-xl border border-white/10 bg-black/40 pl-9 pr-3 text-sm outline-none placeholder:text-white/25 focus:border-orange-300/45" />
+          </div>
+          <div className="mt-3 max-h-72 grid grid-cols-1 gap-2 overflow-y-auto overscroll-contain pr-1 sm:grid-cols-2">
+            {pickerResults.map(({ song, score, added }) => (
+              <div key={song.id} className="flex items-center gap-3 rounded-xl border border-white/10 bg-black/25 p-2.5">
+                <span className="min-w-0 flex-1">
+                  <strong className="block truncate text-sm">{song.title}</strong>
+                  <small className="block truncate text-white/35">{song.artist}</small>
+                </span>
+                {renderMatchScore(score)}
+                <button type="button" disabled={added} onClick={() => onChange([...songs, createRoadshowSong(song)])} className={added ? 'shrink-0 rounded-full border border-white/10 px-3 py-1 text-[10px] font-bold text-white/25' : 'shrink-0 rounded-full border border-[#4ade80]/35 bg-[#4ade80]/10 px-3 py-1 text-[10px] font-bold text-[#4ade80] transition hover:bg-[#4ade80]/20'}>
+                  {added ? '已在列' : '加入'}
+                </button>
+              </div>
+            ))}
+            {!pickerResults.length && (
+              <p className="py-4 text-center text-[10px] text-white/25">
+                {pickerQuery.trim() ? '没有匹配的歌曲' : '输入关键词开始搜索，支持歌名与歌手'}
+              </p>
+            )}
+          </div>
+          <p className="mt-2 text-[10px] leading-4 text-white/25">已练习的歌曲加入后自动按匹配度落入对应分组；未练习或 75 分以下的进入下方「未入框」区。</p>
+        </div>
+      )}
       <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {PERFORMANCE_MATCH_TIERS.map((tier) => {
           const paginated = paginateRoadshowSongs(groups[tier.id], tierPages[tier.id]);
