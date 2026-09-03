@@ -1610,9 +1610,9 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
 
             {activeSection === 'ranking' && (
               <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
-                <div className="relative rounded-[1.75rem] border border-white/10 bg-black/35 p-5 sm:p-7">
+                <div data-request-ranking-panel className="relative flex min-h-[calc(100svh-12rem)] flex-col rounded-[1.75rem] border border-white/10 bg-black/35 p-5 sm:p-7">
                   {rankingView === 'requests' ? (
-                    <div className="space-y-4">
+                    <div className="flex flex-1 flex-col gap-4">
                       {requestVoteView === 'pending' ? (
                         ranking.length ? <>
                           <div className={`${ranking.length > REQUEST_RANKING_SCROLL_THRESHOLD ? 'max-h-[42rem] overflow-y-auto overscroll-contain pr-2' : ''}`}>
@@ -1625,7 +1625,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                             ))}</ol>
                           </div>
                           {canManageFeaturedSongs && ranking.length > 0 && (
-                            <div className="flex justify-center pt-2">
+                            <div className="mt-auto flex justify-center pt-6">
                               <button type="button" disabled={finishingVotes} onClick={() => void finishAllRequestedSongs()} className="inline-flex items-center justify-center gap-2 rounded-full border border-orange-200/35 bg-orange-300 px-7 py-3 text-sm font-black text-black transition hover:bg-orange-200 disabled:cursor-wait disabled:opacity-55">
                                 <Check className="h-4 w-4" /><span>唱完</span>{finishingVotes && <small className="font-normal">处理中…</small>}
                               </button>
