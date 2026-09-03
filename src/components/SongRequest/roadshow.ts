@@ -57,15 +57,16 @@ export const ROADSHOW_CACHE_KEY = 'jieyou-roadshows-v1';
 export const ROADSHOW_SESSION_KEY = 'jieyou-roadshow-session-v1';
 export const ROADSHOW_QUIZ_PAGE_SIZE = 5;
 
-export const paginateRoadshowSongs = <T>(songs: T[], requestedPage: number) => {
-  const pageCount = Math.max(1, Math.ceil(songs.length / ROADSHOW_QUIZ_PAGE_SIZE));
+export const paginateRoadshowSongs = <T>(songs: T[] | undefined, requestedPage: number) => {
+  const safeSongs = songs ?? [];
+  const pageCount = Math.max(1, Math.ceil(safeSongs.length / ROADSHOW_QUIZ_PAGE_SIZE));
   const page = Math.min(pageCount, Math.max(1, Math.floor(requestedPage)));
   const start = (page - 1) * ROADSHOW_QUIZ_PAGE_SIZE;
   return {
-    items: songs.slice(start, start + ROADSHOW_QUIZ_PAGE_SIZE),
+    items: safeSongs.slice(start, start + ROADSHOW_QUIZ_PAGE_SIZE),
     page,
     pageCount,
-    total: songs.length,
+    total: safeSongs.length,
   };
 };
 
@@ -366,3 +367,44 @@ export const createManualRoadshowSong = (title: string, artist: string): Roadsho
   artist: artist.trim(),
   source: 'manual',
 });
+
+export type PerformanceMatchTier = 'rareLegend' | 'fineDeep' | 'fineLight' | 'good';
+
+export const PERFORMANCE_MATCH_TIERS = [
+  { id: 'rareLegend' as const, label: '稀有·传奇', symbol: 'Ⅰ', minScore: 90, maxScore: 100 },
+  { id: 'fineDeep' as const, label: '精良·深蓝', symbol: 'Ⅱ', minScore: 85, maxScore: 89 },
+  { id: 'fineLight' as const, label: '精良·浅蓝', symbol: 'Ⅲ', minScore: 80, maxScore: 84 },
+  { id: 'good' as const, label: '优秀', symbol: 'Ⅳ', minScore: 75, maxScore: 79 },
+] as const;
+
+export const getPerformanceMatchTier = (score: number | null): PerformanceMatchTier | null => {
+  if (score === null || score < 75) return null;
+  if (score < 80) return 'good';
+  if (score < 85) return 'fineLight';
+  if (score < 90) return 'fineDeep';
+  return 'rareLegend';
+};
+
+export interface PerformanceMatchGroups {
+  groups: Record<PerformanceMatchTier, RoadshowSong[]>;
+  unranked: RoadshowSong[];
+}
+
+export const groupPerformanceSongsByMatchTier = (
+  songs: RoadshowSong[],
+  getScore: (song: RoadshowSong) => number | null,
+): PerformanceMatchGroups => {
+  const groups: Record<PerformanceMatchTier, RoadshowSong[]> = {
+    rareLegend: [],
+    fineDeep: [],
+    fineLight: [],
+    good: [],
+  };
+  const unranked: RoadshowSong[] = [];
+  for (const song of songs) {
+    const tier = getPerformanceMatchTier(getScore(song));
+    if (tier) groups[tier].push(song);
+    else unranked.push(song);
+  }
+  return { groups, unranked };
+};

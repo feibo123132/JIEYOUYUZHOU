@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { CalendarDays, Check, ChevronRight, Cloud, Guitar, Lock, Plus, Save, Trash2, UsersRound, X } from 'lucide-react';
 import { SONGS } from './songCatalog';
 import type { Song } from './songCatalog';
@@ -9,13 +9,16 @@ import {
   findSongAppearances,
   createRecognitionAttempt,
   groupRoadshowRecognitionSongs,
+  groupPerformanceSongsByMatchTier,
   paginateRoadshowSongs,
   parseRoadshowCache,
+  PERFORMANCE_MATCH_TIERS,
   ROADSHOW_CACHE_KEY,
   ROADSHOW_LOCATIONS,
   ROADSHOW_SESSION_KEY,
   preserveRecognitionParticipantNames,
   upsertRecognitionAttempt,
+  type PerformanceMatchTier,
   type RoadshowRecord,
   type RoadshowSong,
 } from './roadshow';
@@ -27,9 +30,12 @@ import {
   saveRoadshow,
 } from './songRequestCloud';
 import {
+  averageMatchScore,
   clearSongRecordCache,
+  getMatchQuality,
   readSongRecordSession,
   SONG_REQUEST_SESSION_EVENT,
+  type PracticeRecord,
   type SongRecord,
 } from './songRecords';
 import { QUIZ_LEVELS, type QuizAssignments, type QuizLevel } from './songQuizLibrary';
@@ -225,6 +231,7 @@ const RoadshowPanel = ({
       <RoadshowEditor
         record={editing}
         allRecords={records}
+        songRecords={songRecords}
         busy={busy}
         message={message}
         quizAssignments={quizAssignments}
@@ -292,6 +299,7 @@ const RoadshowPanel = ({
 interface EditorProps {
   record: RoadshowRecord;
   allRecords: RoadshowRecord[];
+  songRecords: SongRecord[];
   busy: boolean;
   message: string;
   quizAssignments: QuizAssignments;
@@ -304,7 +312,7 @@ interface EditorProps {
   onLock: () => void;
 }
 
-const RoadshowEditor = ({ record, allRecords, busy, message, quizAssignments, onChange, onBack, onSave, onRecordAttempt, onOpenSongDetail, onDelete, onLock }: EditorProps) => {
+const RoadshowEditor = ({ record, allRecords, songRecords, busy, message, quizAssignments, onChange, onBack, onSave, onRecordAttempt, onOpenSongDetail, onDelete, onLock }: EditorProps) => {
   const updateList = (key: 'performanceSongs' | 'recognitionSongs', songs: RoadshowSong[]) => onChange({ ...record, [key]: songs });
   return (
     <section className="space-y-5">
@@ -324,7 +332,7 @@ const RoadshowEditor = ({ record, allRecords, busy, message, quizAssignments, on
         </div>
       </div>
 
-      <SongListEditor title="路演歌曲" description="本次准备演唱的歌曲" songs={record.performanceSongs} allRecords={allRecords} recordId={record.id} onChange={(songs) => updateList('performanceSongs', songs)} />
+      <SongListEditor title="路演歌曲" description="本次准备演唱的歌曲" songs={record.performanceSongs} allRecords={allRecords} recordId={record.id} songRecords={songRecords} onChange={(songs) => updateList('performanceSongs', songs)} />
       <RecognitionSongListEditor record={record} assignments={quizAssignments} allRecords={allRecords} busy={busy} onRecordAttempt={onRecordAttempt} onOpenSongDetail={onOpenSongDetail} />
 
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-black/25 p-4">
@@ -341,20 +349,138 @@ interface SongListEditorProps {
   songs: RoadshowSong[];
   allRecords: RoadshowRecord[];
   recordId: string;
+  songRecords: SongRecord[];
   onChange: (songs: RoadshowSong[]) => void;
 }
 
-const SongListEditor = ({ title, description, songs, allRecords, recordId, onChange }: SongListEditorProps) => {
+const PERFORMANCE_TIER_BOX: Record<PerformanceMatchTier, string> = {
+  rareLegend: 'border-[#c084fc]/25 bg-[#c084fc]/[.05]',
+  fineDeep: 'border-[#2563eb]/25 bg-[#2563eb]/[.05]',
+  fineLight: 'border-[#7dd3fc]/25 bg-[#7dd3fc]/[.05]',
+  good: 'border-[#4ade80]/25 bg-[#4ade80]/[.05]',
+};
+
+const PERFORMANCE_TIER_LABEL: Record<PerformanceMatchTier, string> = {
+  rareLegend: 'text-[#c084fc]',
+  fineDeep: 'text-[#2563eb]',
+  fineLight: 'text-[#7dd3fc]',
+  good: 'text-[#4ade80]',
+};
+
+const SongListEditor = ({ title, description, songs, allRecords, recordId, songRecords, onChange }: SongListEditorProps) => {
+  const [tierPages, setTierPages] = useState<Record<PerformanceMatchTier, number>>({ rareLegend: 1, fineDeep: 1, fineLight: 1, good: 1 });
+  const [unrankedPage, setUnrankedPage] = useState(1);
+
+  const scoreResolver = useMemo(() => {
+    const practiceMap = new Map<string, PracticeRecord[]>();
+    for (const record of songRecords) {
+      if (record.kind !== 'practice') continue;
+      practiceMap.set(record.songId, [...(practiceMap.get(record.songId) ?? []), record]);
+    }
+    return (song: RoadshowSong): number | null => {
+      if (song.catalogId) {
+        const practices = practiceMap.get(song.catalogId);
+        if (practices?.length) return averageMatchScore(practices);
+      }
+      const matched: PracticeRecord[] = [];
+      for (const practices of practiceMap.values()) {
+        for (const r of practices) {
+          if (r.songTitle === song.title && r.songArtist === song.artist) matched.push(r);
+        }
+      }
+      if (matched.length) return averageMatchScore(matched);
+      return null;
+    };
+  }, [songRecords]);
+
+  const { groups, unranked } = useMemo(
+    () => groupPerformanceSongsByMatchTier(songs, (song) => scoreResolver(song)),
+    [songs, scoreResolver],
+  );
+
+  const renderSongRow = (song: RoadshowSong) => {
+    const appearances = findSongAppearances(allRecords, song, recordId);
+    const score = scoreResolver(song);
+    const quality = score !== null ? getMatchQuality(score) : null;
+    return (
+      <div key={song.id} className="flex items-center gap-3 rounded-xl border border-white/10 bg-black/25 p-3">
+        <span className="min-w-0 flex-1">
+          <strong className="block truncate text-sm">{song.title}</strong>
+          <small className="block truncate text-white/35">
+            {song.artist || '未填写歌手'}
+            {appearances.length ? ` · 曾用于：${appearances.join('、')}` : ''}
+          </small>
+        </span>
+        {quality ? (
+          <span className={`shrink-0 text-[10px] font-black ${quality.tone === 'white' ? 'text-white/50' : quality.tone === 'green' ? 'text-[#4ade80]' : quality.tone === 'lightBlue' ? 'text-[#7dd3fc]' : quality.tone === 'darkBlue' ? 'text-[#2563eb]' : quality.tone === 'purple' ? 'text-[#c084fc]' : 'text-[#fbbf24]'}`}>
+            {quality.label} {score}
+          </span>
+        ) : (
+          <span className="shrink-0 text-[10px] font-black text-white/25">未练习</span>
+        )}
+        <button type="button" onClick={() => onChange(songs.filter((item) => item.id !== song.id))} aria-label={`移除${song.title}`} className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-white/30 hover:bg-red-300/10 hover:text-red-200">
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+    );
+  };
+
   return (
     <section className="rounded-[1.75rem] border border-white/10 bg-[#09090c]/85 p-5 backdrop-blur-xl sm:p-7">
-      <div className="flex items-end justify-between gap-4"><div><h3 className="font-serif text-2xl font-black">{title}</h3><p className="mt-1 text-xs text-white/35">{description}</p></div><strong className="text-xs text-white/30">{songs.length} 首</strong></div>
-      <div className="mt-5 grid gap-2 sm:grid-cols-2">
-        {songs.map((song) => {
-          const appearances = findSongAppearances(allRecords, song, recordId);
-          return <div key={song.id} className="flex items-center gap-3 rounded-xl border border-white/10 bg-black/25 p-3"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-orange-300/10 text-orange-200"><Check className="h-4 w-4" /></span><span className="min-w-0 flex-1"><strong className="block truncate text-sm">{song.title}</strong><small className="block truncate text-white/35">{song.artist || '未填写歌手'}{appearances.length ? ` · 曾用于：${appearances.join('、')}` : ''}</small></span><button type="button" onClick={() => onChange(songs.filter((item) => item.id !== song.id))} aria-label={`移除${song.title}`} className="grid h-8 w-8 place-items-center rounded-full text-white/30 hover:bg-red-300/10 hover:text-red-200"><X className="h-4 w-4" /></button></div>;
-        })}
-        {!songs.length && <div className="grid min-h-24 place-items-center rounded-xl border border-dashed border-white/10 text-xs text-white/25 sm:col-span-2">还没有歌曲</div>}
+      <div className="flex items-end justify-between gap-4">
+        <div>
+          <h3 className="font-serif text-2xl font-black">{title}</h3>
+          <p className="mt-1 text-xs text-white/35">{description}</p>
+        </div>
+        <strong className="text-xs text-white/30">{songs.length} 首</strong>
       </div>
+      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {PERFORMANCE_MATCH_TIERS.map((tier) => {
+          const paginated = paginateRoadshowSongs(groups[tier.id], tierPages[tier.id]);
+          return (
+            <section key={tier.id} className={`flex min-h-36 flex-col rounded-2xl border p-3 ${PERFORMANCE_TIER_BOX[tier.id]}`}>
+              <header className="mb-3 flex items-center justify-between gap-2 border-b border-white/10 pb-3">
+                <span className="flex items-center gap-2">
+                  <b className={`grid h-7 w-7 place-items-center rounded-full border border-current/30 bg-black/20 font-serif text-xs ${PERFORMANCE_TIER_LABEL[tier.id]}`}>{tier.symbol}</b>
+                  <strong className={`text-sm ${PERFORMANCE_TIER_LABEL[tier.id]}`}>{tier.label}</strong>
+                </span>
+                <small className="text-white/35">{groups[tier.id].length} 首</small>
+              </header>
+              <div className="space-y-2">
+                {paginated.items.map(renderSongRow)}
+                {!groups[tier.id].length && <p className="py-5 text-center text-[10px] text-white/20">暂无歌曲</p>}
+              </div>
+              <footer className="mt-auto flex items-center justify-center gap-3 pt-3 text-[10px] font-bold text-white/45">
+                <button type="button" aria-label={`${tier.label}上一页`} disabled={paginated.page === 1} onClick={() => setTierPages((current) => ({ ...current, [tier.id]: paginated.page - 1 }))} className="grid h-7 w-7 place-items-center rounded-full border border-white/10 transition enabled:hover:border-white/25 enabled:hover:text-white disabled:opacity-20">‹</button>
+                <span>{paginated.page} / {paginated.pageCount}</span>
+                <button type="button" aria-label={`${tier.label}下一页`} disabled={paginated.page === paginated.pageCount} onClick={() => setTierPages((current) => ({ ...current, [tier.id]: paginated.page + 1 }))} className="grid h-7 w-7 place-items-center rounded-full border border-white/10 transition enabled:hover:border-white/25 enabled:hover:text-white disabled:opacity-20">›</button>
+              </footer>
+            </section>
+          );
+        })}
+      </div>
+      {unranked.length > 0 && (() => {
+        const paginated = paginateRoadshowSongs(unranked, unrankedPage);
+        return (
+          <section className="mt-3 flex min-h-24 flex-col rounded-2xl border border-white/10 bg-white/[.02] p-3 text-white/50">
+            <header className="mb-3 flex items-center justify-between gap-2 border-b border-white/10 pb-3">
+              <span className="flex items-center gap-2">
+                <b className="grid h-7 w-7 place-items-center rounded-full border border-white/15 bg-black/20 font-serif text-xs">·</b>
+                <strong className="text-sm">未入框（普通 / 未练习）</strong>
+              </span>
+              <small className="text-white/35">{unranked.length} 首</small>
+            </header>
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+              {paginated.items.map(renderSongRow)}
+            </div>
+            <footer className="mt-auto flex items-center justify-center gap-3 pt-3 text-[10px] font-bold text-white/45">
+              <button type="button" aria-label="未入框上一页" disabled={paginated.page === 1} onClick={() => setUnrankedPage(paginated.page - 1)} className="grid h-7 w-7 place-items-center rounded-full border border-white/10 transition enabled:hover:border-white/25 enabled:hover:text-white disabled:opacity-20">‹</button>
+              <span>{paginated.page} / {paginated.pageCount}</span>
+              <button type="button" aria-label="未入框下一页" disabled={paginated.page === paginated.pageCount} onClick={() => setUnrankedPage(paginated.page + 1)} className="grid h-7 w-7 place-items-center rounded-full border border-white/10 transition enabled:hover:border-white/25 enabled:hover:text-white disabled:opacity-20">›</button>
+            </footer>
+          </section>
+        );
+      })()}
     </section>
   );
 };
