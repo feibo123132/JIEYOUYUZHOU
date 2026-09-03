@@ -296,7 +296,7 @@ const SongDetailPanel = ({
                 <Stat label="匹配度" value={averageScore === null ? '—' : `${averageScore}`} />
               </> : activeJournal === 'roadshow' ? <>
                 <Stat label="路演" value={`${roadshowHistory.length} 次`} />
-                <Stat label="最近" value={roadshowHistory[0] ? displayRoadshowDate(roadshowHistory[0].date) : '—'} />
+                <Stat label="次数" value={roadshowHistory.length ? `${roadshowHistory.length} 次` : '—'} />
               </> : <>
                 <Stat label="谱页" value={`${scorePages.length} 页`} />
                 <Stat label="状态" value={scorePages.length ? (scorePending ? '待同步' : '已同步') : '待上传'} />
@@ -424,7 +424,12 @@ const SongDetailPanel = ({
   );
 };
 
-const Stat = ({ label, value }: { label: string; value: string }) => <div className="rounded-2xl border border-white/10 bg-black/20 p-3 text-center"><strong className="block font-serif text-xl text-orange-100">{value}</strong><small className="mt-1 block text-[10px] tracking-[.14em] text-white/30">{label}</small></div>;
+const Stat = ({ label, value }: { label: string; value: string }) => (
+  <div className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-black/20 p-3 text-center">
+    <strong className="block truncate font-serif text-xl text-orange-100">{value}</strong>
+    <small className="mt-1 block truncate text-[10px] tracking-[.14em] text-white/30">{label}</small>
+  </div>
+);
 const Field = ({ label, children }: { label: string; children: React.ReactNode }) => <label className="block"><span className="mb-2 block text-xs font-bold text-white/45">{label}</span>{children}</label>;
 const JournalColumn = ({ icon, title, subtitle, children }: { icon: React.ReactNode; title: string; subtitle: string; children: React.ReactNode }) => <section className="rounded-[1.75rem] border border-white/10 bg-[#09090d]/80 p-5 backdrop-blur-xl sm:p-7"><div className="mb-6 flex items-start gap-3"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-orange-200/15 bg-orange-300/10 text-orange-200">{icon}</span><div><h2 className="font-serif text-2xl font-black">{title}</h2><p className="mt-1 text-xs leading-5 text-white/35">{subtitle}</p></div></div><div className="space-y-4">{children}</div></section>;
 

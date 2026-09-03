@@ -1158,6 +1158,13 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   };
 
   const canManageFeaturedSongs = isFeaturedSongManager(songRecordSession?.alias);
+
+  useEffect(() => {
+    if (!canManageFeaturedSongs && rankingLocation !== '总榜') {
+      setRankingLocation('总榜');
+    }
+  }, [canManageFeaturedSongs, rankingLocation]);
+
   const finishAllRequestedSongs = async () => {
     if (!songRecordSession || !canManageFeaturedSongs || finishingVotes || ranking.length === 0) return;
     setFinishingVotes(true);
@@ -1726,11 +1733,13 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                       <button type="button" role="tab" aria-selected={sungRankingMode === 'songs'} onClick={() => setSungRankingMode('songs')} className={`rounded-xl border px-4 py-3 text-sm font-black transition ${sungRankingMode === 'songs' ? 'border-orange-300/45 bg-orange-300 text-black' : 'border-white/10 bg-black/25 text-white/65 hover:text-white'}`}>歌曲</button>
                       <button type="button" role="tab" aria-selected={sungRankingMode === 'artists'} onClick={() => setSungRankingMode('artists')} className={`rounded-xl border px-4 py-3 text-sm font-black transition ${sungRankingMode === 'artists' ? 'border-orange-300/45 bg-orange-300 text-black' : 'border-white/10 bg-black/25 text-white/65 hover:text-white'}`}>歌手</button>
                     </div>
-                    <div role="group" aria-label="点歌榜地点筛选" className="mt-4 grid grid-cols-2 gap-2 border-t border-white/10 pt-4">
-                      {ROADSHOW_RANKING_LOCATIONS.map((location) => (
-                        <button key={location} type="button" aria-pressed={rankingLocation === location} onClick={() => setRankingLocation(location)} className={`min-h-11 rounded-xl border px-2 text-xs font-black transition ${rankingLocation === location ? 'border-orange-300/45 bg-orange-300 text-black' : 'border-white/10 bg-black/25 text-white/60 hover:text-white'}`}>{location}</button>
-                      ))}
-                    </div>
+                    {canManageFeaturedSongs && (
+                      <div role="group" aria-label="点歌榜地点筛选" className="mt-4 grid grid-cols-2 gap-2 border-t border-white/10 pt-4">
+                        {ROADSHOW_RANKING_LOCATIONS.map((location) => (
+                          <button key={location} type="button" aria-pressed={rankingLocation === location} onClick={() => setRankingLocation(location)} className={`min-h-11 rounded-xl border px-2 text-xs font-black transition ${rankingLocation === location ? 'border-orange-300/45 bg-orange-300 text-black' : 'border-white/10 bg-black/25 text-white/60 hover:text-white'}`}>{location}</button>
+                        ))}
+                      </div>
+                    )}
                     <p className="mt-4 text-sm leading-7 text-white/45">{requestVoteView === 'pending' ? '“已点”显示当前待唱歌曲；站主点击“唱完”后会一次性转入“已唱”。' : '“已唱”长期累计已完成的点歌次数，可分别查看歌手榜与歌曲榜。'}</p>
                   </aside>
                 ) : rankingView === 'personal' ? (
@@ -1777,11 +1786,13 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                       <button type="button" aria-pressed={quizRankingMode === 'songs'} onClick={() => setQuizRankingMode('songs')} className={`flex-1 rounded-xl border px-4 py-3 text-sm font-black transition ${quizRankingMode === 'songs' ? 'border-orange-300/45 bg-orange-300 text-black' : 'border-white/10 bg-black/25 text-white/65 hover:border-orange-200/25 hover:text-white'}`}>歌曲榜</button>
                       <button type="button" aria-pressed={quizRankingMode === 'participants'} onClick={() => setQuizRankingMode('participants')} className={`flex-1 rounded-xl border px-4 py-3 text-sm font-black transition ${quizRankingMode === 'participants' ? 'border-orange-300/45 bg-orange-300 text-black' : 'border-white/10 bg-black/25 text-white/65 hover:border-orange-200/25 hover:text-white'}`}>用户榜</button>
                     </div>
-                    <div role="group" aria-label="猜歌榜地点筛选" className="mt-4 grid grid-cols-2 gap-2 border-t border-white/10 pt-4">
-                      {ROADSHOW_RANKING_LOCATIONS.map((location) => (
-                        <button key={location} type="button" aria-pressed={rankingLocation === location} onClick={() => setRankingLocation(location)} className={`min-h-11 rounded-xl border px-2 text-xs font-black transition ${rankingLocation === location ? 'border-orange-300/45 bg-orange-300 text-black' : 'border-white/10 bg-black/25 text-white/60 hover:text-white'}`}>{location}</button>
-                      ))}
-                    </div>
+                    {canManageFeaturedSongs && (
+                      <div role="group" aria-label="猜歌榜地点筛选" className="mt-4 grid grid-cols-2 gap-2 border-t border-white/10 pt-4">
+                        {ROADSHOW_RANKING_LOCATIONS.map((location) => (
+                          <button key={location} type="button" aria-pressed={rankingLocation === location} onClick={() => setRankingLocation(location)} className={`min-h-11 rounded-xl border px-2 text-xs font-black transition ${rankingLocation === location ? 'border-orange-300/45 bg-orange-300 text-black' : 'border-white/10 bg-black/25 text-white/60 hover:text-white'}`}>{location}</button>
+                        ))}
+                      </div>
+                    )}
                     <p className="mt-4 text-sm leading-7 text-white/45">{quizRankingMode === 'participants' ? '按用户得分、正确率和答题数依次排名。' : '按歌曲正确率排名，正确率相同时答题次数更多的歌曲在前。'}</p>
                   </aside>
                 )}
@@ -2060,6 +2071,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                 records={songRecords}
                 syncStatus={recordSyncStatus}
                 quizAssignments={quizAssignments}
+                canManageFeaturedSongs={canManageFeaturedSongs}
                 onRecordsChange={commitSongRecords}
                 onOpenSongDetail={openSongDetail}
               />

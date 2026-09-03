@@ -55,6 +55,7 @@ export interface RoadshowRecord {
 
 export const ROADSHOW_CACHE_KEY = 'jieyou-roadshows-v1';
 export const ROADSHOW_SESSION_KEY = 'jieyou-roadshow-session-v1';
+export const ROADSHOW_EDITING_KEY = 'jieyou-roadshow-editing-v1';
 export const ROADSHOW_QUIZ_PAGE_SIZE = 5;
 
 export const paginateRoadshowSongs = <T>(songs: T[] | undefined, requestedPage: number) => {

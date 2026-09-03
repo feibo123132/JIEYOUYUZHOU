@@ -15,6 +15,7 @@ import {
   parseRoadshowCache,
   PERFORMANCE_MATCH_TIERS,
   ROADSHOW_CACHE_KEY,
+  ROADSHOW_EDITING_KEY,
   ROADSHOW_LOCATIONS,
   ROADSHOW_SESSION_KEY,
   preserveRecognitionParticipantNames,
@@ -54,6 +55,7 @@ interface RoadshowPanelProps {
   records?: SongRecord[];
   syncStatus?: string;
   quizAssignments?: QuizAssignments;
+  canManageFeaturedSongs?: boolean;
   onRecordsChange?: (records: SongRecord[]) => void;
   onOpenSongDetail?: (song: Song) => void;
 }
@@ -104,6 +106,7 @@ const RoadshowPanel = ({
   records: songRecords = [],
   syncStatus = '已同步',
   quizAssignments = {},
+  canManageFeaturedSongs = false,
   onRecordsChange = () => undefined,
   onOpenSongDetail = () => undefined,
 }: RoadshowPanelProps) => {
@@ -113,7 +116,20 @@ const RoadshowPanel = ({
   const [records, setRecords] = useState<RoadshowRecord[]>(() => {
     try { return parseRoadshowCache(localStorage.getItem(ROADSHOW_CACHE_KEY)); } catch { return []; }
   });
-  const [editing, setEditing] = useState<RoadshowRecord | null>(null);
+  const [editing, setEditingRaw] = useState<RoadshowRecord | null>(() => {
+    try {
+      const saved = window.localStorage.getItem(ROADSHOW_EDITING_KEY);
+      return saved ? JSON.parse(saved) : null;
+    } catch { return null; }
+  });
+  const setEditing = (record: RoadshowRecord | null) => {
+    setEditingRaw(record);
+    if (record) {
+      try { window.localStorage.setItem(ROADSHOW_EDITING_KEY, JSON.stringify(record)); } catch {}
+    } else {
+      try { window.localStorage.removeItem(ROADSHOW_EDITING_KEY); } catch {}
+    }
+  };
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [archiveView, setArchiveView] = useState<ArchiveView>('practice');
@@ -238,9 +254,10 @@ const RoadshowPanel = ({
         busy={busy}
         message={message}
         quizAssignments={quizAssignments}
+        canManageFeaturedSongs={canManageFeaturedSongs}
         onChange={setEditing}
         onBack={() => { setEditing(null); setMessage(''); }}
-        onSave={() => void persistRecord()}
+        onSave={(candidate) => void persistRecord(candidate ?? editing)}
         onRecordAttempt={(record) => { void persistRecord(record); }}
         onOpenSongDetail={(song) => onOpenSongDetail(resolveRoadshowSong(songs, song))}
         onDelete={() => void removeRecord(editing)}
@@ -307,17 +324,19 @@ interface EditorProps {
   busy: boolean;
   message: string;
   quizAssignments: QuizAssignments;
+  canManageFeaturedSongs?: boolean;
   onChange: (record: RoadshowRecord) => void;
   onBack: () => void;
-  onSave: () => void;
+  onSave: (candidate?: RoadshowRecord) => void;
   onRecordAttempt: (record: RoadshowRecord) => void;
   onOpenSongDetail: (song: RoadshowSong) => void;
   onDelete: () => void;
   onLock: () => void;
 }
 
-const RoadshowEditor = ({ record, allRecords, songRecords, catalogSongs, busy, message, quizAssignments, onChange, onBack, onSave, onRecordAttempt, onOpenSongDetail, onDelete, onLock }: EditorProps) => {
+const RoadshowEditor = ({ record, allRecords, songRecords, catalogSongs, busy, message, quizAssignments, canManageFeaturedSongs = false, onChange, onBack, onSave, onRecordAttempt, onOpenSongDetail, onDelete, onLock }: EditorProps) => {
   const updateList = (key: 'performanceSongs' | 'recognitionSongs', songs: RoadshowSong[]) => onChange({ ...record, [key]: songs });
+  const [editorTab, setEditorTab] = useState<'performance' | 'recognition'>('performance');
   return (
     <section className="space-y-5">
       <div className="rounded-[1.75rem] border border-orange-200/15 bg-[#120b08]/85 p-5 backdrop-blur-xl sm:p-7">
@@ -325,23 +344,33 @@ const RoadshowEditor = ({ record, allRecords, songRecords, catalogSongs, busy, m
           <button type="button" onClick={onBack} className="text-sm font-bold text-white/50 hover:text-white">← 返回路演列表</button>
           <button type="button" onClick={onLock} className="inline-flex items-center gap-2 text-xs font-bold text-white/40 hover:text-white"><Lock className="h-4 w-4" />锁定档案</button>
         </div>
-        <div className="mt-5 grid grid-cols-4 gap-3">
+        <div className={`mt-5 grid gap-3 ${canManageFeaturedSongs ? 'grid-cols-3' : 'grid-cols-2'}`}>
           <input aria-label="第几次路演" value={record.title} onChange={(event) => onChange({ ...record, title: event.target.value })} maxLength={60} className="h-12 min-w-0 rounded-xl border border-white/10 bg-black/35 px-4 font-serif text-xl font-black outline-none focus:border-orange-300/45" />
           <input aria-label="路演时间" type="date" value={record.date} onClick={(event) => event.currentTarget.showPicker?.()} onChange={(event) => onChange({ ...record, date: event.target.value })} className="h-12 min-w-0 cursor-pointer rounded-xl border border-white/10 bg-black/35 px-4 outline-none focus:border-orange-300/45" />
-          <select aria-label="路演地点" value={record.location ?? ''} onChange={(event) => onChange({ ...record, location: event.target.value })} className="h-12 min-w-0 rounded-xl border border-white/10 bg-black/35 px-4 text-white outline-none focus:border-orange-300/45 [color-scheme:dark]">
-            <option value="">路演地点（可选）</option>
-            {ROADSHOW_LOCATIONS.map((location) => <option key={location} value={location}>{location}</option>)}
-          </select>
-          <input aria-label="天气" value={record.weather ?? ''} onChange={(event) => onChange({ ...record, weather: event.target.value })} maxLength={40} placeholder="天气（可选）" className="h-12 min-w-0 rounded-xl border border-white/10 bg-black/35 px-4 outline-none placeholder:text-white/25 focus:border-orange-300/45" />
+          {canManageFeaturedSongs && (
+            <select aria-label="路演地点" value={record.location ?? ''} onChange={(event) => onChange({ ...record, location: event.target.value })} className="h-12 min-w-0 rounded-xl border border-white/10 bg-black/35 px-4 text-white outline-none focus:border-orange-300/45 [color-scheme:dark]">
+              <option value="">路演地点（可选）</option>
+              {ROADSHOW_LOCATIONS.map((location) => <option key={location} value={location}>{location}</option>)}
+            </select>
+          )}
         </div>
       </div>
 
-      <SongListEditor title="路演歌曲" description="本次准备演唱的歌曲" songs={record.performanceSongs} allRecords={allRecords} recordId={record.id} songRecords={songRecords} catalogSongs={catalogSongs} onChange={(songs) => updateList('performanceSongs', songs)} />
-      <RecognitionSongListEditor record={record} assignments={quizAssignments} allRecords={allRecords} busy={busy} onRecordAttempt={onRecordAttempt} onOpenSongDetail={onOpenSongDetail} />
+      <div className="flex justify-center gap-3">
+        <button type="button" onClick={() => setEditorTab('performance')} className={`inline-flex h-10 items-center gap-2 rounded-full border px-4 text-xs font-bold transition ${editorTab === 'performance' ? 'border-orange-200/45 bg-orange-300 font-black text-black' : 'border-white/10 bg-white/[.045] text-white/65 hover:border-orange-200/30 hover:text-white'}`}>
+          <Guitar className="h-4 w-4" />路演歌曲
+        </button>
+        <button type="button" onClick={() => setEditorTab('recognition')} className={`inline-flex h-10 items-center gap-2 rounded-full border px-4 text-xs font-bold transition ${editorTab === 'recognition' ? 'border-orange-200/45 bg-orange-300 font-black text-black' : 'border-white/10 bg-white/[.045] text-white/65 hover:border-orange-200/30 hover:text-white'}`}>
+          <UsersRound className="h-4 w-4" />听歌识曲
+        </button>
+      </div>
+
+      {editorTab === 'performance' && <SongListEditor title="路演歌曲" description="本次准备演唱的歌曲" songs={record.performanceSongs} allRecords={allRecords} recordId={record.id} songRecords={songRecords} catalogSongs={catalogSongs} onChange={(songs) => updateList('performanceSongs', songs)} onSave={(updatedSongs) => onSave({ ...record, performanceSongs: updatedSongs })} onOpenSongDetail={onOpenSongDetail} />}
+      {editorTab === 'recognition' && <RecognitionSongListEditor record={record} assignments={quizAssignments} allRecords={allRecords} busy={busy} onRecordAttempt={onRecordAttempt} onOpenSongDetail={onOpenSongDetail} />}
 
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-black/25 p-4">
         <button type="button" disabled={busy} onClick={onDelete} className="inline-flex items-center gap-2 text-sm font-bold text-red-300/70 hover:text-red-200 disabled:opacity-40"><Trash2 className="h-4 w-4" />删除这场路演</button>
-        <div className="flex items-center gap-3">{message && <span className="text-xs text-emerald-200/70">{message}</span>}<button type="button" disabled={busy || !record.title.trim()} onClick={onSave} className="inline-flex h-11 items-center gap-2 rounded-full bg-orange-400 px-5 text-sm font-black text-black disabled:opacity-40"><Save className="h-4 w-4" />保存到云端</button></div>
+        <div className="flex items-center gap-3">{message && <span className="text-xs text-emerald-200/70">{message}</span>}<button type="button" disabled={busy || !record.title.trim()} onClick={() => onSave()} className="inline-flex h-11 items-center gap-2 rounded-full bg-orange-400 px-5 text-sm font-black text-black disabled:opacity-40"><Save className="h-4 w-4" />保存到云端</button></div>
       </div>
     </section>
   );
@@ -356,6 +385,8 @@ interface SongListEditorProps {
   songRecords: SongRecord[];
   catalogSongs: Song[];
   onChange: (songs: RoadshowSong[]) => void;
+  onSave?: (updatedSongs: RoadshowSong[]) => void;
+  onOpenSongDetail?: (song: RoadshowSong) => void;
 }
 
 const PERFORMANCE_TIER_BOX: Record<PerformanceMatchTier, string> = {
@@ -388,11 +419,12 @@ const renderMatchScore = (score: number | null) => {
   return <span className={`shrink-0 text-[10px] font-black ${MATCH_TONE_CLASS[quality.tone]}`}>{quality.label} {score}</span>;
 };
 
-const SongListEditor = ({ title, description, songs, allRecords, recordId, songRecords, catalogSongs, onChange }: SongListEditorProps) => {
+const SongListEditor = ({ title, description, songs, allRecords, recordId, songRecords, catalogSongs, onChange, onSave, onOpenSongDetail }: SongListEditorProps) => {
   const [tierPages, setTierPages] = useState<Record<PerformanceMatchTier, number>>({ rareLegend: 1, fineDeep: 1, fineLight: 1, good: 1 });
   const [unrankedPage, setUnrankedPage] = useState(1);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerQuery, setPickerQuery] = useState('');
+  const [songEditMode, setSongEditMode] = useState(false);
 
   const scoreResolver = useMemo(() => {
     const practiceMap = new Map<string, PracticeRecord[]>();
@@ -436,27 +468,24 @@ const SongListEditor = ({ title, description, songs, allRecords, recordId, songR
 
   const renderSongRow = (song: RoadshowSong) => {
     const appearances = findSongAppearances(allRecords, song, recordId);
-    const score = scoreResolver(song);
-    const quality = score !== null ? getMatchQuality(score) : null;
     return (
-      <div key={song.id} className="flex items-center gap-3 rounded-xl border border-white/10 bg-black/25 p-3">
-        <span className="min-w-0 flex-1">
-          <strong className="block truncate text-sm">{song.title}</strong>
+      <div key={song.id} className="group flex items-center gap-3 rounded-xl border border-white/10 bg-black/25 p-3">
+        <button
+          type="button"
+          onClick={() => onOpenSongDetail?.(song)}
+          className="min-w-0 flex-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-orange-300/50"
+        >
+          <strong className="block truncate text-sm transition group-hover:text-orange-100">{song.title}</strong>
           <small className="block truncate text-white/35">
             {song.artist || '未填写歌手'}
             {appearances.length ? ` · 曾用于：${appearances.join('、')}` : ''}
           </small>
-        </span>
-        {quality ? (
-          <span className={`shrink-0 text-[10px] font-black ${quality.tone === 'white' ? 'text-white/50' : quality.tone === 'green' ? 'text-[#4ade80]' : quality.tone === 'lightBlue' ? 'text-[#7dd3fc]' : quality.tone === 'darkBlue' ? 'text-[#2563eb]' : quality.tone === 'purple' ? 'text-[#c084fc]' : 'text-[#fbbf24]'}`}>
-            {quality.label} {score}
-          </span>
-        ) : (
-          <span className="shrink-0 text-[10px] font-black text-white/25">未练习</span>
-        )}
-        <button type="button" onClick={() => onChange(songs.filter((item) => item.id !== song.id))} aria-label={`移除${song.title}`} className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-white/30 hover:bg-red-300/10 hover:text-red-200">
-          <X className="h-4 w-4" />
         </button>
+        {songEditMode && (
+          <button type="button" onClick={(event) => { event.stopPropagation(); onChange(songs.filter((item) => item.id !== song.id)); }} aria-label={`移除${song.title}`} className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-white/30 hover:bg-red-300/10 hover:text-red-200">
+            <X className="h-4 w-4" />
+          </button>
+        )}
       </div>
     );
   };
@@ -469,9 +498,11 @@ const SongListEditor = ({ title, description, songs, allRecords, recordId, songR
           <p className="mt-1 text-xs text-white/35">{description}</p>
         </div>
         <div className="flex items-center gap-3">
-          <strong className="text-xs text-white/30">{songs.length} 首</strong>
+          <button type="button" onClick={() => setSongEditMode((v) => !v)} className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-bold transition ${songEditMode ? 'border-red-200/40 bg-red-300/15 text-red-100' : 'border-white/10 bg-white/[.045] text-white/60 hover:border-white/20 hover:text-white/80'}`}>
+            <Trash2 className="h-3.5 w-3.5" />歌曲编辑
+          </button>
           <button type="button" onClick={() => { setPickerOpen((open) => !open); setPickerQuery(''); }} className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-bold transition ${pickerOpen ? 'border-orange-200/40 bg-orange-300 text-black' : 'border-orange-200/25 bg-orange-300/10 text-orange-100 hover:bg-orange-300/20'}`}>
-            <Plus className="h-3.5 w-3.5" />从歌库添加
+            <Plus className="h-3.5 w-3.5" />歌库添加
           </button>
         </div>
       </div>
@@ -489,7 +520,7 @@ const SongListEditor = ({ title, description, songs, allRecords, recordId, songR
                   <small className="block truncate text-white/35">{song.artist}</small>
                 </span>
                 {renderMatchScore(score)}
-                <button type="button" disabled={added} onClick={() => onChange([...songs, createRoadshowSong(song)])} className={added ? 'shrink-0 rounded-full border border-white/10 px-3 py-1 text-[10px] font-bold text-white/25' : 'shrink-0 rounded-full border border-[#4ade80]/35 bg-[#4ade80]/10 px-3 py-1 text-[10px] font-bold text-[#4ade80] transition hover:bg-[#4ade80]/20'}>
+                <button type="button" disabled={added} onClick={() => { const updated = [...songs, createRoadshowSong(song)]; onChange(updated); onSave?.(updated); }} className={added ? 'shrink-0 rounded-full border border-white/10 px-3 py-1 text-[10px] font-bold text-white/25' : 'shrink-0 rounded-full border border-[#4ade80]/35 bg-[#4ade80]/10 px-3 py-1 text-[10px] font-bold text-[#4ade80] transition hover:bg-[#4ade80]/20'}>
                   {added ? '已在列' : '加入'}
                 </button>
               </div>
@@ -501,6 +532,11 @@ const SongListEditor = ({ title, description, songs, allRecords, recordId, songR
             )}
           </div>
           <p className="mt-2 text-[10px] leading-4 text-white/25">已练习的歌曲加入后自动按匹配度落入对应分组；未练习或 75 分以下的进入下方「未入框」区。</p>
+          <div className="mt-3 flex justify-end">
+            <button type="button" onClick={() => { setPickerOpen(false); setPickerQuery(''); }} className="inline-flex items-center gap-1.5 rounded-full border border-orange-200/25 bg-orange-300/10 px-4 py-2 text-xs font-bold text-orange-100 transition hover:bg-orange-300/20">
+              <Check className="h-3.5 w-3.5" />完成
+            </button>
+          </div>
         </div>
       )}
       <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -510,7 +546,7 @@ const SongListEditor = ({ title, description, songs, allRecords, recordId, songR
             <section key={tier.id} className={`flex min-h-36 flex-col rounded-2xl border p-3 ${PERFORMANCE_TIER_BOX[tier.id]}`}>
               <header className="mb-3 flex items-center justify-between gap-2 border-b border-white/10 pb-3">
                 <span className="flex items-center gap-2">
-                  <b className={`grid h-7 w-7 place-items-center rounded-full border border-current/30 bg-black/20 font-serif text-xs ${PERFORMANCE_TIER_LABEL[tier.id]}`}>{tier.symbol}</b>
+                  <b className={`font-serif text-sm leading-none ${PERFORMANCE_TIER_LABEL[tier.id]}`}>{tier.symbol}</b>
                   <strong className={`text-sm ${PERFORMANCE_TIER_LABEL[tier.id]}`}>{tier.label}</strong>
                 </span>
                 <small className="text-white/35">{groups[tier.id].length} 首</small>
@@ -703,7 +739,7 @@ const RecognitionSongListEditor = ({ record, assignments, allRecords, busy, onRe
           return (
           <section key={level.id} className={`flex min-h-36 flex-col rounded-2xl border p-3 ${RECOGNITION_LEVEL_STYLES[level.id]}`}>
             <header className="mb-3 flex items-center justify-between gap-2 border-b border-white/10 pb-3">
-              <span className="flex items-center gap-2"><b className="grid h-7 w-7 place-items-center rounded-full border border-current/30 bg-black/20 font-serif text-xs">{level.symbol}</b><strong className="text-sm">{level.label}</strong></span>
+              <span className="flex items-center gap-2"><b className="font-serif text-sm leading-none">{level.symbol}</b><strong className="text-sm">{level.label}</strong></span>
               <small className="text-white/35">{groups[level.id].length} 首</small>
             </header>
             <div className="space-y-2">
@@ -711,7 +747,7 @@ const RecognitionSongListEditor = ({ record, assignments, allRecords, busy, onRe
                 const appearances = findSongAppearances(allRecords, song, record.id);
                 const attemptCount = countRecognitionAttemptsForSong(record, song);
                 const selected = selectedSongIds.includes(song.id);
-                return <button key={song.id} type="button" aria-label={participating ? `选择${song.title}` : `查看${song.title}详情和谱子`} aria-pressed={participating ? selected : undefined} disabled={participating && !selected && selectedSongIds.length === 4} onClick={() => participating ? toggleSong(song) : onOpenSongDetail(song)} className={`group flex w-full items-center gap-2 rounded-xl border p-2.5 text-left transition disabled:cursor-default ${selected ? 'border-orange-200/50 bg-orange-300/15 shadow-[0_0_20px_rgba(251,146,60,.08)]' : 'border-white/10 bg-black/25 enabled:hover:border-white/25'}`}><span className="min-w-0 flex-1"><strong className="block truncate text-xs text-white/90">{song.title}</strong><small className="block truncate text-[10px] text-white/35">{song.artist || '未填写歌手'}{appearances.length ? ` · 曾用于：${appearances.join('、')}` : ''}</small></span>{attemptCount > 0 && <span className="shrink-0 rounded-full border border-white/10 bg-white/[.055] px-2 py-1 text-[10px] font-black tabular-nums text-white/45">{attemptCount}次</span>}{selected && <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-orange-300 text-[10px] font-black text-black">{selectedSongIds.indexOf(song.id) + 1}</span>}</button>;
+                return <button key={song.id} type="button" aria-label={participating ? `选择${song.title}` : `查看${song.title}详情和谱子`} aria-pressed={participating ? selected : undefined} disabled={participating && !selected && selectedSongIds.length === 4} onClick={() => participating ? toggleSong(song) : onOpenSongDetail(song)} className={`group flex w-full items-center gap-3 rounded-xl border p-3 text-left transition disabled:cursor-default ${selected ? 'border-orange-200/50 bg-orange-300/15 shadow-[0_0_20px_rgba(251,146,60,.08)]' : 'border-white/10 bg-black/25 enabled:hover:border-white/25'}`}><span className="min-w-0 flex-1"><strong className="block truncate text-sm text-white/90">{song.title}</strong><small className="block truncate text-white/35">{song.artist || '未填写歌手'}{appearances.length ? ` · 曾用于：${appearances.join('、')}` : ''}</small></span>{attemptCount > 0 && <span className="shrink-0 rounded-full border border-white/10 bg-white/[.055] px-2 py-1 text-[10px] font-black tabular-nums text-white/45">{attemptCount}次</span>}{selected && <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-orange-300 text-xs font-black text-black">{selectedSongIds.indexOf(song.id) + 1}</span>}</button>;
               })}
               {!groups[level.id].length && <p className="py-5 text-center text-[10px] text-white/20">暂无歌曲</p>}
             </div>
