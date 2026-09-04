@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowUpRight, Guitar, PawPrint, SunMedium } from 'lucide-react';
+import { ArrowUpRight, Camera, Guitar, PawPrint, SunMedium } from 'lucide-react';
 import services from '../../services/starService';
 import { getThemeConfig, type ThemeId } from '../../themes/themeConfig';
 import { getMeowGeneratorUrl } from '../../utils/meowGenerator';
@@ -11,9 +11,10 @@ const HUB_CARD_CONTENT_CLASS = 'relative flex h-full flex-col gap-5';
 interface ThemeHubProps {
   onSelect: (themeId: ThemeId) => void;
   onOpenSongRequest: () => void;
+  onOpenKeepsake: () => void;
 }
 
-const ThemeHub: React.FC<ThemeHubProps> = ({ onSelect, onOpenSongRequest }) => {
+const ThemeHub: React.FC<ThemeHubProps> = ({ onSelect, onOpenSongRequest, onOpenKeepsake }) => {
   const [count, setCount] = useState<number | null | undefined>(undefined);
   const theme = getThemeConfig('life');
 
@@ -106,12 +107,12 @@ const ThemeHub: React.FC<ThemeHubProps> = ({ onSelect, onOpenSongRequest }) => {
           </button>
         </section>
 
-        <section data-theme-hub-bottom className="mt-5 flex justify-center md:mt-7" aria-label="创作工具">
+        <section data-theme-hub-bottom className="mt-5 grid w-full grid-cols-1 gap-5 md:mt-7 md:grid-cols-2 md:gap-7" aria-label="创作工具">
           <a
             href={getMeowGeneratorUrl()}
             aria-label="捏猫"
             onClick={() => { (window as any).playClickSound?.(); }}
-            className={`group relative ${HUB_CARD_SIZE_CLASS} w-full overflow-hidden rounded-[2rem] border border-orange-200/20 bg-[#17100c]/85 p-7 text-left backdrop-blur-xl motion-safe:transition motion-safe:duration-500 motion-safe:hover:-translate-y-2 focus:outline-none focus:ring-2 focus:ring-emerald-200/70 md:w-[calc(50%-0.875rem)] md:p-9`}
+            className={`group relative ${HUB_CARD_SIZE_CLASS} w-full overflow-hidden rounded-[2rem] border border-orange-200/20 bg-[#17100c]/85 p-7 text-left backdrop-blur-xl motion-safe:transition motion-safe:duration-500 motion-safe:hover:-translate-y-2 focus:outline-none focus:ring-2 focus:ring-emerald-200/70 md:p-9`}
           >
             <span className="pointer-events-none absolute -left-16 -top-24 h-52 w-52 rounded-full bg-orange-400/20 blur-3xl motion-safe:transition motion-safe:duration-700 motion-safe:group-hover:bg-orange-300/30" />
             <span className="pointer-events-none absolute -bottom-24 right-10 h-48 w-48 rounded-full bg-emerald-300/10 blur-3xl motion-safe:transition motion-safe:duration-700 motion-safe:group-hover:bg-emerald-200/20" />
@@ -132,6 +133,32 @@ const ThemeHub: React.FC<ThemeHubProps> = ({ onSelect, onOpenSongRequest }) => {
               </span>
             </span>
           </a>
+
+          <button
+            type="button"
+            aria-label="纪念留影"
+            onClick={() => { (window as any).playClickSound?.(); onOpenKeepsake(); }}
+            className={`group relative ${HUB_CARD_SIZE_CLASS} w-full overflow-hidden rounded-[2rem] border border-sky-200/20 bg-[#0a1018]/85 p-7 text-left backdrop-blur-xl motion-safe:transition motion-safe:duration-500 motion-safe:hover:-translate-y-2 focus:outline-none focus:ring-2 focus:ring-sky-200/70 md:p-9`}
+          >
+            <span className="pointer-events-none absolute -left-16 -top-24 h-52 w-52 rounded-full bg-sky-400/20 blur-3xl motion-safe:transition motion-safe:duration-700 motion-safe:group-hover:bg-sky-300/30" />
+            <span className="pointer-events-none absolute -bottom-24 right-10 h-48 w-48 rounded-full bg-amber-300/10 blur-3xl motion-safe:transition motion-safe:duration-700 motion-safe:group-hover:bg-amber-200/20" />
+            <span className="absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-sky-200/70 to-transparent" />
+
+            <span className={HUB_CARD_CONTENT_CLASS}>
+              <span className="grid h-14 w-14 place-items-center rounded-2xl border border-sky-200/20 bg-sky-300/10 text-sky-100">
+                <Camera className="h-7 w-7" />
+              </span>
+              <span>
+                <span className="block text-[10px] font-bold tracking-[0.28em] text-sky-200/80">MEMORY STUDIO</span>
+                <span className="mt-3 block font-serif text-3xl font-black tracking-tight text-white md:text-4xl">纪念留影</span>
+                <span className="mt-3 block max-w-md text-sm leading-7 text-white/55">放入照片、写下想留下的话，生成一张专属纪念卡片。</span>
+                <span className="mt-7 inline-flex items-center gap-2 text-sm font-bold text-sky-100">
+                  去留一张影
+                  <ArrowUpRight className="h-4 w-4 motion-safe:transition-transform motion-safe:duration-300 motion-safe:group-hover:translate-x-1 motion-safe:group-hover:-translate-y-1" />
+                </span>
+              </span>
+            </span>
+          </button>
         </section>
 
         <p className="mt-7 text-center text-xs tracking-[0.12em] text-white/30">

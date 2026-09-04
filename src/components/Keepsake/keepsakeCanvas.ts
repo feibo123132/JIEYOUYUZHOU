@@ -2,8 +2,17 @@ export const KEEPSAKE_WIDTH = 1200
 export const KEEPSAKE_HEIGHT = 1600
 export const PHOTO_WINDOW = Object.freeze({ x: 90, y: 185, width: 1020, height: 980 })
 
-export type KeepsakeFrameId = 'warm-paper' | 'midnight-map' | 'cream-collage' | 'moon-glow' | 'jade-rabbit' | 'full-moon'
-export type KeepsakeFrameCategory = 'basic' | 'mid-autumn'
+export type KeepsakeFrameId =
+  | 'warm-paper'
+  | 'midnight-map'
+  | 'cream-collage'
+  | 'sakura-shower'
+  | 'willow-grove'
+  | 'peach-blossom'
+  | 'moon-glow'
+  | 'jade-rabbit'
+  | 'full-moon'
+export type KeepsakeFrameCategory = 'basic' | 'spring' | 'mid-autumn'
 export type KeepsakeLocation = '医大' | '南湖'
 export const KEEPSAKE_SENTENCES = [
   '人有悲欢离合，月有阴晴圆缺，此事古难全。',
@@ -41,6 +50,8 @@ type Decoration =
   | { kind: 'lantern'; x: number; y: number; size: number; color: PaletteKey; alpha?: number }
   | { kind: 'cloud'; x: number; y: number; size: number; color: PaletteKey; alpha?: number }
   | { kind: 'rabbit'; x: number; y: number; size: number; color: PaletteKey; alpha?: number }
+  | { kind: 'flower'; x: number; y: number; size: number; color: PaletteKey; alpha?: number }
+  | { kind: 'leaf'; x: number; y: number; size: number; color: PaletteKey; alpha?: number }
 
 export interface KeepsakeFrame {
   id: KeepsakeFrameId
@@ -92,6 +103,62 @@ export const KEEPSAKE_FRAMES: KeepsakeFrame[] = [
       { kind: 'line', x: 100, y: 128, width: 410, color: 'detail', alpha: 0.62 },
       { kind: 'circle', x: 1084, y: 1214, size: 31, color: 'accent', alpha: 0.88 },
       { kind: 'dots', x: 780, y: 96, count: 7, gap: 48, size: 6, color: 'accent', alpha: 0.55 },
+    ],
+  },
+  // Spring frames — 生命万岁企划 (春意盎然)
+  {
+    id: 'sakura-shower',
+    name: '樱粉漫舞',
+    category: 'spring',
+    palette: { paper: '#fce6ec', ink: '#5c3a45', accent: '#ef8dac', detail: '#a9cfa0', mat: '#f8d3de' },
+    typography: { titleY: 1270, bodyY: 1348, metaY: 1510, titleSize: 58, bodySize: 31 },
+    decorations: [
+      { kind: 'flower', x: 470, y: 84, size: 30, color: 'accent' },
+      { kind: 'flower', x: 726, y: 84, size: 22, color: 'accent', alpha: 0.9 },
+      { kind: 'flower', x: 598, y: 120, size: 15, color: 'accent', alpha: 0.85 },
+      { kind: 'leaf', x: 416, y: 128, size: 18, color: 'detail', alpha: 0.6 },
+      { kind: 'leaf', x: 764, y: 126, size: 15, color: 'detail', alpha: 0.55 },
+      { kind: 'flower', x: 92, y: 1200, size: 26, color: 'accent' },
+      { kind: 'flower', x: 1108, y: 1200, size: 30, color: 'accent', alpha: 0.9 },
+      { kind: 'star', x: 60, y: 1462, size: 20, color: 'accent', alpha: 0.7 },
+      { kind: 'star', x: 1140, y: 1462, size: 20, color: 'detail', alpha: 0.7 },
+    ],
+  },
+  {
+    id: 'willow-grove',
+    name: '柳浪春晓',
+    category: 'spring',
+    palette: { paper: '#eef5e3', ink: '#37452b', accent: '#a6d35f', detail: '#5c9e57', mat: '#dce9cd' },
+    typography: { titleY: 1262, bodyY: 1342, metaY: 1510, titleSize: 57, bodySize: 30 },
+    decorations: [
+      { kind: 'leaf', x: 470, y: 84, size: 26, color: 'detail' },
+      { kind: 'leaf', x: 726, y: 84, size: 26, color: 'detail', alpha: 0.8 },
+      { kind: 'leaf', x: 598, y: 120, size: 18, color: 'accent' },
+      { kind: 'dots', x: 420, y: 126, count: 3, gap: 18, size: 6, color: 'accent', alpha: 0.6 },
+      { kind: 'dots', x: 752, y: 124, count: 3, gap: 18, size: 6, color: 'accent', alpha: 0.6 },
+      { kind: 'leaf', x: 92, y: 1200, size: 24, color: 'detail' },
+      { kind: 'leaf', x: 1108, y: 1200, size: 24, color: 'detail' },
+      { kind: 'dots', x: 96, y: 1402, count: 5, gap: 26, size: 7, color: 'accent', alpha: 0.55 },
+      { kind: 'dots', x: 1040, y: 1402, count: 5, gap: 26, size: 7, color: 'accent', alpha: 0.55 },
+    ],
+  },
+  {
+    id: 'peach-blossom',
+    name: '桃夭灼灼',
+    category: 'spring',
+    palette: { paper: '#fdeedd', ink: '#5a3b2c', accent: '#f2a06b', detail: '#7fae6b', mat: '#f7dcc4' },
+    typography: { titleY: 1275, bodyY: 1352, metaY: 1510, titleSize: 56, bodySize: 30 },
+    decorations: [
+      { kind: 'flower', x: 470, y: 84, size: 28, color: 'accent' },
+      { kind: 'flower', x: 726, y: 84, size: 22, color: 'accent', alpha: 0.9 },
+      { kind: 'leaf', x: 598, y: 120, size: 22, color: 'detail' },
+      { kind: 'leaf', x: 414, y: 126, size: 16, color: 'detail', alpha: 0.6 },
+      { kind: 'leaf', x: 766, y: 126, size: 16, color: 'detail', alpha: 0.6 },
+      { kind: 'dots', x: 520, y: 70, count: 3, gap: 16, size: 5, color: 'accent', alpha: 0.7 },
+      { kind: 'flower', x: 92, y: 1200, size: 26, color: 'accent' },
+      { kind: 'flower', x: 1108, y: 1200, size: 28, color: 'accent', alpha: 0.9 },
+      { kind: 'dots', x: 150, y: 1458, count: 4, gap: 26, size: 6, color: 'accent', alpha: 0.5 },
+      { kind: 'dots', x: 960, y: 1458, count: 4, gap: 26, size: 6, color: 'accent', alpha: 0.5 },
     ],
   },
   // Mid-Autumn Festival frames
@@ -244,6 +311,7 @@ export interface KeepsakeRenderState {
   zoom: number
   pan: Point
   title: string
+  titleFallback?: string
   body: string
   date: string
   location: KeepsakeLocation
@@ -337,6 +405,29 @@ function drawRabbit(ctx: CanvasRenderingContext2D, x: number, y: number, size: n
   ctx.fill()
 }
 
+function drawFlower(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
+  for (let petal = 0; petal < 5; petal += 1) {
+    const angle = -Math.PI / 2 + petal * Math.PI * 2 / 5
+    ctx.beginPath()
+    ctx.arc(x + Math.cos(angle) * size * 0.78, y + Math.sin(angle) * size * 0.78, size * 0.52, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  ctx.beginPath()
+  ctx.arc(x, y, size * 0.3, 0, Math.PI * 2)
+  ctx.fill()
+}
+
+function drawLeaf(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
+  ctx.beginPath()
+  ctx.ellipse(x, y, size * 0.48, size, 0, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.lineWidth = Math.max(1.5, size * 0.09)
+  ctx.beginPath()
+  ctx.moveTo(x, y - size)
+  ctx.lineTo(x, y + size)
+  ctx.stroke()
+}
+
 function drawDecorations(ctx: CanvasRenderingContext2D, frame: KeepsakeFrame) {
   for (const item of frame.decorations) {
     ctx.save()
@@ -363,6 +454,10 @@ function drawDecorations(ctx: CanvasRenderingContext2D, frame: KeepsakeFrame) {
       drawCloud(ctx, item.x, item.y, item.size)
     } else if (item.kind === 'rabbit') {
       drawRabbit(ctx, item.x, item.y, item.size)
+    } else if (item.kind === 'flower') {
+      drawFlower(ctx, item.x, item.y, item.size)
+    } else if (item.kind === 'leaf') {
+      drawLeaf(ctx, item.x, item.y, item.size)
     } else {
       for (let index = 0; index < item.count; index += 1) {
         ctx.beginPath()
@@ -381,7 +476,7 @@ function roundedPath(ctx: CanvasRenderingContext2D, x: number, y: number, width:
 
 export function renderKeepsake(ctx: CanvasRenderingContext2D, state: KeepsakeRenderState) {
   const frame = KEEPSAKE_FRAMES.find((item) => item.id === state.frameId) ?? KEEPSAKE_FRAMES[0]
-  const title = normalizeKeepsakeText('title', state.title).trim() || '今日留影'
+  const title = normalizeKeepsakeText('title', state.title).trim() || state.titleFallback || '今日留影'
   const body = normalizeKeepsakeText('body', state.body)
 
   ctx.clearRect(0, 0, KEEPSAKE_WIDTH, KEEPSAKE_HEIGHT)

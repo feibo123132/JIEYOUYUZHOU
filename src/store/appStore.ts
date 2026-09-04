@@ -25,6 +25,8 @@ interface AppState {
   currentView: AppView;
   isLoading: boolean;
   error: string | null;
+  keepsakeInitialBody: string;
+  keepsakeInitialNickname: string;
 }
 
 interface AppActions {
@@ -32,7 +34,7 @@ interface AppActions {
   setStars: (stars: Star[]) => void;
   addStar: (star: Star) => void;
   enterTheme: (theme: ThemeId) => void;
-  enterKeepsakeStudio: () => void;
+  enterKeepsakeStudio: (initialBody?: string, initialNickname?: string) => void;
   enterSongRequestStation: () => void;
   enterStarrySky: () => void;
   returnToWelcome: () => void;
@@ -50,6 +52,8 @@ const useAppStore = create<AppState & AppActions>((set) => ({
   currentView: 'theme-hub',
   isLoading: false,
   error: null,
+  keepsakeInitialBody: '',
+  keepsakeInitialNickname: '',
 
   // 动作
   setUser: (user) => set({ user }),
@@ -63,7 +67,7 @@ const useAppStore = create<AppState & AppActions>((set) => ({
     stars: [],
     error: null,
   }),
-  enterKeepsakeStudio: () => set({ currentView: 'keepsake-studio' }),
+  enterKeepsakeStudio: (initialBody, initialNickname) => set({ currentView: 'keepsake-studio', keepsakeInitialBody: initialBody ?? '', keepsakeInitialNickname: initialNickname ?? '' }),
   enterSongRequestStation: () => set({ currentView: 'song-request' }),
   enterStarrySky: () => set((state) => state.activeTheme ? {
     currentView: 'starry-sky',

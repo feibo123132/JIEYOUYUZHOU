@@ -178,7 +178,7 @@ function App() {
       />
 
       {currentView === 'theme-hub' && (
-        <ThemeHub onSelect={handleSelectTheme} onOpenSongRequest={enterSongRequestStation} />
+        <ThemeHub onSelect={handleSelectTheme} onOpenSongRequest={enterSongRequestStation} onOpenKeepsake={enterKeepsakeStudio} />
       )}
 
       {currentView === 'keepsake-studio' && <KeepsakeStudio onBack={returnToThemeHub} />}

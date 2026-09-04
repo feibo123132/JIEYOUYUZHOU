@@ -1954,6 +1954,11 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                           <Eye className="h-4 w-4" />{showPracticeBadges ? '隐藏' : '显示'}
                         </button>
                       )}
+                      {selectedArtist && (
+                        <button type="button" onClick={handleSortByMatch} className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/30 px-3.5 py-2 text-xs font-bold text-white/55 transition hover:border-orange-200/35 hover:text-orange-100">
+                          <ArrowUpDown className="h-4 w-4" />匹配度
+                        </button>
+                      )}
                       {!selectedArtist && (
                         <button type="button" aria-pressed={artistEditMode} onClick={() => { clearArtistDragState(); setArtistOrderMode(false); setAvatarAdjustMode(false); setAdjustingArtist(null); setArtistEditMode((current) => !current); }} className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-xs font-bold transition ${artistEditMode ? 'border-orange-200/40 bg-orange-300 text-black' : 'border-white/10 bg-black/30 text-white/55 hover:text-white'}`}>
                           <PenLine className="h-4 w-4" />{artistEditMode ? '完成编辑' : '编辑歌手'}

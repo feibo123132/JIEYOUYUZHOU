@@ -31,9 +31,18 @@ import {
   prepareCameraVideo,
   type CameraSnapshot,
 } from './keepsakeCamera'
+import useAppStore from '../../store/appStore'
 
 interface KeepsakeStudioProps {
   onBack: () => void
+}
+
+// 纪念留影默认标题：优先用本次进入时指定的星星昵称（如点开「天去」的星 →「天去留影」），
+// 否则回退到当前登录用户昵称（如「棋士」），再否则回退「今日留影」。
+const getDefaultKeepsakeTitle = () => {
+  const { keepsakeInitialNickname, user } = useAppStore.getState()
+  const nickname = keepsakeInitialNickname?.trim() || user?.nickname?.trim()
+  return nickname ? `${nickname}留影` : '今日留影'
 }
 
 interface DragState {
@@ -74,8 +83,8 @@ export default function KeepsakeStudio({ onBack }: KeepsakeStudioProps) {
       setFrameId(inCategory[0]?.id ?? 'warm-paper')
     }
   }, [frameId])
-  const [title, setTitle] = useState('今日留影')
-  const [body, setBody] = useState('')
+  const [title, setTitle] = useState(getDefaultKeepsakeTitle)
+  const [body, setBody] = useState(() => normalizeKeepsakeText('body', useAppStore.getState().keepsakeInitialBody))
   const [date, setDate] = useState(() => getLocalDateInputValue())
   const [location, setLocation] = useState<KeepsakeLocation>('医大')
   const [sentence, setSentence] = useState<KeepsakeSentence>(KEEPSAKE_LOCATION_SENTENCES.医大)
@@ -106,6 +115,7 @@ export default function KeepsakeStudio({ onBack }: KeepsakeStudioProps) {
       zoom: photoView.zoom,
       pan: photoView.pan,
       title,
+      titleFallback: getDefaultKeepsakeTitle(),
       body,
       date,
       location,
@@ -218,7 +228,7 @@ export default function KeepsakeStudio({ onBack }: KeepsakeStudioProps) {
     setError('')
     setIsExporting(true)
     try {
-      await downloadKeepsakePng(canvas, `JIEYOU留影-${date || getLocalDateInputValue()}.png`, {
+      await downloadKeepsakePng(canvas, `纪念留影-${date || getLocalDateInputValue()}.png`, {
         createObjectURL: (blob) => URL.createObjectURL(blob),
         revokeObjectURL: (url) => URL.revokeObjectURL(url),
         clickDownload: (url, filename) => {
@@ -249,7 +259,7 @@ export default function KeepsakeStudio({ onBack }: KeepsakeStudioProps) {
             <ArrowLeft className="h-4 w-4" />
             返回
           </button>
-          <span className="hidden text-[10px] font-bold tracking-[0.3em] text-sky-200/55 sm:block">JIEYOU · MEMORY STUDIO</span>
+          <span className="hidden text-[10px] font-bold tracking-[0.3em] text-sky-200/55 sm:block">纪念留影 · MEMORY STUDIO</span>
         </header>
 
         <div className="grid items-start gap-7 lg:grid-cols-[minmax(320px,0.86fr)_minmax(380px,1.14fr)] lg:gap-10">
@@ -311,6 +321,13 @@ export default function KeepsakeStudio({ onBack }: KeepsakeStudioProps) {
                     </button>
                     <button
                       type="button"
+                      onClick={() => handleCategoryChange('spring')}
+                      className={`rounded-lg px-3 py-1 text-[11px] font-bold transition focus:outline-none focus:ring-2 focus:ring-sky-200/70 ${frameCategory === 'spring' ? 'bg-emerald-500/25 text-emerald-100' : 'text-white/45 hover:text-white/70'}`}
+                    >
+                      春意
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => handleCategoryChange('mid-autumn')}
                       className={`rounded-lg px-3 py-1 text-[11px] font-bold transition focus:outline-none focus:ring-2 focus:ring-sky-200/70 ${frameCategory === 'mid-autumn' ? 'bg-amber-500/25 text-amber-100' : 'text-white/45 hover:text-white/70'}`}
                     >
@@ -342,7 +359,7 @@ export default function KeepsakeStudio({ onBack }: KeepsakeStudioProps) {
                     maxLength={18}
                     onChange={(event) => setTitle(normalizeKeepsakeText('title', event.target.value))}
                     className="mt-2 w-full rounded-xl border border-white/10 bg-black/25 px-4 py-3 text-sm font-normal tracking-normal text-white outline-none transition placeholder:text-white/25 focus:border-sky-200/50"
-                    placeholder="今日留影"
+                    placeholder={getDefaultKeepsakeTitle()}
                   />
                 </label>
                 <label className="text-xs font-bold tracking-[0.12em] text-white/55">

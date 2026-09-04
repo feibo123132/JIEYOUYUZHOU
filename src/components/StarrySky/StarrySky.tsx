@@ -1,7 +1,7 @@
 // src/components/StarrySky/StarrySky.tsx (修正后的完整版)
 
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
-import { ArrowLeft, ArrowRight, Pencil, RotateCcw, Trash2, Sparkles, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Camera, Pencil, RotateCcw, Trash2, Sparkles, X } from 'lucide-react';
 import { Star as PStar, Heart, Cloud, Moon, Mountains, Leaf, MusicNotes, Bird, Cat, Dog, Waves, PaperPlane } from 'phosphor-react';
 import UserStar from './UserStar';
 import { toast } from 'sonner';
@@ -18,6 +18,7 @@ import { createInitialBarragePreferences, setBarragePreference } from './barrage
 import { openHappinessMeowGenerator } from '../../utils/meowGenerator';
 import { selectVisibleStars } from './starDisplay';
 import { restoreHappinessPortraitFocus } from './happinessPortrait';
+import useAppStore from '../../store/appStore';
 
 // ↓↓↓↓↓↓ [修正] 使用正确的默认导入并解构出 starService ↓↓↓↓↓↓
 import services from '../../services/starService';
@@ -537,6 +538,13 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
     });
   };
 
+  const handleOpenKeepsake = () => {
+    if (!selectedStar) return;
+    (window as any).playClickSound?.();
+    useAppStore.getState().enterKeepsakeStudio(selectedStar.message ?? '', selectedStar.nickname);
+    toast.success('已把留言带入纪念留影');
+  };
+
   const handleBarrageSelect = (starId: string) => {
     const star = stars.find((star) => star.id === starId);
     if (!star) return;
@@ -851,6 +859,14 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
                   className={`flex-1 bg-gradient-to-r ${theme.visual.buttonGradientClass} ${theme.visual.buttonHoverClass} text-white font-bold py-2 px-4 rounded-lg transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]`}
                 >
                   找杰宝
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenKeepsake}
+                  className="flex-1 bg-gradient-to-r from-sky-500 to-indigo-500 hover:from-sky-400 hover:to-indigo-400 text-white font-bold py-2 px-4 rounded-lg transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2"
+                >
+                  <Camera className="w-4 h-4" />
+                  <span>纪念留影</span>
                 </button>
                 {isAdminDevice && (
                   <button
