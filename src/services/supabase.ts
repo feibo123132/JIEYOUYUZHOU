@@ -20,7 +20,6 @@ export const supabase = supabaseUrl && supabaseAnonKey
 export const mockDatabase = {
   users: new Map<string, any>(),
   stars: {
-    jieyou: new Map<string, any>(),
     life: new Map<string, any>(),
   } satisfies Record<ThemeId, Map<string, any>>,
   nextId: 0,
@@ -66,18 +65,36 @@ export const mockDatabase = {
   async deleteStar(themeId: ThemeId, starId: string) {
     const existed = this.stars[themeId].get(starId);
     if (existed) {
-      this.stars[themeId].delete(starId);
+      existed.deleted_at = Date.now();
       return true;
     }
     return false;
   },
+  async restoreStar(themeId: ThemeId, starId: string) {
+    const star = this.stars[themeId].get(starId);
+    if (!star) return false;
+    delete star.deleted_at;
+    return true;
+  },
+  async permanentDeleteStar(themeId: ThemeId, starId: string) {
+    return this.stars[themeId].delete(starId);
+  },
   async getAllStars(themeId: ThemeId) {
+    return Promise.resolve(Array.from(this.stars[themeId].values()).filter((star: any) => !star.deleted_at) as any[]);
+  },
+  async getAllStarRecords(themeId: ThemeId) {
     return Promise.resolve(Array.from(this.stars[themeId].values()) as any[]);
   },
   async getUserStars(themeId: ThemeId, userId: string) {
     return Promise.resolve(
-      Array.from(this.stars[themeId].values()).filter((star: any) => star.user_id === userId) as any[]
+      Array.from(this.stars[themeId].values()).filter((star: any) => !star.deleted_at && star.user_id === userId) as any[]
     );
+  },
+  async updateStar(themeId: ThemeId, starId: string, updates: Partial<{ color: string; size: number; shape: string; message: string }>) {
+    const star = this.stars[themeId].get(starId);
+    if (!star) return false;
+    Object.assign(star, updates);
+    return true;
   }
 };
 

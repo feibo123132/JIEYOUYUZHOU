@@ -23,7 +23,7 @@ function App() {
   const isPlayingRef = useRef(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [starrySkyInitialView, setStarrySkyInitialView] = useState<'stars' | 'my-messages'>('stars');
+  const [starrySkyInitialView, setStarrySkyInitialView] = useState<'stars' | 'my-messages' | 'star-messages'>('stars');
   const {
     activeTheme,
     currentView,
@@ -144,7 +144,7 @@ function App() {
     enterTheme(themeId);
   };
 
-  const handleNicknameSubmit = async (nickname: string, destination: 'stars' | 'my-messages') => {
+  const handleNicknameSubmit = async (nickname: string, destination: 'stars' | 'my-messages' | 'star-messages') => {
     setIsLoading(true);
     try {
       if (!user || user.nickname !== nickname) {

@@ -1387,6 +1387,28 @@ test('听歌识曲紧凑展示本场参与者且用户榜支持本地记录兜�
   assert.match(station, /cloudParticipants\.length \? cloudParticipants : localParticipants/)
 })
 
+test('可按用户名删除本场参与者的全部作答记录', async () => {
+  const { removeQuizParticipant } = await loadRoadshowModule()
+  const record = {
+    id: 'current', title: '本次路演', date: '2026-09-04', updatedAt: '', performanceSongs: [], recognitionSongs: [],
+    recognitionAttempts: [
+      { id: 'a-1', participantName: 'JIEYOU', title: '晴天', artist: '周杰伦', correct: true, answeredAt: '2026-09-04T12:00:00.000Z' },
+      { id: 'a-2', participantName: 'jieyou', title: '成都', artist: '赵雷', correct: false, answeredAt: '2026-09-04T12:01:00.000Z' },
+      { id: 'a-3', participantName: '棋士', title: '情歌', artist: '梁静茹', correct: true, answeredAt: '2026-09-04T12:02:00.000Z' },
+    ],
+  }
+
+  const updated = removeQuizParticipant(record, ' JieYou ')
+  assert.deepEqual(updated.recognitionAttempts?.map((attempt: { id: string }) => attempt.id), ['a-3'])
+  assert.equal(updated.id, record.id)
+
+  const source = readFileSync(roadshowPanelUrl, 'utf8')
+  const recognitionEditor = source.slice(source.indexOf('const RecognitionSongListEditor'))
+  assert.match(recognitionEditor, /aria-label="删除参与用户"/)
+  assert.match(recognitionEditor, /onRecordAttempt\(removeQuizParticipant\(record, name\)\)/)
+  assert.match(recognitionEditor, /确定删除参与用户/)
+})
+
 test('路演听歌识曲歌曲在非答题状态可打开对应详情和谱子', () => {
   const roadshowPanel = readFileSync(roadshowPanelUrl, 'utf8')
   const station = readFileSync(stationUrl, 'utf8')

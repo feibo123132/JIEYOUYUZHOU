@@ -214,6 +214,20 @@ export const upsertRecognitionAttempt = (
   return { ...record, recognitionAttempts: attempts };
 };
 
+export const removeQuizParticipant = (
+  record: RoadshowRecord,
+  participantName: string,
+): RoadshowRecord => {
+  const key = participantName.trim().toLocaleLowerCase();
+  if (!key) return record;
+  return {
+    ...record,
+    recognitionAttempts: (record.recognitionAttempts ?? []).filter(
+      (attempt) => attempt.participantName?.trim().toLocaleLowerCase() !== key,
+    ),
+  };
+};
+
 export const countRecognitionAttemptsForSong = (
   record: Pick<RoadshowRecord, 'recognitionAttempts'>,
   song: Pick<RoadshowSong, 'catalogId' | 'title' | 'artist'>,

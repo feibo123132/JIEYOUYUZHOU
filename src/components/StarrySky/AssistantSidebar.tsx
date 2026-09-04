@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Search, Calendar, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react'
+import { Search, Calendar, ChevronLeft, ChevronRight, ChevronDown, Trash2 } from 'lucide-react'
 
 interface AssistantSidebarProps {
   searchName: string
@@ -31,6 +31,7 @@ interface AssistantSidebarProps {
   showHappinessPortrait: boolean
   onOpenHappinessPortrait: () => void
   happinessPortraitTriggerRef: React.Ref<HTMLButtonElement>
+  onOpenTrash: () => void
 }
 
 const AssistantSidebar: React.FC<AssistantSidebarProps> = ({
@@ -63,6 +64,7 @@ const AssistantSidebar: React.FC<AssistantSidebarProps> = ({
   showHappinessPortrait,
   onOpenHappinessPortrait,
   happinessPortraitTriggerRef,
+  onOpenTrash,
 }) => {
   const [searchFoldOpen, setSearchFoldOpen] = useState(false)
   const [displayFoldOpen, setDisplayFoldOpen] = useState(false)
@@ -313,9 +315,18 @@ const AssistantSidebar: React.FC<AssistantSidebarProps> = ({
                   >查看</button>
                 </div>
               )}
+              <button
+                type="button"
+                onClick={onOpenTrash}
+                className="flex w-full items-center justify-between bg-white/5 rounded-xl px-3 py-2 text-white transition hover:bg-white/10"
+              >
+                <span className="flex items-center gap-2 text-sm text-white/90"><Trash2 className="h-4 w-4 text-white/65" />回收站</span>
+                <ChevronRight className="h-4 w-4 text-white/45" />
+              </button>
             </div>
           )}
         </div>
+
       </div>
     </div>
   )

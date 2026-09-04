@@ -1,7 +1,7 @@
 // src/components/StarrySky/StarrySky.tsx (修正后的完整版)
 
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
-import { ArrowLeft, ArrowRight, Plus, RotateCcw, Trash2, Sparkles, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Pencil, RotateCcw, Trash2, Sparkles, X } from 'lucide-react';
 import { Star as PStar, Heart, Cloud, Moon, Mountains, Leaf, MusicNotes, Bird, Cat, Dog, Waves, PaperPlane } from 'phosphor-react';
 import UserStar from './UserStar';
 import { toast } from 'sonner';
@@ -9,12 +9,14 @@ import CreateStarModal from './CreateStarModal';
 import AssistantSidebar from './AssistantSidebar';
 import MessageBarrage, { type BarrageMessage } from './MessageBarrage';
 import MyMessagesPage from './MyMessagesPage';
+import StarMessagesPage from './StarMessagesPage';
 import HappinessSkyPage from './HappinessSkyPage';
+import StarTrashPage from './StarTrashPage';
 import type { ThemeConfig } from '../../themes/themeConfig';
 import { resolveStarLayout, type LayoutRect } from '../../utils/starLayout';
 import { createInitialBarragePreferences, setBarragePreference } from './barragePreferences';
 import { openHappinessMeowGenerator } from '../../utils/meowGenerator';
-import { isLifeSeedStar, mergeLifeSeedStars, selectVisibleStars } from './lifeSeedStars';
+import { selectVisibleStars } from './starDisplay';
 import { restoreHappinessPortraitFocus } from './happinessPortrait';
 
 // ↓↓↓↓↓↓ [修正] 使用正确的默认导入并解构出 starService ↓↓↓↓↓↓
@@ -41,7 +43,7 @@ interface StarrySkyProps {
   userNickname: string;
   onBack: () => void;
   userId: string;
-  initialView?: 'stars' | 'my-messages';
+  initialView?: 'stars' | 'my-messages' | 'star-messages';
 }
 
 const createInitialStarrySkyBarragePreferences = () => ({
@@ -58,6 +60,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
   const [pendingDeleteStarId, setPendingDeleteStarId] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [editingStar, setEditingStar] = useState<StarData | null>(null);
   const [searchName, setSearchName] = useState('');
   const [searchDate, setSearchDate] = useState('');
   const [calendarOpen, setCalendarOpen] = useState(false);
@@ -69,11 +72,38 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
   const [isAdminDevice, setIsAdminDevice] = useState<boolean>(false);
   const [welcomeInfo, setWelcomeInfo] = useState<{ nickname: string; count: number } | null>(null);
   const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>('loading');
+
+  // 企划合并兼容：若本地仍残留旧「星空树洞」配额键，将其迁移/合并进当前生命万岁键后清除
+  useEffect(() => {
+    try {
+      const LEGACY_QUOTA_KEY = 'device_daily_quota:jieyou';
+      const rawLegacy = localStorage.getItem(LEGACY_QUOTA_KEY);
+      if (!rawLegacy) return;
+      const legacy = JSON.parse(rawLegacy);
+      const currentRaw = localStorage.getItem(theme.data.quotaStorageKey);
+      let merged: { date: string; count: number };
+      if (currentRaw) {
+        const current = JSON.parse(currentRaw);
+        merged = current.date === legacy.date
+          ? { date: current.date, count: Math.max(current.count, legacy.count) }
+          : (current.date > legacy.date ? current : legacy);
+      } else {
+        merged = legacy;
+      }
+      localStorage.setItem(theme.data.quotaStorageKey, JSON.stringify(merged));
+      localStorage.removeItem(LEGACY_QUOTA_KEY);
+    } catch {
+      // 解析失败则忽略，不影响主流程
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [skyView, setSkyView] = useState<'stars' | 'messages'>('stars');
   const displayMode = skyView === 'messages' ? messageDisplayMode : starDisplayMode;
   const [isMyMessagesOpen, setIsMyMessagesOpen] = useState(initialView === 'my-messages');
   const [isHappinessPortraitOpen, setIsHappinessPortraitOpen] = useState(false);
+  const [isTrashOpen, setIsTrashOpen] = useState(false);
+  const [isStarMessagesOpen, setIsStarMessagesOpen] = useState(initialView === 'star-messages');
   const [barragePreferences, setBarragePreferences] = useState(createInitialStarrySkyBarragePreferences);
   const barrageMode = barragePreferences.immersive;
   const intimateMode = barragePreferences.intimate;
@@ -118,11 +148,13 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
       setMessageDisplayMode('full');
       setIsMyMessagesOpen(initialView === 'my-messages');
       setIsHappinessPortraitOpen(false);
+      setIsTrashOpen(false);
+      setIsStarMessagesOpen(initialView === 'star-messages');
       setBarragePreferences(createInitialStarrySkyBarragePreferences());
       setLoadState('loading');
       try {
         const allStars = await starService.getAllStars(theme.id);
-        const formattedStars = mergeLifeSeedStars(theme.id, allStars).map(star => ({
+        const formattedStars = allStars.map(star => ({
           id: star.id,
           x: star.position_x,
           y: star.position_y,
@@ -287,6 +319,33 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
     }
   };
 
+  const handleUpdateStar = async (data: { color: string; size: number; shape: string; message: string }) => {
+    if (!editingStar) return;
+    setIsCreating(true);
+    try {
+      await starService.updateStar(theme.id, editingStar.id, {
+        color: data.color,
+        size: data.size,
+        shape: data.shape,
+        message: data.message,
+      });
+      setStars(prev => prev.map(star =>
+        star.id === editingStar.id
+          ? { ...star, color: data.color, size: data.size, shape: data.shape, message: data.message }
+          : star
+      ));
+      if (selectedStar?.id === editingStar.id) {
+        setSelectedStar(prev => prev ? { ...prev, color: data.color, size: data.size, shape: data.shape, message: data.message } : null);
+      }
+      setEditingStar(null);
+      toast.success('星星已更新');
+    } catch {
+      toast.error('更新失败，请重试');
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
   const preCheckSfx = async (): Promise<boolean> => {
     const bypass = userNickname === 'JIEYOU不解忧' || isAdminDevice;
     if (bypass) return true;
@@ -305,12 +364,11 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
     return true;
   };
 
-  const canDeleteStar = (star: StarData) => !isLifeSeedStar(star) && (star.userId === userId || isAdminDevice);
+  const canDeleteStar = (star: StarData) => star.userId === userId || isAdminDevice;
 
   const handleDeleteStar = async (starId: string) => {
     const starToDelete = stars.find(star => star.id === starId);
     if (!starToDelete) return;
-    if (isLifeSeedStar(starToDelete)) return;
     if (!canDeleteStar(starToDelete)) {
       toast.error('无权删除这颗星星');
       return;
@@ -319,7 +377,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
     if (ok) {
       setStars(prev => prev.filter(s => s.id !== starId));
       setSelectedStar(null);
-      toast.success('已删除这颗星星');
+      toast.success('已移入回收站，可在 7 天内恢复');
     } else {
       toast.error('删除失败');
     }
@@ -530,6 +588,28 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
     );
   }
 
+  if (isTrashOpen) {
+    return (
+      <StarTrashPage
+        theme={theme}
+        userId={userId}
+        nickname={userNickname}
+        isAdminDevice={isAdminDevice}
+        onBack={() => { setIsTrashOpen(false); setLoadAttempt((value) => value + 1); }}
+      />
+    );
+  }
+
+  if (isStarMessagesOpen) {
+    return (
+      <StarMessagesPage
+        stars={stars}
+        accentColor={theme.visual.defaultStarColor}
+        onBack={() => { (window as any).playClickSound?.(); setIsStarMessagesOpen(false); }}
+      />
+    );
+  }
+
   return (
     <div ref={rootRef} className="min-h-screen relative overflow-hidden">
       {!barrageMode && (
@@ -573,6 +653,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
         showHappinessPortrait={theme.id === 'life'}
         onOpenHappinessPortrait={handleOpenHappinessPortrait}
         happinessPortraitTriggerRef={happinessPortraitTriggerRef}
+        onOpenTrash={() => { setSidebarOpen(false); setIsTrashOpen(true); }}
       />
 
       {/* 顶部导航 */}
@@ -660,23 +741,28 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
       {/* 底部操作区域 */}
       {!barrageMode && <div data-star-safe-zone className="absolute bottom-16 left-1/2 transform -translate-x-1/2 z-10">
         <div className="flex flex-col items-center space-y-4">
-          <button
-            onClick={handleOpenCreateModal}
-            disabled={isCreating || loadState !== 'ready'}
-            className={`bg-gradient-to-r ${theme.visual.buttonGradientClass} ${theme.visual.buttonHoverClass} disabled:from-gray-400 disabled:to-gray-500 text-white font-bold py-4 px-8 rounded-full text-lg transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-2xl ${theme.visual.glowClass} disabled:cursor-not-allowed disabled:scale-100 flex items-center space-x-3`}
-          >
-            {isCreating ? (
-              <>
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                <span>{theme.sky.creatingLabel}</span>
-              </>
-            ) : (
-              <>
-                <Plus className="w-6 h-6" />
-                <span>{theme.sky.createLabel}</span>
-              </>
-            )}
-          </button>
+          <div className="w-44">
+            <button
+              data-sky-create-button
+              type="button"
+              onClick={handleOpenCreateModal}
+              disabled={isCreating || loadState !== 'ready'}
+              className={`w-full rounded-xl px-3 py-3 font-semibold transition duration-200 flex items-center justify-center gap-2 ${
+                isCreating || loadState !== 'ready'
+                  ? 'cursor-not-allowed bg-gray-300 text-gray-500'
+                  : `bg-gradient-to-r ${theme.visual.buttonGradientClass} ${theme.visual.buttonHoverClass} text-white shadow-lg hover:scale-[1.02] ${theme.visual.glowClass} active:scale-[.98]`
+              }`}
+            >
+              {isCreating ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  <span>{theme.sky.creatingLabel}</span>
+                </>
+              ) : (
+                <span>点亮星星</span>
+              )}
+            </button>
+          </div>
           <div className="text-white/70 text-sm text-center">
             <p>{theme.sky.hint}</p>
           </div>
@@ -766,6 +852,16 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
                 >
                   找杰宝
                 </button>
+                {isAdminDevice && (
+                  <button
+                    type="button"
+                    onClick={() => { (window as any).playClickSound?.(); setEditingStar(selectedStar); setSelectedStar(null); }}
+                    className="flex-1 bg-amber-500 hover:bg-amber-600 text-white py-2 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center space-x-2"
+                  >
+                    <Pencil className="w-4 h-4" />
+                    <span>编辑</span>
+                  </button>
+                )}
                 {canDeleteStar(selectedStar) && (
                   <button type="button" onClick={() => { (window as any).playClickSound?.(); requestDeleteStar(selectedStar.id); }} className="flex-1 bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center space-x-2">
                     <Trash2 className="w-4 h-4" />
@@ -794,8 +890,8 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-500/15 text-red-400">
               <Trash2 className="h-6 w-6" />
             </div>
-            <h3 id="delete-star-title" className="mt-4 text-xl font-bold">确定删除这颗星星？</h3>
-            <p id="delete-star-description" className="mt-2 text-sm leading-6 text-white/60">删除后无法恢复，请确认是否继续。</p>
+            <h3 id="delete-star-title" className="mt-4 text-xl font-bold">移入回收站？</h3>
+            <p id="delete-star-description" className="mt-2 text-sm leading-6 text-white/60">移入后可在 7 天内恢复，之后将被自动永久清除。</p>
             <div className="mt-6 grid grid-cols-2 gap-3">
               <button
                 type="button"
@@ -809,7 +905,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
                 onClick={() => { (window as any).playClickSound?.(); handleConfirmDelete(); }}
                 className="rounded-xl bg-red-500 px-4 py-2.5 font-semibold text-white transition-colors hover:bg-red-600"
               >
-                确认删除
+                移入回收站
               </button>
             </div>
           </div>
@@ -841,6 +937,22 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
         allowSfx={isAdminDevice || userNickname === 'JIEYOU不解忧' || readQuota().count < 3}
         onPreCheck={preCheckSfx}
         incomingIndex={stars.length + 1}
+      />
+      <CreateStarModal
+        key={editingStar?.id ?? 'no-edit'}
+        theme={theme}
+        open={editingStar !== null}
+        onClose={() => setEditingStar(null)}
+        onConfirm={handleUpdateStar}
+        defaultColor={editingStar?.color || theme.visual.defaultStarColor}
+        allowSfx={false}
+        mode="edit"
+        initialData={editingStar ? {
+          color: editingStar.color || theme.visual.defaultStarColor,
+          size: editingStar.size || 24,
+          shape: (editingStar.shape as any) || 'star',
+          message: editingStar.message || '',
+        } : undefined}
       />
     </div>
   );

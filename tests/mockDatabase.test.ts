@@ -24,5 +24,14 @@ test('mock stars remain isolated between themes', async () => {
 
   await mockDatabase.deleteStar('life', life.id)
   assert.equal((await mockDatabase.getAllStars('life')).length, 0)
+  assert.equal((await mockDatabase.getAllStarRecords('life')).length, 1)
+  assert.equal((await mockDatabase.getAllStars('jieyou')).length, 1)
+
+  await mockDatabase.restoreStar('life', life.id)
+  assert.equal((await mockDatabase.getAllStars('life')).length, 1)
+
+  await mockDatabase.deleteStar('life', life.id)
+  await mockDatabase.permanentDeleteStar('life', life.id)
+  assert.equal((await mockDatabase.getAllStarRecords('life')).length, 0)
   assert.equal((await mockDatabase.getAllStars('jieyou')).length, 1)
 })

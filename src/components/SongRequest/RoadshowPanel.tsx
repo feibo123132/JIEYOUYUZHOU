@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { CalendarDays, Check, ChevronRight, Cloud, Guitar, Lock, Plus, Save, Search, Trash2, UsersRound, X } from 'lucide-react';
 import { SONGS } from './songCatalog';
 import type { Song } from './songCatalog';
@@ -19,6 +19,7 @@ import {
   ROADSHOW_LOCATIONS,
   ROADSHOW_SESSION_KEY,
   preserveRecognitionParticipantNames,
+  removeQuizParticipant,
   upsertRecognitionAttempt,
   type PerformanceMatchTier,
   type RoadshowRecord,
@@ -130,6 +131,8 @@ const RoadshowPanel = ({
       try { window.localStorage.removeItem(ROADSHOW_EDITING_KEY); } catch {}
     }
   };
+  const editingRef = useRef(editing);
+  useEffect(() => { editingRef.current = editing; }, [editing]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [archiveView, setArchiveView] = useState<ArchiveView>('practice');
@@ -143,12 +146,37 @@ const RoadshowPanel = ({
         if (!active) return;
         setRecords(cloudRecords);
         cacheRecords(cloudRecords);
+        // 云端权威：重挂载时若正在编辑的路演在云端有更新（如被一键导入过），用云端数据覆盖本地恢复的旧快照
+        const currentEditing = editingRef.current;
+        if (currentEditing) {
+          const cloudRecord = cloudRecords.find((record) => record.id === currentEditing.id);
+          if (cloudRecord && cloudRecord.updatedAt > currentEditing.updatedAt) setEditing(cloudRecord);
+        }
         setMessage('已从腾讯云同步');
       })
       .catch((error) => { if (active) setMessage(mapRoadshowSyncError(error)); })
       .finally(() => { if (active) setBusy(false); });
     return () => { active = false; };
   }, [credentials]);
+
+  // 监听外部导入事件（例如从点歌榜一键导入），刷新当前编辑缓存以反映最新云端数据
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ recordId?: string }>).detail;
+      const targetId = detail?.recordId;
+      if (!targetId) return;
+      pullRoadshows(credentials).then((cloudRecords) => {
+        setRecords(cloudRecords);
+        cacheRecords(cloudRecords);
+        const updated = cloudRecords.find((record) => record.id === targetId);
+        if (updated && editing && editing.id === targetId) {
+          setEditing(updated);
+        }
+      }).catch(() => {});
+    };
+    window.addEventListener('jieyou-roadshow-imported', handler);
+    return () => { window.removeEventListener('jieyou-roadshow-imported', handler); };
+  }, [credentials, editing]);
 
   const authenticate = async (mode: 'login' | 'register') => {
     const next = { alias: alias.trim(), password };
@@ -344,7 +372,7 @@ const RoadshowEditor = ({ record, allRecords, songRecords, catalogSongs, busy, m
           <button type="button" onClick={onBack} className="text-sm font-bold text-white/50 hover:text-white">← 返回路演列表</button>
           <button type="button" onClick={onLock} className="inline-flex items-center gap-2 text-xs font-bold text-white/40 hover:text-white"><Lock className="h-4 w-4" />锁定档案</button>
         </div>
-        <div className={`mt-5 grid gap-3 ${canManageFeaturedSongs ? 'grid-cols-3' : 'grid-cols-2'}`}>
+        <div data-roadshow-editor-grid className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <input aria-label="第几次路演" value={record.title} onChange={(event) => onChange({ ...record, title: event.target.value })} maxLength={60} className="h-12 min-w-0 rounded-xl border border-white/10 bg-black/35 px-4 font-serif text-xl font-black outline-none focus:border-orange-300/45" />
           <input aria-label="路演时间" type="date" value={record.date} onClick={(event) => event.currentTarget.showPicker?.()} onChange={(event) => onChange({ ...record, date: event.target.value })} className="h-12 min-w-0 cursor-pointer rounded-xl border border-white/10 bg-black/35 px-4 outline-none focus:border-orange-300/45" />
           {canManageFeaturedSongs && (
@@ -353,16 +381,15 @@ const RoadshowEditor = ({ record, allRecords, songRecords, catalogSongs, busy, m
               {ROADSHOW_LOCATIONS.map((location) => <option key={location} value={location}>{location}</option>)}
             </select>
           )}
+          <div data-roadshow-editor-tabs className="grid h-12 min-w-0 grid-cols-2 gap-1 rounded-xl border border-white/10 bg-black/35 p-1">
+            <button type="button" aria-pressed={editorTab === 'performance'} onClick={() => setEditorTab('performance')} className={`inline-flex min-w-0 items-center justify-center gap-1 rounded-lg px-2 text-[11px] font-bold transition ${editorTab === 'performance' ? 'bg-orange-300 font-black text-black' : 'text-white/55 hover:bg-white/[.06] hover:text-white'}`}>
+              <Guitar className="h-3.5 w-3.5 shrink-0" /><span className="truncate">路演歌曲</span>
+            </button>
+            <button type="button" aria-pressed={editorTab === 'recognition'} onClick={() => setEditorTab('recognition')} className={`inline-flex min-w-0 items-center justify-center gap-1 rounded-lg px-2 text-[11px] font-bold transition ${editorTab === 'recognition' ? 'bg-orange-300 font-black text-black' : 'text-white/55 hover:bg-white/[.06] hover:text-white'}`}>
+              <UsersRound className="h-3.5 w-3.5 shrink-0" /><span className="truncate">听歌识曲</span>
+            </button>
+          </div>
         </div>
-      </div>
-
-      <div className="flex justify-center gap-3">
-        <button type="button" onClick={() => setEditorTab('performance')} className={`inline-flex h-10 items-center gap-2 rounded-full border px-4 text-xs font-bold transition ${editorTab === 'performance' ? 'border-orange-200/45 bg-orange-300 font-black text-black' : 'border-white/10 bg-white/[.045] text-white/65 hover:border-orange-200/30 hover:text-white'}`}>
-          <Guitar className="h-4 w-4" />路演歌曲
-        </button>
-        <button type="button" onClick={() => setEditorTab('recognition')} className={`inline-flex h-10 items-center gap-2 rounded-full border px-4 text-xs font-bold transition ${editorTab === 'recognition' ? 'border-orange-200/45 bg-orange-300 font-black text-black' : 'border-white/10 bg-white/[.045] text-white/65 hover:border-orange-200/30 hover:text-white'}`}>
-          <UsersRound className="h-4 w-4" />听歌识曲
-        </button>
       </div>
 
       {editorTab === 'performance' && <SongListEditor title="路演歌曲" description="本次准备演唱的歌曲" songs={record.performanceSongs} allRecords={allRecords} recordId={record.id} songRecords={songRecords} catalogSongs={catalogSongs} onChange={(songs) => updateList('performanceSongs', songs)} onSave={(updatedSongs) => onSave({ ...record, performanceSongs: updatedSongs })} onOpenSongDetail={onOpenSongDetail} />}
@@ -501,6 +528,11 @@ const SongListEditor = ({ title, description, songs, allRecords, recordId, songR
           <button type="button" onClick={() => setSongEditMode((v) => !v)} className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-bold transition ${songEditMode ? 'border-red-200/40 bg-red-300/15 text-red-100' : 'border-white/10 bg-white/[.045] text-white/60 hover:border-white/20 hover:text-white/80'}`}>
             <Trash2 className="h-3.5 w-3.5" />歌曲编辑
           </button>
+          {songEditMode && (
+            <button type="button" onClick={() => { if (songs.length && window.confirm(`确定要清空全部 ${songs.length} 首歌曲吗？此操作不可恢复。`)) { onChange([]); setSongEditMode(false); } }} className="inline-flex items-center gap-1.5 rounded-full border border-red-300/30 bg-red-300/10 px-3.5 py-1.5 text-xs font-bold text-red-200 transition hover:bg-red-300/20 hover:text-red-100">
+              <Trash2 className="h-3.5 w-3.5" />清空全部
+            </button>
+          )}
           <button type="button" onClick={() => { setPickerOpen((open) => !open); setPickerQuery(''); }} className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-bold transition ${pickerOpen ? 'border-orange-200/40 bg-orange-300 text-black' : 'border-orange-200/25 bg-orange-300/10 text-orange-100 hover:bg-orange-300/20'}`}>
             <Plus className="h-3.5 w-3.5" />歌库添加
           </button>
@@ -610,6 +642,7 @@ const RecognitionSongListEditor = ({ record, assignments, allRecords, busy, onRe
   const [joining, setJoining] = useState(false);
   const [participantInput, setParticipantInput] = useState('');
   const [participantName, setParticipantName] = useState('');
+  const [deletingParticipants, setDeletingParticipants] = useState(false);
   const [selectedSongIds, setSelectedSongIds] = useState<string[]>([]);
   const [attemptIds, setAttemptIds] = useState<Record<string, string>>({});
   const [answers, setAnswers] = useState<Record<string, boolean>>({});
@@ -628,6 +661,7 @@ const RecognitionSongListEditor = ({ record, assignments, allRecords, busy, onRe
     setJoining(false);
     setParticipantInput('');
     setParticipantName('');
+    setDeletingParticipants(false);
     setSelectedSongIds([]);
     setAttemptIds({});
     setAnswers({});
@@ -670,6 +704,13 @@ const RecognitionSongListEditor = ({ record, assignments, allRecords, busy, onRe
     resetRound();
   };
 
+  const deleteParticipant = (name: string) => {
+    if (!window.confirm(`确定删除参与用户“${name}”及其本场全部答题记录吗？`)) return;
+    onRecordAttempt(removeQuizParticipant(record, name));
+    if (participantName.trim().toLocaleLowerCase() === name.trim().toLocaleLowerCase()) finishRound();
+    setDeletingParticipants(false);
+  };
+
   const toggleSong = (song: RoadshowSong) => {
     if (!participating || hasAnswer(song.id)) return;
     setSelectedSongIds((current) => {
@@ -690,6 +731,7 @@ const RecognitionSongListEditor = ({ record, assignments, allRecords, busy, onRe
     <section className="rounded-[1.75rem] border border-white/10 bg-[#09090c]/85 p-5 backdrop-blur-xl sm:p-7">
       <div className="flex items-end justify-between gap-4">
         <div><h3 className="font-serif text-2xl font-black">听歌识曲</h3><p className="mt-1 text-xs text-white/35">互动游戏准备的题目歌曲</p></div>
+        <div className="flex items-center gap-2">
         {joining ? (
           <form onSubmit={(event) => { event.preventDefault(); startParticipation(); }} className="flex items-center gap-2">
             <label className="sr-only" htmlFor={`participant-${record.id}`}>参与者用户名</label>
@@ -702,11 +744,36 @@ const RecognitionSongListEditor = ({ record, assignments, allRecords, busy, onRe
             <UsersRound className="h-4 w-4" />{participating ? `退出参与 · ${participantName}` : <span>参与</span>}
           </button>
         )}
+        {!joining && participants.length > 0 && (
+          <button
+            type="button"
+            aria-label="删除参与用户"
+            aria-pressed={deletingParticipants}
+            disabled={busy}
+            onClick={() => setDeletingParticipants((current) => !current)}
+            className={`inline-flex h-10 items-center gap-2 rounded-full border px-4 text-xs font-black transition disabled:cursor-not-allowed disabled:opacity-35 ${deletingParticipants ? 'border-rose-300/45 bg-rose-400/15 text-rose-100' : 'border-white/10 bg-white/[.045] text-white/55 hover:border-rose-300/30 hover:text-rose-200'}`}
+          >
+            <Trash2 className="h-4 w-4" />{deletingParticipants ? '取消删除' : '删除'}
+          </button>
+        )}
+        </div>
       </div>
       {participants.length > 0 && (
         <div className="mt-3 flex items-center gap-2 overflow-x-auto text-[10px] text-white/40">
           <span className="shrink-0 font-bold text-white/30">已参与 {participants.length}</span>
-          {participants.map((participant) => <span key={participant.participantName.toLocaleLowerCase()} title={`${participant.participantName}：答题 ${participant.answerCount} 次，正确率 ${participant.accuracy}%`} className="shrink-0 rounded-full border border-white/10 bg-white/[.04] px-2.5 py-1"><b className="font-bold text-white/65">{participant.participantName}</b><small className="ml-1 text-white/30">· {participant.answerCount}题</small></span>)}
+          {participants.map((participant) => deletingParticipants ? (
+            <button
+              key={participant.participantName.toLocaleLowerCase()}
+              type="button"
+              title={`删除 ${participant.participantName}`}
+              onClick={() => deleteParticipant(participant.participantName)}
+              className="inline-flex shrink-0 items-center rounded-full border border-rose-300/25 bg-rose-400/10 px-2.5 py-1 text-rose-100 transition hover:border-rose-300/50 hover:bg-rose-400/20"
+            >
+              <b className="font-bold">{participant.participantName}</b><small className="ml-1 text-rose-200/55">· {participant.answerCount}题</small><X className="ml-1.5 h-3 w-3" />
+            </button>
+          ) : (
+            <span key={participant.participantName.toLocaleLowerCase()} title={`${participant.participantName}：答题 ${participant.answerCount} 次，正确率 ${participant.accuracy}%`} className="shrink-0 rounded-full border border-white/10 bg-white/[.04] px-2.5 py-1"><b className="font-bold text-white/65">{participant.participantName}</b><small className="ml-1 text-white/30">· {participant.answerCount}题</small></span>
+          ))}
         </div>
       )}
       {participating && (

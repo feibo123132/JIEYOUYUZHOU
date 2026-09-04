@@ -1,0 +1,58 @@
+[
+  {
+    "_id": "b1f5aa9b6a9951770598320556586319",
+    "_openid": "iT7JhxSyFDv1QNs5UE-SNA",
+    "color": "#FFC857",
+    "created_at": "2026-09-03T10:52:39.471Z",
+    "isAdminDevice": false,
+    "message": "这是我今天最高兴的一件事儿，本来我今天想得最多的是退学，然后突然间遇到你，所以就像你刚才那首歌唱到的谢谢你，这是我今天感觉到最温暖的时光，我会坚持下去了。",
+    "nickname": "暖暖的",
+    "position_x": 54.69270421217754,
+    "position_y": 54.73692285334254,
+    "shape": "fullmoon",
+    "size": 24,
+    "user_id": "b9a701d46a995113052cccec62db47d2"
+  },
+  {
+    "_id": "a9defcfd6a995f2000bb50dd48a5a88f",
+    "_openid": "iT7JhxSyFDv1QNs5UE-SNA",
+    "color": "#FFC857",
+    "created_at": "2026-09-03T11:50:56.145Z",
+    "isAdminDevice": false,
+    "message": "22岁，拥有一个健康的身体，一张爱笑的脸蛋，一颗感受清风明月的心，和别人说话不会多想的眼睛，这才是最重要的。",
+    "nickname": "不能没有螺蛳粉",
+    "position_x": 84.29044862265746,
+    "position_y": 42.15590380963317,
+    "shape": "star",
+    "size": 24,
+    "user_id": "b1f5aa9b6a995eb4059c581d5d29d943"
+  },
+  {
+    "_id": "b1f5aa9b6a996fe705a1961c1291a6a9",
+    "_openid": "iT7JhxSyFDv1QNs5UE-SNA",
+    "color": "#1ffff0",
+    "created_at": "2026-09-03T13:02:31.337Z",
+    "isAdminDevice": false,
+    "message": "和JIEYOU一起唱歌太美好啦",
+    "nickname": "早点睡",
+    "position_x": 21.490431303746142,
+    "position_y": 17.79352629670225,
+    "shape": "music",
+    "size": 24,
+    "user_id": "b9a701d46a996fa60536f6004f5fdd8c"
+  },
+  {
+    "_id": "b1f5aa9b6a99872005a95d9115a40a14",
+    "_openid": "iT7JhxSyFDv1QNs5UE-SNA",
+    "color": "#89ff57",
+    "created_at": "2026-09-03T14:41:36.195Z",
+    "isAdminDevice": true,
+    "message": "永远幸福快乐！希望自己能够永远做个快乐的小女孩！不内耗！做自己就好！",
+    "nickname": "快乐tym",
+    "position_x": 43.68341526858774,
+    "position_y": 52.22101452127362,
+    "shape": "mountain",
+    "size": 24,
+    "user_id": "b1f5aa9b6a99869805a90aa172311e9e"
+  }
+]

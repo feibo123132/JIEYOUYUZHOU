@@ -12,6 +12,7 @@ type StarPayload = {
   size?: number;
   shape?: string;
   message?: string;
+  deleted_at?: number;
 };
 
 const base = import.meta.env.VITE_API_BASE || '';
@@ -41,9 +42,36 @@ export const api = {
     return r.json();
   },
   async deleteStar(themeId: ThemeId, id: string) {
+    const r = await fetch(`${base}${getThemeStarApiPath(themeId, id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deleted_at: Date.now() }),
+    });
+    if (!r.ok) throw new Error('api_error');
+    return true;
+  },
+  async restoreStar(themeId: ThemeId, id: string) {
+    const r = await fetch(`${base}${getThemeStarApiPath(themeId, id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deleted_at: null }),
+    });
+    if (!r.ok) throw new Error('api_error');
+    return true;
+  },
+  async permanentDeleteStar(themeId: ThemeId, id: string) {
     const r = await fetch(`${base}${getThemeStarApiPath(themeId, id)}`, { method: 'DELETE' });
     if (!r.ok) throw new Error('api_error');
     return true;
+  },
+  async updateStar(themeId: ThemeId, id: string, payload: Partial<StarPayload>) {
+    const r = await fetch(`${base}${getThemeStarApiPath(themeId, id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!r.ok) throw new Error('api_error');
+    return r.json();
   },
   async getTodayCountByNickname(themeId: ThemeId, nickname: string) {
     const params = new URLSearchParams({ nickname });

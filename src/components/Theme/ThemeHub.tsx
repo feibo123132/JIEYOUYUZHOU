@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowUpRight, Guitar, PawPrint, Sparkles, SunMedium } from 'lucide-react';
+import { ArrowUpRight, Guitar, PawPrint, SunMedium } from 'lucide-react';
 import services from '../../services/starService';
-import { getThemeConfig, THEME_IDS, type ThemeId } from '../../themes/themeConfig';
+import { getThemeConfig, type ThemeId } from '../../themes/themeConfig';
 import { getMeowGeneratorUrl } from '../../utils/meowGenerator';
 
 const { starService } = services;
@@ -13,22 +13,15 @@ interface ThemeHubProps {
   onOpenSongRequest: () => void;
 }
 
-type CountState = Record<ThemeId, number | null | undefined>;
-
 const ThemeHub: React.FC<ThemeHubProps> = ({ onSelect, onOpenSongRequest }) => {
-  const [counts, setCounts] = useState<CountState>({ jieyou: undefined, life: undefined });
+  const [count, setCount] = useState<number | null | undefined>(undefined);
+  const theme = getThemeConfig('life');
 
   useEffect(() => {
     let active = true;
-    for (const themeId of THEME_IDS) {
-      starService.getAllStars(themeId)
-        .then((stars) => {
-          if (active) setCounts((current) => ({ ...current, [themeId]: stars.length }));
-        })
-        .catch(() => {
-          if (active) setCounts((current) => ({ ...current, [themeId]: null }));
-        });
-    }
+    starService.getAllStars('life')
+      .then((stars) => { if (active) setCount(stars.length); })
+      .catch(() => { if (active) setCount(null); });
     return () => { active = false; };
   }, []);
 
@@ -44,87 +37,47 @@ const ThemeHub: React.FC<ThemeHubProps> = ({ onSelect, onOpenSongRequest }) => {
           </p>
         </header>
 
-        <section className="grid grid-cols-1 gap-5 md:grid-cols-2 md:gap-7" aria-label="选择企划">
-          {THEME_IDS.map((themeId, index) => {
-            const theme = getThemeConfig(themeId);
-            const isLife = themeId === 'life';
-            const count = counts[themeId];
-            return (
-              <button
-                key={themeId}
-                type="button"
-                onClick={() => { (window as any).playClickSound?.(); onSelect(themeId); }}
-                aria-label={`进入${theme.hub.name}`}
-                className={`group relative ${HUB_CARD_SIZE_CLASS} overflow-hidden rounded-[2rem] border p-7 text-left backdrop-blur-xl transition duration-500 hover:-translate-y-2 focus:outline-none focus:ring-2 md:p-9 ${
-                  isLife
-                    ? 'border-amber-200/20 bg-[#211407]/80 focus:ring-amber-300/70'
-                    : 'border-violet-200/20 bg-[#10091b]/80 focus:ring-violet-300/70'
-                }`}
-                style={{ animation: `theme-card-in .75s cubic-bezier(.2,.8,.2,1) ${index * 120}ms both` }}
-              >
-                <span
-                  className="absolute -right-24 -top-24 h-64 w-64 rounded-full opacity-45 blur-3xl transition duration-700 group-hover:scale-125 group-hover:opacity-70"
-                  style={{ background: theme.visual.cardGlow }}
-                />
-                <span className={`absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent ${isLife ? 'via-amber-200/70' : 'via-violet-200/70'} to-transparent`} />
-
-                <span className={HUB_CARD_CONTENT_CLASS}>
-                  <span className="flex items-start justify-between">
-                    <span className={`grid h-14 w-14 place-items-center rounded-2xl border ${isLife ? 'border-amber-200/20 bg-amber-300/10 text-amber-200' : 'border-violet-200/20 bg-violet-300/10 text-violet-200'}`}>
-                      {isLife ? <SunMedium className="h-7 w-7" /> : <Sparkles className="h-7 w-7" />}
-                    </span>
-                    <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1.5 text-xs text-white/50">
-                      {count === undefined ? '正在遥望…' : count === null ? '— 颗星' : `${count} 颗星`}
-                    </span>
-                  </span>
-
-                  <span>
-                    <span className={`text-xs font-bold tracking-[0.2em] ${isLife ? 'text-amber-300' : 'text-violet-300'}`}>
-                      {theme.hub.eyebrow}
-                    </span>
-                    <span className="mt-3 block font-serif text-3xl font-black tracking-tight md:text-4xl">
-                      {theme.hub.name}
-                    </span>
-                    <span className="mt-3 block max-w-md text-sm leading-7 text-white/55">
-                      {theme.hub.description}
-                    </span>
-                    <span className={`mt-7 inline-flex items-center gap-2 text-sm font-bold ${isLife ? 'text-amber-200' : 'text-violet-200'}`}>
-                      {theme.hub.invitation}
-                      <ArrowUpRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1 group-hover:-translate-y-1" />
-                    </span>
-                  </span>
-                </span>
-              </button>
-            );
-          })}
-        </section>
-
-        <section className="mt-5 grid grid-cols-1 gap-5 md:mt-7 md:grid-cols-2 md:gap-7" aria-label="创作工具">
-          <a
-            href={getMeowGeneratorUrl()}
-            aria-label="捏猫"
-            onClick={() => { (window as any).playClickSound?.(); }}
-            className={`group relative ${HUB_CARD_SIZE_CLASS} overflow-hidden rounded-[2rem] border border-orange-200/20 bg-[#17100c]/85 p-7 text-left backdrop-blur-xl motion-safe:transition motion-safe:duration-500 motion-safe:hover:-translate-y-2 focus:outline-none focus:ring-2 focus:ring-emerald-200/70 md:p-9`}
+        <section data-theme-hub-top className="grid w-full grid-cols-1 gap-5 md:grid-cols-2 md:gap-7" aria-label="主要企划">
+          <button
+            type="button"
+            onClick={() => { (window as any).playClickSound?.(); onSelect('life'); }}
+            aria-label={`进入${theme.hub.name}`}
+            className={`group relative ${HUB_CARD_SIZE_CLASS} w-full overflow-hidden rounded-[2rem] border border-amber-200/20 bg-[#211407]/80 p-7 text-left backdrop-blur-xl transition duration-500 hover:-translate-y-2 focus:outline-none focus:ring-2 focus:ring-amber-300/70 md:p-9`}
+            style={{ animation: 'theme-card-in .75s cubic-bezier(.2,.8,.2,1) both' }}
           >
-            <span className="pointer-events-none absolute -left-16 -top-24 h-52 w-52 rounded-full bg-orange-400/20 blur-3xl motion-safe:transition motion-safe:duration-700 motion-safe:group-hover:bg-orange-300/30" />
-            <span className="pointer-events-none absolute -bottom-24 right-10 h-48 w-48 rounded-full bg-emerald-300/10 blur-3xl motion-safe:transition motion-safe:duration-700 motion-safe:group-hover:bg-emerald-200/20" />
-            <span className="absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-orange-200/70 to-transparent" />
+            <span
+              className="absolute -right-24 -top-24 h-64 w-64 rounded-full opacity-45 blur-3xl transition duration-700 group-hover:scale-125 group-hover:opacity-70"
+              style={{ background: theme.visual.cardGlow }}
+            />
+            <span className="absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-amber-200/70 to-transparent" />
 
             <span className={HUB_CARD_CONTENT_CLASS}>
-              <span className="grid h-14 w-14 place-items-center rounded-2xl border border-orange-200/20 bg-orange-300/10 text-orange-100">
-                <PawPrint className="h-7 w-7" />
+              <span className="flex items-start justify-between">
+                <span className="grid h-14 w-14 place-items-center rounded-2xl border border-amber-200/20 bg-amber-300/10 text-amber-200">
+                  <SunMedium className="h-7 w-7" />
+                </span>
+                <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1.5 text-xs text-white/50">
+                  {count === undefined ? '正在遥望…' : count === null ? '— 颗星' : `${count} 颗星`}
+                </span>
               </span>
+
               <span>
-                <span className="block text-[10px] font-bold tracking-[0.28em] text-emerald-200/80">MEOW GENERATOR</span>
-                <span className="mt-3 block font-serif text-3xl font-black tracking-tight text-white md:text-4xl">捏猫</span>
-                <span className="mt-3 block max-w-md text-sm leading-7 text-white/55">捏出独一无二的小猫，换花色、玩玩具，再留下一张收藏卡。</span>
-                <span className="mt-7 inline-flex items-center gap-2 text-sm font-bold text-orange-100">
-                  去捏一只猫
-                  <ArrowUpRight className="h-4 w-4 motion-safe:transition-transform motion-safe:duration-300 motion-safe:group-hover:translate-x-1 motion-safe:group-hover:-translate-y-1" />
+                <span className="text-xs font-bold tracking-[0.2em] text-amber-300">
+                  {theme.hub.eyebrow}
+                </span>
+                <span className="mt-3 block font-serif text-3xl font-black tracking-tight md:text-4xl">
+                  {theme.hub.name}
+                </span>
+                <span className="mt-3 block max-w-md text-sm leading-7 text-white/55">
+                  {theme.hub.description}
+                </span>
+                <span className="mt-7 inline-flex items-center gap-2 text-sm font-bold text-amber-200">
+                  {theme.hub.invitation}
+                  <ArrowUpRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1 group-hover:-translate-y-1" />
                 </span>
               </span>
             </span>
-          </a>
+          </button>
 
           <button
             type="button"
@@ -151,7 +104,34 @@ const ThemeHub: React.FC<ThemeHubProps> = ({ onSelect, onOpenSongRequest }) => {
               </span>
             </span>
           </button>
+        </section>
 
+        <section data-theme-hub-bottom className="mt-5 flex justify-center md:mt-7" aria-label="创作工具">
+          <a
+            href={getMeowGeneratorUrl()}
+            aria-label="捏猫"
+            onClick={() => { (window as any).playClickSound?.(); }}
+            className={`group relative ${HUB_CARD_SIZE_CLASS} w-full overflow-hidden rounded-[2rem] border border-orange-200/20 bg-[#17100c]/85 p-7 text-left backdrop-blur-xl motion-safe:transition motion-safe:duration-500 motion-safe:hover:-translate-y-2 focus:outline-none focus:ring-2 focus:ring-emerald-200/70 md:w-[calc(50%-0.875rem)] md:p-9`}
+          >
+            <span className="pointer-events-none absolute -left-16 -top-24 h-52 w-52 rounded-full bg-orange-400/20 blur-3xl motion-safe:transition motion-safe:duration-700 motion-safe:group-hover:bg-orange-300/30" />
+            <span className="pointer-events-none absolute -bottom-24 right-10 h-48 w-48 rounded-full bg-emerald-300/10 blur-3xl motion-safe:transition motion-safe:duration-700 motion-safe:group-hover:bg-emerald-200/20" />
+            <span className="absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-orange-200/70 to-transparent" />
+
+            <span className={HUB_CARD_CONTENT_CLASS}>
+              <span className="grid h-14 w-14 place-items-center rounded-2xl border border-orange-200/20 bg-orange-300/10 text-orange-100">
+                <PawPrint className="h-7 w-7" />
+              </span>
+              <span>
+                <span className="block text-[10px] font-bold tracking-[0.28em] text-emerald-200/80">MEOW GENERATOR</span>
+                <span className="mt-3 block font-serif text-3xl font-black tracking-tight text-white md:text-4xl">捏猫</span>
+                <span className="mt-3 block max-w-md text-sm leading-7 text-white/55">捏出独一无二的小猫，换花色、玩玩具，再留下一张收藏卡。</span>
+                <span className="mt-7 inline-flex items-center gap-2 text-sm font-bold text-orange-100">
+                  去捏一只猫
+                  <ArrowUpRight className="h-4 w-4 motion-safe:transition-transform motion-safe:duration-300 motion-safe:group-hover:translate-x-1 motion-safe:group-hover:-translate-y-1" />
+                </span>
+              </span>
+            </span>
+          </a>
         </section>
 
         <p className="mt-7 text-center text-xs tracking-[0.12em] text-white/30">

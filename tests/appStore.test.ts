@@ -95,6 +95,18 @@ test('homepage exposes a first-class song request entry', () => {
   assert.match(appSource, /currentView === 'song-request'/)
 })
 
+test('homepage places life project and song request above the centered meow card', () => {
+  const hubSource = readFileSync(new URL('../src/components/Theme/ThemeHub.tsx', import.meta.url), 'utf8')
+  const lifeIndex = hubSource.indexOf(`onSelect('life')`)
+  const songRequestIndex = hubSource.indexOf('onOpenSongRequest()')
+  const meowIndex = hubSource.indexOf('href={getMeowGeneratorUrl()}')
+
+  assert.ok(lifeIndex >= 0 && songRequestIndex > lifeIndex && meowIndex > songRequestIndex)
+  assert.match(hubSource, /data-theme-hub-top[^>]*md:grid-cols-2/)
+  assert.match(hubSource, /data-theme-hub-bottom[^>]*justify-center/)
+  assert.match(hubSource, /href=\{getMeowGeneratorUrl\(\)\}[\s\S]*?md:w-\[calc\(50%-0\.875rem\)\]/)
+})
+
 test('all four homepage cards share one responsive size contract', () => {
   const hubSource = readFileSync(new URL('../src/components/Theme/ThemeHub.tsx', import.meta.url), 'utf8')
 

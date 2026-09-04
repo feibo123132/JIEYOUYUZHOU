@@ -20,6 +20,7 @@ export interface StarData {
   shape?: string;
   message?: string;
   created_at: string;
+  deleted_at?: number;
 }
 
 export interface UserData {
@@ -51,11 +52,11 @@ const userService = {
       return data;
     }
 
-    if (tcbApp && await isTcbReachable('jieyou')) {
+    if (tcbApp && await isTcbReachable('life')) {
       return tcbService.createUser(nickname);
     }
 
-    if (await isBackendReachable('jieyou')) {
+    if (await isBackendReachable('life')) {
       return api.createUser(nickname);
     }
 
@@ -146,19 +147,42 @@ const starService = {
       return (data || []).map((star: any) => ({
         ...star,
         nickname: star.users?.nickname || star.nickname,
-      }));
+      })).filter((star: StarData) => !star.deleted_at);
     }
 
     if (tcbApp) {
       await requireReachableTcbTheme(themeId);
-      return tcbService.getAllStars(themeId);
+      return (await tcbService.getAllStars(themeId)).filter((star: StarData) => !star.deleted_at);
     }
 
     if (await isBackendReachable(themeId)) {
-      return api.getAllStars(themeId);
+      return (await api.getAllStars(themeId)).filter((star: StarData) => !star.deleted_at);
     }
 
-    return mockDatabase.getAllStars(themeId) as Promise<StarData[]>;
+    return (await mockDatabase.getAllStars(themeId)).filter((star: StarData) => !star.deleted_at) as StarData[];
+  },
+
+  async getTrashStars(themeId: ThemeId): Promise<StarData[]> {
+    if (supabase) {
+      const table = getThemeConfig(themeId).data.starsCollection;
+      const { data, error } = await supabase
+        .from(table)
+        .select('*, users!inner(nickname)')
+        .order('created_at', { ascending: false });
+      if (error) throw themeUnavailable(error);
+      return (data || []).map((star: any) => ({
+        ...star,
+        nickname: star.users?.nickname || star.nickname,
+      })).filter((star: StarData) => Boolean(star.deleted_at));
+    }
+    if (tcbApp) {
+      await requireReachableTcbTheme(themeId);
+      return (await tcbService.getAllStarRecords(themeId)).filter((star: StarData) => Boolean(star.deleted_at));
+    }
+    if (await isBackendReachable(themeId)) {
+      return (await api.getAllStars(themeId)).filter((star: StarData) => Boolean(star.deleted_at));
+    }
+    return (await mockDatabase.getAllStarRecords(themeId)).filter((star: StarData) => Boolean(star.deleted_at)) as StarData[];
   },
 
   async getUserStars(themeId: ThemeId, userId: string): Promise<StarData[]> {
@@ -190,7 +214,7 @@ const starService = {
   async deleteStar(themeId: ThemeId, starId: string): Promise<boolean> {
     if (supabase) {
       const table = getThemeConfig(themeId).data.starsCollection;
-      const { error } = await supabase.from(table).delete().eq('id', starId);
+      const { error } = await supabase.from(table).update({ deleted_at: Date.now() }).eq('id', starId);
       if (error) throw themeUnavailable(error);
       return true;
     }
@@ -206,6 +230,61 @@ const starService = {
 
     enqueue({ type: 'deleteStar', themeId, payload: { starId } });
     return mockDatabase.deleteStar(themeId, starId);
+  },
+
+  async restoreStar(themeId: ThemeId, starId: string): Promise<boolean> {
+    if (supabase) {
+      const table = getThemeConfig(themeId).data.starsCollection;
+      const { error } = await supabase.from(table).update({ deleted_at: null }).eq('id', starId);
+      if (error) throw themeUnavailable(error);
+      return true;
+    }
+    if (tcbApp) {
+      await requireReachableTcbTheme(themeId);
+      return tcbService.restoreStar(themeId, starId);
+    }
+    if (await isBackendReachable(themeId)) return api.restoreStar(themeId, starId);
+    return mockDatabase.restoreStar(themeId, starId);
+  },
+
+  async permanentDeleteStar(themeId: ThemeId, starId: string): Promise<boolean> {
+    if (supabase) {
+      const table = getThemeConfig(themeId).data.starsCollection;
+      const { error } = await supabase.from(table).delete().eq('id', starId);
+      if (error) throw themeUnavailable(error);
+      return true;
+    }
+    if (tcbApp) {
+      await requireReachableTcbTheme(themeId);
+      return tcbService.permanentDeleteStar(themeId, starId);
+    }
+    if (await isBackendReachable(themeId)) return api.permanentDeleteStar(themeId, starId);
+    return mockDatabase.permanentDeleteStar(themeId, starId);
+  },
+
+  async updateStar(
+    themeId: ThemeId,
+    starId: string,
+    updates: Partial<{ color?: string; size?: number; shape?: string; message?: string }>
+  ): Promise<boolean> {
+    if (supabase) {
+      const table = getThemeConfig(themeId).data.starsCollection;
+      const { error } = await supabase.from(table).update(updates).eq('id', starId);
+      if (error) throw themeUnavailable(error);
+      return true;
+    }
+
+    if (tcbApp) {
+      await requireReachableTcbTheme(themeId);
+      return tcbService.updateStar(themeId, starId, updates);
+    }
+
+    if (await isBackendReachable(themeId)) {
+      await api.updateStar(themeId, starId, updates);
+      return true;
+    }
+
+    return mockDatabase.updateStar(themeId, starId, updates);
   },
 };
 

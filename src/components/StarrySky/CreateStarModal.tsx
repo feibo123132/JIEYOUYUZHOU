@@ -1,13 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Star as PStar, Heart, Cloud, Moon, Mountains, Leaf, MusicNotes, Bird, Cat, Dog, Waves, PaperPlane, X } from 'phosphor-react';
 import type { ThemeConfig } from '../../themes/themeConfig';
-
-type ShapeOption =
-  | 'star' | 'heart' | 'cloud' | 'moon' | 'fullmoon' | 'mountain' | 'leaf' | 'music' | 'bird'
-  | 'cat' | 'cat2' | 'cat3' | 'dog' | 'dog2' | 'dog3'
-  | 'apple' | 'orange' | 'banana' | 'watermelon' | 'grapes'
-  | 'waves' | 'kite'
-  | 'aries' | 'taurus' | 'gemini' | 'cancer' | 'leo' | 'virgo' | 'libra' | 'scorpio' | 'sagittarius' | 'capricorn' | 'aquarius' | 'pisces';
+import { createRandomStarAppearance, type ShapeOption } from './starAppearance';
 
 type Category = '全部' | '萌宠' | '宇宙' | '水果' | '星座' | '其他';
 
@@ -21,6 +15,8 @@ interface CreateStarModalProps {
   onPreCheck?: () => Promise<boolean>;
   currentUserName?: string;
   incomingIndex?: number;
+  mode?: 'create' | 'edit';
+  initialData?: { color: string; size: number; shape: ShapeOption; message: string };
 }
 
 const EmojiIcon = (emoji: string) => (props: any) => (
@@ -97,12 +93,21 @@ const shapeCategories: Record<ShapeOption, Category> = {
   // 其他（已覆盖在最前行）
 };
 
-const CreateStarModal: React.FC<CreateStarModalProps> = ({ theme, open, onClose, onConfirm, defaultColor = '#FFD700', allowSfx = true, onPreCheck, currentUserName, incomingIndex }) => {
-  const [color, setColor] = useState(defaultColor);
-  const [size, setSize] = useState(24);
-  const [shape, setShape] = useState<ShapeOption>('star');
-  const [message, setMessage] = useState('');
+const CreateStarModal: React.FC<CreateStarModalProps> = ({ theme, open, onClose, onConfirm, defaultColor = '#FFD700', allowSfx = true, onPreCheck, currentUserName, incomingIndex, mode = 'create', initialData }) => {
+  const [color, setColor] = useState(initialData?.color ?? defaultColor);
+  const [size, setSize] = useState(initialData?.size ?? 24);
+  const [shape, setShape] = useState<ShapeOption>(initialData?.shape ?? 'star');
+  const [message, setMessage] = useState(initialData?.message ?? '');
   const [category, setCategory] = useState<Category>('全部');
+
+  useEffect(() => {
+    if (!open || mode !== 'create') return;
+    const appearance = createRandomStarAppearance();
+    setColor(appearance.color);
+    setSize(appearance.size);
+    setShape(appearance.shape);
+    setCategory('全部');
+  }, [open, mode]);
 
   const baseUrl = (import.meta.env.BASE_URL || '/').endsWith('/') ? (import.meta.env.BASE_URL || '/') : (import.meta.env.BASE_URL || '/') + '/';
   const getPublicUrl = (name: string) => baseUrl + encodeURI(name);
@@ -119,7 +124,7 @@ const CreateStarModal: React.FC<CreateStarModalProps> = ({ theme, open, onClose,
         style={{ overscrollBehavior: 'none' }}
       >
         <div className="flex justify-between items-center mb-4">
-          <h3 className="text-lg font-bold text-gray-800">{theme.sky.createLabel}</h3>
+          <h3 className="text-lg font-bold text-gray-800">{mode === 'edit' ? '编辑星星' : theme.sky.createLabel}</h3>
           <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100">
             <X className="w-5 h-5 text-gray-600" />
           </button>
@@ -236,7 +241,7 @@ const CreateStarModal: React.FC<CreateStarModalProps> = ({ theme, open, onClose,
               onClick={async () => { if (!allowSfx) { onConfirm({ color, size, shape, message }); return; } if (onPreCheck) { try { const ok = await onPreCheck(); if (!ok) { onClose(); return; } } catch {} } const bg = (window as any).__bgAudio as HTMLAudioElement | undefined; const ensure = (window as any).__ensureBgAudioGraph as (() => Promise<void>) | undefined; if (ensure) { try { ensure(); } catch {} } const gain = (window as any).__bgGain as any; if (bg || gain) { if ((window as any).__bgAudioRampTimer) { clearInterval((window as any).__bgAudioRampTimer); (window as any).__bgAudioRampTimer = null; } if (gain) { try { gain.gain.value = 0.35; } catch {} } else if (bg) { (window as any).__bgAudioOriginalVolume = (window as any).__bgAudioOriginalVolume ?? bg.volume; bg.volume = Math.max(0, ((window as any).__bgAudioOriginalVolume) * 0.35); } } const inc = () => { (window as any).__sfxPlayingCount = ((window as any).__sfxPlayingCount || 0) + 1; }; const rampUp = () => { const g = (window as any).__bgGain as any; if (g) { const from = g.gain.value; const to = 1; const steps = 20; const duration = 1000; let i = 0; if ((window as any).__bgAudioRampTimer) { clearInterval((window as any).__bgAudioRampTimer); } (window as any).__bgAudioRampTimer = setInterval(() => { i++; const t = i / steps; const v = from + (to - from) * t; try { g.gain.value = Math.min(1, Math.max(0, v)); } catch {} if (i >= steps) { clearInterval((window as any).__bgAudioRampTimer); (window as any).__bgAudioRampTimer = null; } }, Math.max(10, Math.floor(duration / steps))); return; } if (!bg) return; const fromV = bg.volume; const toV = 1; const stepsV = 20; const durationV = 1000; let j = 0; if ((window as any).__bgAudioRampTimer) { clearInterval((window as any).__bgAudioRampTimer); } (window as any).__bgAudioRampTimer = setInterval(() => { j++; const t = j / stepsV; const v = fromV + (toV - fromV) * t; bg.volume = Math.min(1, Math.max(0, v)); if (j >= stepsV) { clearInterval((window as any).__bgAudioRampTimer); (window as any).__bgAudioRampTimer = null; } }, Math.max(10, Math.floor(durationV / stepsV))); }; const dec = () => { const c = ((window as any).__sfxPlayingCount || 0) - 1; (window as any).__sfxPlayingCount = c < 0 ? 0 : c; if ((window as any).__sfxPlayingCount === 0) { rampUp(); } }; const s = new Audio(getPublicUrl('点亮星星的音效.mp3')); s.currentTime = 0; inc(); s.addEventListener('ended', dec); s.addEventListener('error', dec); s.play().catch(dec); const list = theme.audio.voices; const pick = list[Math.floor(Math.random()*list.length)]; if (pick) { const a = new Audio(getPublicUrl(pick)); a.currentTime = 0; inc(); a.addEventListener('ended', dec); a.addEventListener('error', dec); a.play().catch(dec); } onConfirm({ color, size, shape, message }); }}
               className={`flex-1 bg-gradient-to-r ${theme.visual.buttonGradientClass} ${theme.visual.buttonHoverClass} text-white py-2 px-4 rounded-lg`}
             >
-              {theme.sky.modalConfirmLabel}
+              {mode === 'edit' ? '保存修改' : theme.sky.modalConfirmLabel}
             </button>
           </div>
         </div>

@@ -44,7 +44,7 @@ export const ensureSignIn = async () => {
 };
 
 // 检查 TCB 是否可达的函数
-export const isTcbReachable = async (themeId: ThemeId = 'jieyou'): Promise<boolean> => {
+export const isTcbReachable = async (themeId: ThemeId = 'life'): Promise<boolean> => {
   if (!tcbDb) {
     console.log('--- isTcbReachable: 检查失败，因为 `tcbDb` 实例不存在。');
     return false;
@@ -78,7 +78,7 @@ export const tcbService = {
     return { id, nickname, created_at: now, total_stars: 0 };
   },
 
-  async getAllStars(themeId: ThemeId) {
+  async getAllStarRecords(themeId: ThemeId) {
     if (!tcbDb) throw new Error('tcb_unavailable');
     await ensureSignIn();
     const collectionName = getThemeConfig(themeId).data.starsCollection;
@@ -94,7 +94,12 @@ export const tcbService = {
       message: d.message,
       nickname: d.nickname,
       created_at: d.created_at,
+      deleted_at: d.deleted_at ?? d.deletedAt,
     }));
+  },
+
+  async getAllStars(themeId: ThemeId) {
+    return (await this.getAllStarRecords(themeId)).filter((star: any) => !star.deleted_at);
   },
 
   async getTodayCountByNickname(themeId: ThemeId, nickname: string) {
@@ -145,7 +150,37 @@ export const tcbService = {
     if (!tcbDb) throw new Error('tcb_unavailable');
     await ensureSignIn();
     const collectionName = getThemeConfig(themeId).data.starsCollection;
+    await (tcbDb as any).collection(collectionName).doc(id).update({ deleted_at: Date.now() });
+    return true;
+  },
+  async restoreStar(themeId: ThemeId, id: string) {
+    if (!tcbDb) throw new Error('tcb_unavailable');
+    await ensureSignIn();
+    const collectionName = getThemeConfig(themeId).data.starsCollection;
+    const command = (tcbDb as any).command;
+    await (tcbDb as any).collection(collectionName).doc(id).update({
+      deleted_at: command.remove(),
+      deletedAt: command.remove(),
+    });
+    return true;
+  },
+  async permanentDeleteStar(themeId: ThemeId, id: string) {
+    if (!tcbDb) throw new Error('tcb_unavailable');
+    await ensureSignIn();
+    const collectionName = getThemeConfig(themeId).data.starsCollection;
     await (tcbDb as any).collection(collectionName).doc(id).remove();
+    return true;
+  },
+  async updateStar(themeId: ThemeId, id: string, payload: Partial<{
+    color?: string;
+    size?: number;
+    shape?: string;
+    message?: string;
+  }>) {
+    if (!tcbDb) throw new Error('tcb_unavailable');
+    await ensureSignIn();
+    const collectionName = getThemeConfig(themeId).data.starsCollection;
+    await (tcbDb as any).collection(collectionName).doc(id).update(payload);
     return true;
   }
 };

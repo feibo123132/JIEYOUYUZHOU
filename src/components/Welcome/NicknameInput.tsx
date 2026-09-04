@@ -5,7 +5,7 @@ import { readSyncedNickname } from './nicknameSync';
 
 interface NicknameInputProps {
   theme: ThemeConfig;
-  onSubmit: (nickname: string, target: 'stars' | 'my-messages') => void;
+  onSubmit: (nickname: string, target: 'stars' | 'my-messages' | 'star-messages') => void;
   isLoading?: boolean;
   initialNickname?: string;
 }
@@ -19,7 +19,7 @@ const NicknameInput: React.FC<NicknameInputProps> = ({ theme, onSubmit, isLoadin
   const [error, setError] = useState('');
   const isLife = theme.id === 'life';
 
-  const submitNickname = (target: 'stars' | 'my-messages') => {
+  const submitNickname = (target: 'stars' | 'my-messages' | 'star-messages') => {
     (window as any).playClickSound?.();
     const value = nickname.trim();
     if (!value) {
@@ -74,7 +74,7 @@ const NicknameInput: React.FC<NicknameInputProps> = ({ theme, onSubmit, isLoadin
           {error && <span className="text-red-300">{error}</span>}
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           <button
             type="submit"
             disabled={isLoading || !nickname.trim()}
@@ -97,6 +97,18 @@ const NicknameInput: React.FC<NicknameInputProps> = ({ theme, onSubmit, isLoadin
             }`}
           >
             我的星星
+          </button>
+          <button
+            type="button"
+            disabled={isLoading || !nickname.trim()}
+            onClick={() => submitNickname('star-messages')}
+            className={`w-full rounded-xl border px-3 py-3 font-semibold transition duration-200 ${
+              isLoading || !nickname.trim()
+                ? 'cursor-not-allowed border-gray-300 bg-gray-300 text-gray-500'
+                : 'border-white/25 bg-white/10 text-white shadow-lg backdrop-blur-xl hover:scale-[1.02] hover:border-white/45 hover:bg-white/15 active:scale-[.98]'
+            }`}
+          >
+            星星之家
           </button>
         </div>
       </form>

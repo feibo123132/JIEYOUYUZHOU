@@ -5,7 +5,7 @@ export const withTimeout = async <T>(p: Promise<T>, ms = 3000): Promise<T> => {
   });
 };
 
-export const isBackendReachable = async (themeId: ThemeId = 'jieyou'): Promise<boolean> => {
+export const isBackendReachable = async (themeId: ThemeId = 'life'): Promise<boolean> => {
   const base = import.meta.env.VITE_API_BASE as string | undefined;
   if (!base) return false;
   try {
