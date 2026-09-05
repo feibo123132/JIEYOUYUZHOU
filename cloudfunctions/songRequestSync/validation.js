@@ -104,6 +104,7 @@ const validateRecord = (value) => {
   const optionalFields = {};
   if (value.location !== undefined) optionalFields.location = cleanOptionalText(value.location, 80, 'INVALID_RECORD');
   if (value.weather !== undefined) optionalFields.weather = cleanOptionalText(value.weather, 40, 'INVALID_RECORD');
+  if (value.feelings !== undefined) optionalFields.feelings = cleanOptionalText(value.feelings, 10000, 'INVALID_RECORD');
   if (value.recognitionAttempts !== undefined) optionalFields.recognitionAttempts = validateRecognitionAttempts(value.recognitionAttempts);
   return {
     id: cleanText(value.id, 80, 'INVALID_RECORD'),

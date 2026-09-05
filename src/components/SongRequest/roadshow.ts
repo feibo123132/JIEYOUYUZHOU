@@ -47,6 +47,7 @@ export interface RoadshowRecord {
   date: string;
   location?: string;
   weather?: string;
+  feelings?: string;
   performanceSongs: RoadshowSong[];
   recognitionSongs: RoadshowSong[];
   recognitionAttempts?: RecognitionAttempt[];
@@ -159,6 +160,7 @@ const isRecord = (value: unknown): value is RoadshowRecord => {
     && typeof record.date === 'string'
     && (record.location === undefined || typeof record.location === 'string')
     && (record.weather === undefined || typeof record.weather === 'string')
+    && (record.feelings === undefined || typeof record.feelings === 'string')
     && typeof record.updatedAt === 'string'
     && Array.isArray(record.performanceSongs)
     && record.performanceSongs.every(isSong)

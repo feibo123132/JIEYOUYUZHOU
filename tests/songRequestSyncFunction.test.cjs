@@ -573,6 +573,12 @@ test('validates private song practice and roadshow record payloads', () => {
   };
 
   assert.equal(validateRequest({ action: 'songRecords:save', ...auth, record: practice }).record.matchScore, 88);
+  const roadshowArchive = {
+    id: 'roadshow-1', title: '第一次路演', date: '2026-09-05', feelings: '第一次在夜色里和大家合唱。',
+    performanceSongs: [], recognitionSongs: [], updatedAt: '2026-09-05T12:00:00.000Z',
+  };
+  assert.equal(validateRequest({ action: 'roadshows:save', ...auth, record: roadshowArchive }).record.feelings, roadshowArchive.feelings);
+  assert.throws(() => validateRequest({ action: 'roadshows:save', ...auth, record: { ...roadshowArchive, feelings: '感'.repeat(2001) } }), /INVALID_RECORD/);
   assert.equal('durationMinutes' in validateRequest({ action: 'songRecords:save', ...auth, record: { ...practice, durationMinutes: 30 } }).record, false);
   assert.equal(validateRequest({ action: 'songRecords:save', ...auth, record: { ...practice, matchScore: 70 } }).record.matchScore, 70);
   assert.deepEqual(validateRequest({ action: 'songRecords:save', ...auth, record: { ...practice, feelings: '', problems: '', improvements: '' } }).record.feelings, '');

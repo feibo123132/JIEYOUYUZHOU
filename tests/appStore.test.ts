@@ -103,8 +103,8 @@ test('homepage places life project and song request above the centered meow card
 
   assert.ok(lifeIndex >= 0 && songRequestIndex > lifeIndex && meowIndex > songRequestIndex)
   assert.match(hubSource, /data-theme-hub-top[^>]*md:grid-cols-2/)
-  assert.match(hubSource, /data-theme-hub-bottom[^>]*justify-center/)
-  assert.match(hubSource, /href=\{getMeowGeneratorUrl\(\)\}[\s\S]*?md:w-\[calc\(50%-0\.875rem\)\]/)
+  assert.match(hubSource, /data-theme-hub-bottom[^>]*md:grid-cols-2/)
+  assert.match(hubSource, /href=\{getMeowGeneratorUrl\(\)\}[\s\S]*?HUB_CARD_SIZE_CLASS\} w-full/)
 })
 
 test('all four homepage cards share one responsive size contract', () => {

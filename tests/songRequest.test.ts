@@ -1526,6 +1526,24 @@ test('loads only valid cached roadshow records', async () => {
   assert.deepEqual(parseRoadshowCache('{bad json'), [])
 })
 
+test('路演档案提供独立感受页并保留每场感受', async () => {
+  const { parseRoadshowCache } = await loadRoadshowModule()
+  const record = {
+    id: 'r1', title: '第一次路演', date: '2026-09-05', feelings: '今晚和观众的合唱很难忘。', updatedAt: '2026-09-05T12:00:00.000Z',
+    performanceSongs: [], recognitionSongs: [],
+  }
+  assert.equal(parseRoadshowCache(JSON.stringify({ version: 1, records: [record] }))[0]?.feelings, record.feelings)
+
+  const source = readFileSync(roadshowPanelUrl, 'utf8')
+  const editor = source.slice(source.indexOf('const RoadshowEditor'))
+  assert.match(editor, /useState<'performance' \| 'recognition' \| 'feelings'>/)
+  assert.match(editor, /data-roadshow-editor-tabs[^>]*grid-cols-3/)
+  assert.match(editor, />路演感受</)
+  assert.match(editor, /aria-label="记录本次路演感受"/)
+  assert.match(editor, /value=\{record\.feelings \?\? ''\}/)
+  assert.match(editor, /onChange\(\{ \.\.\.record, feelings: event\.target\.value \}\)/)
+})
+
 test('station home is a four-direction guide and details are separate', () => {
   const source = readFileSync(stationUrl, 'utf8')
 

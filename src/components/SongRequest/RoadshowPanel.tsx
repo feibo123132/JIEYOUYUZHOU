@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CalendarDays, Check, ChevronRight, Cloud, Guitar, Lock, Plus, Save, Search, Trash2, UsersRound, X } from 'lucide-react';
+import { CalendarDays, Check, ChevronRight, Cloud, Guitar, Lock, NotebookPen, Plus, Save, Search, Trash2, UsersRound, X } from 'lucide-react';
 import { SONGS } from './songCatalog';
 import type { Song } from './songCatalog';
 import DailyPracticePanel from './DailyPracticePanel';
@@ -224,6 +224,11 @@ const RoadshowPanel = ({
         location: candidate.location?.trim() ?? '',
         weather: candidate.weather?.trim() ?? '',
       });
+      if (candidate.feelings !== undefined && serverSaved.feelings !== candidate.feelings.trim()) {
+        setEditing({ ...candidate, updatedAt: serverSaved.updatedAt });
+        setMessage('路演感受尚未同步，草稿已保留，请更新云端服务后重试。');
+        return;
+      }
       const saved = preserveRecognitionParticipantNames(candidate, serverSaved);
       const next = [...records];
       const index = next.findIndex((item) => item.id === saved.id);
@@ -364,7 +369,7 @@ interface EditorProps {
 
 const RoadshowEditor = ({ record, allRecords, songRecords, catalogSongs, busy, message, quizAssignments, canManageFeaturedSongs = false, onChange, onBack, onSave, onRecordAttempt, onOpenSongDetail, onDelete, onLock }: EditorProps) => {
   const updateList = (key: 'performanceSongs' | 'recognitionSongs', songs: RoadshowSong[]) => onChange({ ...record, [key]: songs });
-  const [editorTab, setEditorTab] = useState<'performance' | 'recognition'>('performance');
+  const [editorTab, setEditorTab] = useState<'performance' | 'recognition' | 'feelings'>('performance');
   return (
     <section className="space-y-5">
       <div className="rounded-[1.75rem] border border-orange-200/15 bg-[#120b08]/85 p-5 backdrop-blur-xl sm:p-7">
@@ -381,12 +386,15 @@ const RoadshowEditor = ({ record, allRecords, songRecords, catalogSongs, busy, m
               {ROADSHOW_LOCATIONS.map((location) => <option key={location} value={location}>{location}</option>)}
             </select>
           )}
-          <div data-roadshow-editor-tabs className="grid h-12 min-w-0 grid-cols-2 gap-1 rounded-xl border border-white/10 bg-black/35 p-1">
+          <div data-roadshow-editor-tabs className="grid h-12 min-w-0 grid-cols-3 gap-1 rounded-xl border border-white/10 bg-black/35 p-1">
             <button type="button" aria-pressed={editorTab === 'performance'} onClick={() => setEditorTab('performance')} className={`inline-flex min-w-0 items-center justify-center gap-1 rounded-lg px-2 text-[11px] font-bold transition ${editorTab === 'performance' ? 'bg-orange-300 font-black text-black' : 'text-white/55 hover:bg-white/[.06] hover:text-white'}`}>
               <Guitar className="h-3.5 w-3.5 shrink-0" /><span className="truncate">路演歌曲</span>
             </button>
             <button type="button" aria-pressed={editorTab === 'recognition'} onClick={() => setEditorTab('recognition')} className={`inline-flex min-w-0 items-center justify-center gap-1 rounded-lg px-2 text-[11px] font-bold transition ${editorTab === 'recognition' ? 'bg-orange-300 font-black text-black' : 'text-white/55 hover:bg-white/[.06] hover:text-white'}`}>
               <UsersRound className="h-3.5 w-3.5 shrink-0" /><span className="truncate">听歌识曲</span>
+            </button>
+            <button type="button" aria-pressed={editorTab === 'feelings'} onClick={() => setEditorTab('feelings')} className={`inline-flex min-w-0 items-center justify-center gap-1 rounded-lg px-2 text-[11px] font-bold transition ${editorTab === 'feelings' ? 'bg-orange-300 font-black text-black' : 'text-white/55 hover:bg-white/[.06] hover:text-white'}`}>
+              <NotebookPen className="h-3.5 w-3.5 shrink-0" /><span className="truncate">路演感受</span>
             </button>
           </div>
         </div>
@@ -394,6 +402,14 @@ const RoadshowEditor = ({ record, allRecords, songRecords, catalogSongs, busy, m
 
       {editorTab === 'performance' && <SongListEditor title="路演歌曲" description="本次准备演唱的歌曲" songs={record.performanceSongs} allRecords={allRecords} recordId={record.id} songRecords={songRecords} catalogSongs={catalogSongs} onChange={(songs) => updateList('performanceSongs', songs)} onSave={(updatedSongs) => onSave({ ...record, performanceSongs: updatedSongs })} onOpenSongDetail={onOpenSongDetail} />}
       {editorTab === 'recognition' && <RecognitionSongListEditor record={record} assignments={quizAssignments} allRecords={allRecords} busy={busy} onRecordAttempt={onRecordAttempt} onOpenSongDetail={onOpenSongDetail} />}
+      {editorTab === 'feelings' && (
+        <div className="rounded-[1.75rem] border border-orange-200/15 bg-[#120b08]/85 p-5 sm:p-7">
+          <label htmlFor="roadshow-feelings" className="block font-serif text-2xl font-black">路演感受</label>
+          <p id="roadshow-feelings-hint" className="mt-2 text-xs text-white/40">记录这场路演的心情、难忘瞬间，以及下次想做得更好的地方。写完后点击下方“保存到云端”。</p>
+          <textarea id="roadshow-feelings" aria-describedby="roadshow-feelings-hint" value={record.feelings ?? ''} onChange={(event) => onChange({ ...record, feelings: event.target.value })} maxLength={10000} rows={10} disabled={busy} placeholder="这次路演，我想记住……" className="mt-5 block min-h-64 w-full resize-y rounded-2xl border border-white/10 bg-black/35 p-4 text-sm leading-7 text-white/90 outline-none placeholder:text-white/25 focus:border-orange-300/45 disabled:opacity-50" />
+          <p className="mt-2 text-right text-xs tabular-nums text-white/35">{(record.feelings ?? '').length} / 10000</p>
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-black/25 p-4">
         <button type="button" disabled={busy} onClick={onDelete} className="inline-flex items-center gap-2 text-sm font-bold text-red-300/70 hover:text-red-200 disabled:opacity-40"><Trash2 className="h-4 w-4" />删除这场路演</button>
