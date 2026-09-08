@@ -1,5 +1,6 @@
 const crypto = require('node:crypto');
 const { validateRequest } = require('./validation');
+const { legacyNotebook, saveNotebookAtomically } = require('./feelingsNotebook');
 
 const PUBLIC_ERRORS = new Set([
   'INVALID_ACTION', 'PAYLOAD_TOO_LARGE', 'INVALID_SONG_ID', 'INVALID_ALIAS', 'INVALID_PASSWORD',
@@ -10,9 +11,45 @@ const PUBLIC_ERRORS = new Set([
   'INVALID_SONG_SCORE',
   'SCORE_UPLOAD_FAILED',
   'INVALID_LOCATION',
+  'INVALID_NOTEBOOK',
 ]);
 
 const FEATURED_SONGS_OWNER_ALIAS = '2421415030@qq.com';
+const incrementVoteAtomically = (db, songId, location) => db.runTransaction(async (transaction) => {
+  const ref = transaction.collection('song_request_votes').doc(songId);
+  let data;
+  try {
+    const result = await ref.get();
+    data = Array.isArray(result.data) ? result.data[0] : result.data;
+  } catch (error) {
+    if (!/not found|does not exist/i.test(String(error?.message))) throw error;
+  }
+  const count = (Number(data?.count) || 0) + 1;
+  const locationCounts = { ...(data?.locationCounts || {}) };
+  const key = ROADSHOW_LOCATION_KEYS[location];
+  if (key) locationCounts[key] = (Number(locationCounts[key]) || 0) + 1;
+  await ref.set({ count, locationCounts, updatedAt: new Date().toISOString() });
+  return count;
+});
+const clearVoteStateAtomically = (db, ownerWorkspaceId, kind, songIds) => db.runTransaction(async (transaction) => {
+  const workspaceRef = transaction.collection('song_request_workspaces').doc(ownerWorkspaceId);
+  const result = await workspaceRef.get();
+  const workspace = Array.isArray(result.data) ? result.data[0] : result.data;
+  if (!workspace) throw new Error('AUTH_FAILED');
+  if (kind === 'sung') {
+    await workspaceRef.set(buildWritableWorkspace({
+      ...workspace, sungVoteCounts: {}, sungVoteCountsByLocation: {}, updatedAt: new Date().toISOString(),
+    }));
+    return {};
+  }
+  for (const songId of songIds) {
+    const ref = transaction.collection('song_request_votes').doc(songId);
+    // 读取后写入，使并发点歌或唱完触发事务冲突重试。
+    await ref.get();
+    await ref.set({ count: 0, locationCounts: {}, updatedAt: new Date().toISOString() });
+  }
+  return cleanVoteCounts(workspace.sungVoteCounts);
+});
 const ROADSHOW_LOCATION_KEYS = Object.freeze({
   '医大（武鸣）': 'medicalWuming',
   '医大（本部）': 'medicalMain',
@@ -193,11 +230,22 @@ function createHandler(store) {
       try {
         authenticated = await authenticate(store, request.alias, request.password);
       } catch (error) {
-        if ((request.action === 'artistSettings:push' || request.action === 'featuredSongs:set' || request.action === 'quizLibrary:set' || request.action === 'votes:finishAll')
+        if ((request.action === 'artistSettings:push' || request.action === 'featuredSongs:set' || request.action === 'quizLibrary:set' || request.action === 'votes:finishAll' || request.action === 'votes:clearPending' || request.action === 'votes:clearSung')
           && error?.message === 'NOT_REGISTERED') throw new Error('AUTH_FAILED');
         throw error;
       }
       const { id, workspace } = authenticated;
+      if (request.action === 'feelingsNotebook:pull') {
+        const saved = await store.getWorkspace(`feelings:${id}`);
+        return { ok: true, notebook: saved ? { version: 1, revision: saved.revision, pages: saved.pages, updatedAt: saved.updatedAt } : legacyNotebook(workspace.roadshows) };
+      }
+      if (request.action === 'feelingsNotebook:save') {
+        return { ok: true, notebook: await store.saveNotebookAtomically(`feelings:${id}`, request.expectedRevision, request.pages) };
+      }
+      if (request.action === 'votes:clearPending' || request.action === 'votes:clearSung') {
+        if (id !== workspaceId(FEATURED_SONGS_OWNER_ALIAS)) throw new Error('AUTH_FAILED');
+        return { ok: true, ...await store.clearVotesAtomically(id, request.action === 'votes:clearPending' ? 'pending' : 'sung') };
+      }
       if (request.action === 'votes:finishAll') {
         if (id !== workspaceId(FEATURED_SONGS_OWNER_ALIAS)) throw new Error('AUTH_FAILED');
         return { ok: true, ...await store.finishVotesAtomically(id) };
@@ -334,30 +382,16 @@ exports.main = async (event) => {
         }
       },
       setWorkspace: (id, value) => workspaces.doc(id).set(buildWritableWorkspace(value)),
+      saveNotebookAtomically: (id, revision, pages) => saveNotebookAtomically(db, id, revision, pages),
       setFeaturedSongIds: (id, songIds, updatedAt) => workspaces.doc(id).update({ featuredSongIds: songIds, updatedAt }),
       setQuizLibraryAssignments: (id, assignments, updatedAt) => workspaces.doc(id).update({ quizLibraryAssignments: assignments, updatedAt }),
       getVotes: readVoteCounts,
-      async incrementVote(songId, location) {
-        const ref = votes.doc(songId);
-        const locationKey = location ? ROADSHOW_LOCATION_KEYS[location] : null;
-        let data = {};
-        try {
-          const doc = await ref.get();
-          data = Array.isArray(doc.data) ? (doc.data[0] ?? {}) : (doc.data ?? {});
-        } catch { /* 文档可能不存在，忽略错误 */ }
-        const currentCount = Number(data.count) || 0;
-        const currentLocationCounts = data.locationCounts || {};
-        const newCount = currentCount + 1;
-        const newLocationCounts = locationKey
-          ? { ...currentLocationCounts, [locationKey]: (Number(currentLocationCounts[locationKey]) || 0) + 1 }
-          : currentLocationCounts;
-        await ref.set({
-          count: newCount,
-          ...(Object.keys(newLocationCounts).length > 0 ? { locationCounts: newLocationCounts } : {}),
-          updatedAt: new Date().toISOString(),
-        });
-        return newCount;
+      async clearVotesAtomically(ownerWorkspaceId, kind) {
+        const songIds = kind === 'pending' ? Object.keys(await readVoteCounts()) : [];
+        const sungCounts = await clearVoteStateAtomically(db, ownerWorkspaceId, kind, songIds);
+        return { counts: await readVoteCounts(), sungCounts };
       },
+      incrementVote: (songId, location) => incrementVoteAtomically(db, songId, location),
       async finishVotesAtomically(ownerWorkspaceId) {
         const pendingSnapshot = await readVoteCounts();
         const songIds = Object.keys(pendingSnapshot);
@@ -543,6 +577,8 @@ exports.main = async (event) => {
 };
 
 exports.createHandler = createHandler;
+exports.clearVoteStateAtomically = clearVoteStateAtomically;
+exports.incrementVoteAtomically = incrementVoteAtomically;
 exports.buildWritableWorkspace = buildWritableWorkspace;
 exports.buildSoftDeletedSongRecord = buildSoftDeletedSongRecord;
 exports.buildPublicPracticeRanking = buildPublicPracticeRanking;

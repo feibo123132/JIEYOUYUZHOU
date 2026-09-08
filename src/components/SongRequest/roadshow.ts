@@ -59,6 +59,19 @@ export const ROADSHOW_SESSION_KEY = 'jieyou-roadshow-session-v1';
 export const ROADSHOW_EDITING_KEY = 'jieyou-roadshow-editing-v1';
 export const ROADSHOW_QUIZ_PAGE_SIZE = 5;
 
+export const prepareRoadshowSwitch = async (
+  current: RoadshowRecord,
+  records: RoadshowRecord[],
+  targetId: string,
+  save: (record: RoadshowRecord) => Promise<boolean>,
+): Promise<RoadshowRecord | undefined> => {
+  const target = records.find((record) => record.id === targetId);
+  if (!target || target.id === current.id) return;
+  const saved = records.find((record) => record.id === current.id);
+  if (JSON.stringify(current) !== JSON.stringify(saved) && !await save(current)) return;
+  return target;
+};
+
 export const paginateRoadshowSongs = <T>(songs: T[] | undefined, requestedPage: number) => {
   const safeSongs = songs ?? [];
   const pageCount = Math.max(1, Math.ceil(safeSongs.length / ROADSHOW_QUIZ_PAGE_SIZE));
@@ -101,24 +114,40 @@ export const groupRoadshowRecognitionSongs = (
 
 const normalize = (value: string) => value.trim().toLocaleLowerCase().replace(/\s+/g, ' ');
 
+// 历史记录可能被重复导入；先去重再分组、计数和分页，避免重复 React key。
+export const deduplicateRoadshowSongs = (songs: RoadshowSong[]): RoadshowSong[] => {
+  const ids = new Set<string>();
+  const catalogIds = new Set<string>();
+  const names = new Set<string>();
+  return songs.filter((song) => {
+    const name = JSON.stringify([normalize(song.title), normalize(song.artist)]);
+    const duplicate = ids.has(song.id) || Boolean(song.catalogId && catalogIds.has(song.catalogId)) || names.has(name);
+    ids.add(song.id);
+    if (song.catalogId) catalogIds.add(song.catalogId);
+    names.add(name);
+    return !duplicate;
+  });
+};
+
 export const findSongAppearances = (
   records: RoadshowRecord[],
   candidate: Pick<RoadshowSong, 'title' | 'artist'> & { catalogId?: string },
   excludingRoadshowId?: string,
+  songList?: 'performanceSongs' | 'recognitionSongs',
 ) => {
-  const seen = new Set<string>();
+  const seen = new Map<string, string>();
   for (const record of records) {
     if (record.id === excludingRoadshowId) continue;
-    const songs = [...record.performanceSongs, ...record.recognitionSongs];
+    const songs = songList ? record[songList] : [...record.performanceSongs, ...record.recognitionSongs];
     const matched = songs.some((song) => (
       candidate.catalogId && song.catalogId === candidate.catalogId
     ) || (
       normalize(song.title) === normalize(candidate.title)
       && normalize(song.artist) === normalize(candidate.artist)
     ));
-    if (matched) seen.add(record.title);
+    if (matched) seen.set(record.id, record.title);
   }
-  return [...seen];
+  return [...seen.values()];
 };
 
 export const findSongRoadshowHistory = (
@@ -238,6 +267,21 @@ export const countRecognitionAttemptsForSong = (
   return attempt.title === song.title && attempt.artist === song.artist;
 }).length;
 
+// 历史使用以真实答题记录为准，不以准备歌单为准；每场最多计一次。
+export const findRecognitionUsageRoadshows = (
+  records: RoadshowRecord[],
+  song: Pick<RoadshowSong, 'catalogId' | 'title' | 'artist'>,
+  excludingRoadshowId?: string,
+): string[] => {
+  const used = new Map<string, string>();
+  for (const record of records) {
+    if (record.id !== excludingRoadshowId && countRecognitionAttemptsForSong(record, song) > 0) {
+      used.set(record.id, record.title);
+    }
+  }
+  return [...used.values()];
+};
+
 export const preserveRecognitionParticipantNames = (
   candidate: RoadshowRecord,
   saved: RoadshowRecord,
@@ -324,6 +368,29 @@ export const getLatestRoadshow = (records: RoadshowRecord[]) => (
     right.date.localeCompare(left.date) || right.updatedAt.localeCompare(left.updatedAt)
   ))[0]
 );
+
+// 仅复制歌单；新场的答题记录和其他资料保持独立。
+export const inheritRecognitionSongs = (
+  draft: RoadshowRecord,
+  source: RoadshowRecord | undefined,
+  inherit = true,
+): RoadshowRecord => ({
+  ...draft,
+  recognitionSongs: inherit && source
+    ? deduplicateRoadshowSongs(source.recognitionSongs).map((song) => ({ ...song }))
+    : [],
+});
+
+export const mergePreviousRecognitionSongs = (record: RoadshowRecord, records: RoadshowRecord[]) => {
+  const source = getLatestRoadshow(records.filter((item) => item.id !== record.id && item.date <= record.date));
+  const existing = deduplicateRoadshowSongs(record.recognitionSongs);
+  const songs = deduplicateRoadshowSongs([...existing, ...(source?.recognitionSongs ?? [])]);
+  return {
+    source,
+    added: songs.length - existing.length,
+    record: { ...record, recognitionSongs: songs.map((song) => ({ ...song })) },
+  };
+};
 
 export const collectUsedRecognitionSongIds = (records: RoadshowRecord[]) => new Set(
   records.flatMap((record) => record.recognitionSongs.flatMap((song) => song.catalogId ? [song.catalogId] : [])),
@@ -418,7 +485,7 @@ export const groupPerformanceSongsByMatchTier = (
     good: [],
   };
   const unranked: RoadshowSong[] = [];
-  for (const song of songs) {
+  for (const song of deduplicateRoadshowSongs(songs)) {
     const tier = getPerformanceMatchTier(getScore(song));
     if (tier) groups[tier].push(song);
     else unranked.push(song);

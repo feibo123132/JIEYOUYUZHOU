@@ -1,14 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CalendarDays, Check, ChevronRight, Cloud, Guitar, Lock, NotebookPen, Plus, Save, Search, Trash2, UsersRound, X } from 'lucide-react';
+import { CalendarDays, Check, ChevronRight, Cloud, Copy, Guitar, Lock, NotebookPen, Plus, Save, Search, Trash2, UsersRound, X } from 'lucide-react';
 import { SONGS } from './songCatalog';
 import type { Song } from './songCatalog';
 import DailyPracticePanel from './DailyPracticePanel';
+import RoadshowFeelingsNotebook from './RoadshowFeelingsNotebook';
+import RoadshowCreateDialog from './RoadshowCreateDialog';
 import {
   buildQuizParticipantRanking,
   countRecognitionAttemptsForSong,
+  findRecognitionUsageRoadshows,
   findSongAppearances,
   createRecognitionAttempt,
   createRoadshowSong,
+  deduplicateRoadshowSongs,
+  mergePreviousRecognitionSongs,
+  prepareRoadshowSwitch,
   groupRoadshowRecognitionSongs,
   groupPerformanceSongsByMatchTier,
   paginateRoadshowSongs,
@@ -135,7 +141,9 @@ const RoadshowPanel = ({
   useEffect(() => { editingRef.current = editing; }, [editing]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
-  const [archiveView, setArchiveView] = useState<ArchiveView>('practice');
+  const [archiveView, setArchiveView] = useState<ArchiveView>('roadshows');
+  const [creating, setCreating] = useState<RoadshowRecord | null>(null);
+  const switchingRef = useRef(false);
 
   useEffect(() => {
     if (!credentials) return;
@@ -214,7 +222,8 @@ const RoadshowPanel = ({
   };
 
   const persistRecord = async (candidate: RoadshowRecord | null = editing) => {
-    if (!credentials || !candidate || !candidate.title.trim()) return;
+    if (!credentials || !candidate) return false;
+    if (!candidate.title.trim()) { setMessage('请填写路演名称后再保存或切换。'); return false; }
     setEditing(candidate);
     setBusy(true);
     try {
@@ -223,11 +232,12 @@ const RoadshowPanel = ({
         title: candidate.title.trim(),
         location: candidate.location?.trim() ?? '',
         weather: candidate.weather?.trim() ?? '',
+        performanceSongs: deduplicateRoadshowSongs(candidate.performanceSongs),
       });
       if (candidate.feelings !== undefined && serverSaved.feelings !== candidate.feelings.trim()) {
         setEditing({ ...candidate, updatedAt: serverSaved.updatedAt });
         setMessage('路演感受尚未同步，草稿已保留，请更新云端服务后重试。');
-        return;
+        return false;
       }
       const saved = preserveRecognitionParticipantNames(candidate, serverSaved);
       const next = [...records];
@@ -239,9 +249,20 @@ const RoadshowPanel = ({
       setEditing(saved);
       setMessage('已保存到腾讯云');
       window.dispatchEvent(new Event('jieyou-quiz-ranking-updated'));
+      return true;
     } catch (error) {
       setMessage(mapRoadshowSyncError(error));
+      return false;
     } finally { setBusy(false); }
+  };
+
+  const switchRoadshow = async (targetId: string) => {
+    if (busy || switchingRef.current || !editing) return;
+    switchingRef.current = true;
+    try {
+      const target = await prepareRoadshowSwitch(editing, records, targetId, persistRecord);
+      if (target) { setEditing(target); setMessage(''); }
+    } finally { switchingRef.current = false; }
   };
 
   const removeRecord = async (record: RoadshowRecord) => {
@@ -280,6 +301,7 @@ const RoadshowPanel = ({
   if (editing) {
     return (
       <RoadshowEditor
+        credentials={credentials}
         record={editing}
         allRecords={records}
         songRecords={songRecords}
@@ -290,6 +312,7 @@ const RoadshowPanel = ({
         canManageFeaturedSongs={canManageFeaturedSongs}
         onChange={setEditing}
         onBack={() => { setEditing(null); setMessage(''); }}
+        onSwitch={(targetId) => void switchRoadshow(targetId)}
         onSave={(candidate) => void persistRecord(candidate ?? editing)}
         onRecordAttempt={(record) => { void persistRecord(record); }}
         onOpenSongDetail={(song) => onOpenSongDetail(resolveRoadshowSong(songs, song))}
@@ -311,8 +334,8 @@ const RoadshowPanel = ({
       </header>
 
       <nav className="archive-tabs" aria-label="档案分类">
-        <button type="button" className={archiveView === 'practice' ? 'active' : ''} onClick={() => setArchiveView('practice')}><Guitar size={16} />日常练习</button>
         <button type="button" className={archiveView === 'roadshows' ? 'active' : ''} onClick={() => setArchiveView('roadshows')}><CalendarDays size={16} />路演档案</button>
+        <button type="button" className={archiveView === 'practice' ? 'active' : ''} onClick={() => setArchiveView('practice')}><Guitar size={16} />日常练习</button>
       </nav>
 
       {archiveView === 'practice' ? (
@@ -327,7 +350,7 @@ const RoadshowPanel = ({
         <section className="roadshow-archive-section">
           <div className="archive-section-heading">
             <div><span className="eyebrow">ROADSHOW ARCHIVE</span><h2>路演档案</h2><p>记录每一场准备过和唱过的歌。</p></div>
-            <button type="button" onClick={() => setEditing(emptyRecord(records.length + 1))}><Plus size={16} />创建路演</button>
+            <button type="button" disabled={busy} onClick={() => setCreating(emptyRecord(records.length + 1))}><Plus size={16} />创建路演</button>
           </div>
           {message && <p className="archive-cloud-message" role="status"><Cloud size={15} />{message}</p>}
           {records.length ? (
@@ -345,11 +368,13 @@ const RoadshowPanel = ({
           )}
         </section>
       )}
+      {creating && <RoadshowCreateDialog draft={creating} records={records} assignments={quizAssignments} onCancel={() => setCreating(null)} onCreate={(record) => { setCreating(null); void persistRecord(record); }} />}
     </section>
   );
 };
 
 interface EditorProps {
+  credentials: Credentials;
   record: RoadshowRecord;
   allRecords: RoadshowRecord[];
   songRecords: SongRecord[];
@@ -360,6 +385,7 @@ interface EditorProps {
   canManageFeaturedSongs?: boolean;
   onChange: (record: RoadshowRecord) => void;
   onBack: () => void;
+  onSwitch: (targetId: string) => void;
   onSave: (candidate?: RoadshowRecord) => void;
   onRecordAttempt: (record: RoadshowRecord) => void;
   onOpenSongDetail: (song: RoadshowSong) => void;
@@ -367,18 +393,24 @@ interface EditorProps {
   onLock: () => void;
 }
 
-const RoadshowEditor = ({ record, allRecords, songRecords, catalogSongs, busy, message, quizAssignments, canManageFeaturedSongs = false, onChange, onBack, onSave, onRecordAttempt, onOpenSongDetail, onDelete, onLock }: EditorProps) => {
+const RoadshowEditor = ({ credentials, record, allRecords, songRecords, catalogSongs, busy, message, quizAssignments, canManageFeaturedSongs = false, onChange, onBack, onSwitch, onSave, onRecordAttempt, onOpenSongDetail, onDelete, onLock }: EditorProps) => {
   const updateList = (key: 'performanceSongs' | 'recognitionSongs', songs: RoadshowSong[]) => onChange({ ...record, [key]: songs });
   const [editorTab, setEditorTab] = useState<'performance' | 'recognition' | 'feelings'>('performance');
   return (
-    <section className="space-y-5">
+    <fieldset disabled={busy} className="min-w-0 space-y-5">
       <div className="rounded-[1.75rem] border border-orange-200/15 bg-[#120b08]/85 p-5 backdrop-blur-xl sm:p-7">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <button type="button" onClick={onBack} className="text-sm font-bold text-white/50 hover:text-white">← 返回路演列表</button>
           <button type="button" onClick={onLock} className="inline-flex items-center gap-2 text-xs font-bold text-white/40 hover:text-white"><Lock className="h-4 w-4" />锁定档案</button>
         </div>
         <div data-roadshow-editor-grid className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <input aria-label="第几次路演" value={record.title} onChange={(event) => onChange({ ...record, title: event.target.value })} maxLength={60} className="h-12 min-w-0 rounded-xl border border-white/10 bg-black/35 px-4 font-serif text-xl font-black outline-none focus:border-orange-300/45" />
+          <div className="flex h-12 min-w-0 items-center rounded-xl border border-white/10 bg-black/35 focus-within:border-orange-300/45">
+            <input aria-label="第几次路演" disabled={busy} value={record.title} onChange={(event) => onChange({ ...record, title: event.target.value })} maxLength={60} className="h-full min-w-0 flex-1 rounded-l-xl bg-transparent pl-4 pr-2 font-serif text-xl font-black outline-none" />
+            <select aria-label="切换路演" disabled={busy || !allRecords.some((item) => item.id !== record.id)} value={record.id} onChange={(event) => onSwitch(event.target.value)} className="mr-2 w-8 shrink-0 cursor-pointer rounded-lg border-l border-white/10 bg-[#120b08] py-2 pl-2 text-xs font-bold text-orange-200 outline-none disabled:cursor-default disabled:opacity-35 [color-scheme:dark]">
+              <option value={record.id} disabled hidden />
+              {[...allRecords].filter((item) => item.id !== record.id).sort((left, right) => right.date.localeCompare(left.date)).map((item) => <option key={item.id} value={item.id}>{item.title} · {item.date}</option>)}
+            </select>
+          </div>
           <input aria-label="路演时间" type="date" value={record.date} onClick={(event) => event.currentTarget.showPicker?.()} onChange={(event) => onChange({ ...record, date: event.target.value })} className="h-12 min-w-0 cursor-pointer rounded-xl border border-white/10 bg-black/35 px-4 outline-none focus:border-orange-300/45" />
           {canManageFeaturedSongs && (
             <select aria-label="路演地点" value={record.location ?? ''} onChange={(event) => onChange({ ...record, location: event.target.value })} className="h-12 min-w-0 rounded-xl border border-white/10 bg-black/35 px-4 text-white outline-none focus:border-orange-300/45 [color-scheme:dark]">
@@ -400,22 +432,17 @@ const RoadshowEditor = ({ record, allRecords, songRecords, catalogSongs, busy, m
         </div>
       </div>
 
-      {editorTab === 'performance' && <SongListEditor title="路演歌曲" description="本次准备演唱的歌曲" songs={record.performanceSongs} allRecords={allRecords} recordId={record.id} songRecords={songRecords} catalogSongs={catalogSongs} onChange={(songs) => updateList('performanceSongs', songs)} onSave={(updatedSongs) => onSave({ ...record, performanceSongs: updatedSongs })} onOpenSongDetail={onOpenSongDetail} />}
-      {editorTab === 'recognition' && <RecognitionSongListEditor record={record} assignments={quizAssignments} allRecords={allRecords} busy={busy} onRecordAttempt={onRecordAttempt} onOpenSongDetail={onOpenSongDetail} />}
+      {editorTab === 'performance' && <SongListEditor key={record.id} title="路演歌曲" description="本次准备演唱的歌曲" songs={record.performanceSongs} allRecords={allRecords} recordId={record.id} songRecords={songRecords} catalogSongs={catalogSongs} onChange={(songs) => updateList('performanceSongs', songs)} onSave={(updatedSongs) => onSave({ ...record, performanceSongs: updatedSongs })} onOpenSongDetail={onOpenSongDetail} />}
+      {editorTab === 'recognition' && <RecognitionSongListEditor key={record.id} record={record} assignments={quizAssignments} allRecords={allRecords} busy={busy} onSave={onSave} onRecordAttempt={onRecordAttempt} onOpenSongDetail={onOpenSongDetail} />}
       {editorTab === 'feelings' && (
-        <div className="rounded-[1.75rem] border border-orange-200/15 bg-[#120b08]/85 p-5 sm:p-7">
-          <label htmlFor="roadshow-feelings" className="block font-serif text-2xl font-black">路演感受</label>
-          <p id="roadshow-feelings-hint" className="mt-2 text-xs text-white/40">记录这场路演的心情、难忘瞬间，以及下次想做得更好的地方。写完后点击下方“保存到云端”。</p>
-          <textarea id="roadshow-feelings" aria-describedby="roadshow-feelings-hint" value={record.feelings ?? ''} onChange={(event) => onChange({ ...record, feelings: event.target.value })} maxLength={10000} rows={10} disabled={busy} placeholder="这次路演，我想记住……" className="mt-5 block min-h-64 w-full resize-y rounded-2xl border border-white/10 bg-black/35 p-4 text-sm leading-7 text-white/90 outline-none placeholder:text-white/25 focus:border-orange-300/45 disabled:opacity-50" />
-          <p className="mt-2 text-right text-xs tabular-nums text-white/35">{(record.feelings ?? '').length} / 10000</p>
-        </div>
+        <RoadshowFeelingsNotebook key={credentials.alias} credentials={credentials} records={[...allRecords.filter(item => item.id !== record.id), record]} />
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-black/25 p-4">
+      {editorTab !== 'feelings' && <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-black/25 p-4">
         <button type="button" disabled={busy} onClick={onDelete} className="inline-flex items-center gap-2 text-sm font-bold text-red-300/70 hover:text-red-200 disabled:opacity-40"><Trash2 className="h-4 w-4" />删除这场路演</button>
         <div className="flex items-center gap-3">{message && <span className="text-xs text-emerald-200/70">{message}</span>}<button type="button" disabled={busy || !record.title.trim()} onClick={() => onSave()} className="inline-flex h-11 items-center gap-2 rounded-full bg-orange-400 px-5 text-sm font-black text-black disabled:opacity-40"><Save className="h-4 w-4" />保存到云端</button></div>
-      </div>
-    </section>
+      </div>}
+    </fieldset>
   );
 };
 
@@ -510,7 +537,7 @@ const SongListEditor = ({ title, description, songs, allRecords, recordId, songR
   }, [catalogSongs, pickerQuery, scoreResolver, songs]);
 
   const renderSongRow = (song: RoadshowSong) => {
-    const appearances = findSongAppearances(allRecords, song, recordId);
+    const appearances = findSongAppearances(allRecords, song, recordId, 'performanceSongs');
     return (
       <div key={song.id} className="group flex items-center gap-3 rounded-xl border border-white/10 bg-black/25 p-3">
         <button
@@ -521,9 +548,9 @@ const SongListEditor = ({ title, description, songs, allRecords, recordId, songR
           <strong className="block truncate text-sm transition group-hover:text-orange-100">{song.title}</strong>
           <small className="block truncate text-white/35">
             {song.artist || '未填写歌手'}
-            {appearances.length ? ` · 曾用于：${appearances.join('、')}` : ''}
           </small>
         </button>
+        <SongAppearanceBadge appearances={appearances} />
         {songEditMode && (
           <button type="button" onClick={(event) => { event.stopPropagation(); onChange(songs.filter((item) => item.id !== song.id)); }} aria-label={`移除${song.title}`} className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-white/30 hover:bg-red-300/10 hover:text-red-200">
             <X className="h-4 w-4" />
@@ -638,6 +665,14 @@ const SongListEditor = ({ title, description, songs, allRecords, recordId, songR
   );
 };
 
+const SongAppearanceBadge = ({ appearances, activity = '收录' }: { appearances: string[]; activity?: string }) => appearances.length > 0 ? (
+  <span
+    title={`其他 ${appearances.length} 场路演${activity}：${appearances.join('、')}`}
+    aria-label={`其他 ${appearances.length} 场路演${activity}：${appearances.join('、')}`}
+    className="inline-flex h-6 min-w-6 shrink-0 items-center justify-center rounded-full border border-white/15 bg-white/[.06] px-1.5 text-[10px] font-bold tabular-nums text-white/55"
+  >{appearances.length}</span>
+) : null;
+
 const RECOGNITION_LEVEL_STYLES: Record<QuizLevel, string> = {
   warmup: 'border-emerald-300/20 bg-emerald-400/[.045] text-emerald-100',
   standard: 'border-sky-300/20 bg-sky-400/[.045] text-sky-100',
@@ -645,15 +680,17 @@ const RECOGNITION_LEVEL_STYLES: Record<QuizLevel, string> = {
   hell: 'border-rose-300/20 bg-rose-400/[.045] text-rose-100',
 };
 
-const RecognitionSongListEditor = ({ record, assignments, allRecords, busy, onRecordAttempt, onOpenSongDetail }: {
+const RecognitionSongListEditor = ({ record, assignments, allRecords, busy, onSave, onRecordAttempt, onOpenSongDetail }: {
   record: RoadshowRecord;
   assignments: QuizAssignments;
   allRecords: RoadshowRecord[];
   busy: boolean;
+  onSave: (record: RoadshowRecord) => void;
   onRecordAttempt: (record: RoadshowRecord) => void;
   onOpenSongDetail: (song: RoadshowSong) => void;
 }) => {
   const songs = record.recognitionSongs;
+  const [inheritanceMessage, setInheritanceMessage] = useState('');
   const [participating, setParticipating] = useState(false);
   const [joining, setJoining] = useState(false);
   const [participantInput, setParticipantInput] = useState('');
@@ -673,6 +710,7 @@ const RecognitionSongListEditor = ({ record, assignments, allRecords, busy, onRe
   const participants = buildQuizParticipantRanking([record]);
 
   useEffect(() => {
+    setInheritanceMessage('');
     setParticipating(false);
     setJoining(false);
     setParticipantInput('');
@@ -743,11 +781,22 @@ const RecognitionSongListEditor = ({ record, assignments, allRecords, busy, onRe
     onRecordAttempt(upsertRecognitionAttempt(record, attempt));
   };
 
+  const inheritSongs = () => {
+    const result = mergePreviousRecognitionSongs(record, allRecords);
+    if (!result.source) { setInheritanceMessage('暂无可继承的上一场路演。'); return; }
+    if (!result.source.recognitionSongs.length) { setInheritanceMessage(`“${result.source.title}”暂无识曲歌曲可继承。`); return; }
+    if (!result.added) { setInheritanceMessage(`已包含“${result.source.title}”的全部识曲歌曲，无需重复继承。`); return; }
+    if (result.record.recognitionSongs.length > 100) { setInheritanceMessage('继承后超过本场100首上限，请先调整本场歌单。'); return; }
+    setInheritanceMessage(`从“${result.source.title}”补入 ${result.added} 首，保存状态见下方。`);
+    onSave(result.record);
+  };
+
   return (
     <section className="rounded-[1.75rem] border border-white/10 bg-[#09090c]/85 p-5 backdrop-blur-xl sm:p-7">
-      <div className="flex items-end justify-between gap-4">
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <div><h3 className="font-serif text-2xl font-black">听歌识曲</h3><p className="mt-1 text-xs text-white/35">互动游戏准备的题目歌曲</p></div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+        {!joining && !participating && <button type="button" disabled={busy} onClick={inheritSongs} title="继承上一场全部识曲歌曲，保留本场歌曲和答题记录" className="inline-flex h-10 items-center gap-2 rounded-full border border-orange-200/25 bg-orange-300/10 px-4 text-xs font-black text-orange-200 transition hover:border-orange-200/50 hover:bg-orange-300/20 disabled:cursor-not-allowed disabled:opacity-35"><Copy className="h-4 w-4" /><span>继承</span></button>}
         {joining ? (
           <form onSubmit={(event) => { event.preventDefault(); startParticipation(); }} className="flex items-center gap-2">
             <label className="sr-only" htmlFor={`participant-${record.id}`}>参与者用户名</label>
@@ -774,6 +823,7 @@ const RecognitionSongListEditor = ({ record, assignments, allRecords, busy, onRe
         )}
         </div>
       </div>
+      {inheritanceMessage && <p role="status" className="mt-3 text-xs leading-6 text-orange-200/70">{inheritanceMessage}</p>}
       {participants.length > 0 && (
         <div className="mt-3 flex items-center gap-2 overflow-x-auto text-[10px] text-white/40">
           <span className="shrink-0 font-bold text-white/30">已参与 {participants.length}</span>
@@ -827,10 +877,10 @@ const RecognitionSongListEditor = ({ record, assignments, allRecords, busy, onRe
             </header>
             <div className="space-y-2">
               {paginated.items.map((song) => {
-                const appearances = findSongAppearances(allRecords, song, record.id);
+                const appearances = findRecognitionUsageRoadshows(allRecords, song, record.id);
                 const attemptCount = countRecognitionAttemptsForSong(record, song);
                 const selected = selectedSongIds.includes(song.id);
-                return <button key={song.id} type="button" aria-label={participating ? `选择${song.title}` : `查看${song.title}详情和谱子`} aria-pressed={participating ? selected : undefined} disabled={participating && !selected && selectedSongIds.length === 4} onClick={() => participating ? toggleSong(song) : onOpenSongDetail(song)} className={`group flex w-full items-center gap-3 rounded-xl border p-3 text-left transition disabled:cursor-default ${selected ? 'border-orange-200/50 bg-orange-300/15 shadow-[0_0_20px_rgba(251,146,60,.08)]' : 'border-white/10 bg-black/25 enabled:hover:border-white/25'}`}><span className="min-w-0 flex-1"><strong className="block truncate text-sm text-white/90">{song.title}</strong><small className="block truncate text-white/35">{song.artist || '未填写歌手'}{appearances.length ? ` · 曾用于：${appearances.join('、')}` : ''}</small></span>{attemptCount > 0 && <span className="shrink-0 rounded-full border border-white/10 bg-white/[.055] px-2 py-1 text-[10px] font-black tabular-nums text-white/45">{attemptCount}次</span>}{selected && <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-orange-300 text-xs font-black text-black">{selectedSongIds.indexOf(song.id) + 1}</span>}</button>;
+                return <button key={song.id} type="button" aria-label={participating ? `选择${song.title}` : `查看${song.title}详情和谱子`} aria-pressed={participating ? selected : undefined} disabled={participating && !selected && selectedSongIds.length === 4} onClick={() => participating ? toggleSong(song) : onOpenSongDetail(song)} className={`group flex w-full items-center gap-3 rounded-xl border p-3 text-left transition disabled:cursor-default ${selected ? 'border-orange-200/50 bg-orange-300/15 shadow-[0_0_20px_rgba(251,146,60,.08)]' : 'border-white/10 bg-black/25 enabled:hover:border-white/25'}`}><span className="min-w-0 flex-1"><strong className="block truncate text-sm text-white/90">{song.title}</strong><small className="block truncate text-white/35">{song.artist || '未填写歌手'}</small></span><SongAppearanceBadge appearances={appearances} activity="实际答题" />{attemptCount > 0 && <span title="本场实际答题次数" aria-label={`本场实际答题 ${attemptCount} 次`} className="shrink-0 rounded-full border border-white/10 bg-white/[.055] px-2 py-1 text-[10px] font-black tabular-nums text-white/45">{attemptCount}次</span>}{selected && <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-orange-300 text-xs font-black text-black">{selectedSongIds.indexOf(song.id) + 1}</span>}</button>;
               })}
               {!groups[level.id].length && <p className="py-5 text-center text-[10px] text-white/20">暂无歌曲</p>}
             </div>

@@ -1,5 +1,6 @@
 import { ensureSignIn, tcbApp } from '../../services/tcb';
 import type { VoteCounts } from './songRequest';
+import type { FeelingsNotebook, NotebookPage } from './feelingsNotebook';
 import type { PublicQuizParticipantRankingItem, PublicQuizRankingItem, RoadshowLocation, RoadshowRecord } from './roadshow';
 import type { PublicPracticeRankingItem, SongRecord } from './songRecords';
 import {
@@ -57,6 +58,11 @@ export const finishCloudVotes = async (credentials: Credentials): Promise<CloudV
   return { counts: result.counts, sungCounts: result.sungCounts };
 };
 
+export const clearCloudVotes = async (credentials: Credentials, kind: 'pending' | 'sung'): Promise<CloudVoteState> => {
+  const result = await callSync<CloudVoteState>({ action: kind === 'pending' ? 'votes:clearPending' : 'votes:clearSung', ...credentials });
+  return { counts: result.counts, sungCounts: result.sungCounts };
+};
+
 export const pullCloudFeaturedSongIds = async (): Promise<string[] | null> => (
   await callSync<{ songIds: string[] | null }>({ action: 'featuredSongs:pull' })
 ).songIds;
@@ -83,6 +89,14 @@ export const registerRoadshowWorkspace = async (credentials: Credentials): Promi
 export const pullRoadshows = async (credentials: Credentials): Promise<RoadshowRecord[]> => (
   await callSync<{ records: RoadshowRecord[] }>({ action: 'roadshows:pull', ...credentials })
 ).records;
+
+export const pullFeelingsNotebook = async (credentials: Credentials): Promise<FeelingsNotebook> => (
+  await callSync<{ notebook: FeelingsNotebook }>({ action: 'feelingsNotebook:pull', ...credentials })
+).notebook;
+
+export const saveFeelingsNotebook = async (credentials: Credentials, expectedRevision: number, pages: NotebookPage[]): Promise<FeelingsNotebook> => (
+  await callSync<{ notebook: FeelingsNotebook }>({ action: 'feelingsNotebook:save', ...credentials, expectedRevision, pages })
+).notebook;
 
 export const pullPublicQuizRanking = async (location?: RoadshowLocation): Promise<{
   ranking: PublicQuizRankingItem[];

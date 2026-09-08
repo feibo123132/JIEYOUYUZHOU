@@ -1,7 +1,12 @@
+const { validateNotebookPages } = require('./feelingsNotebook');
 const ACTIONS = new Set([
+  'feelingsNotebook:pull',
+  'feelingsNotebook:save',
   'votes:pull',
   'votes:increment',
   'votes:finishAll',
+  'votes:clearPending',
+  'votes:clearSung',
   'roadshows:register',
   'roadshows:pull',
   'roadshows:save',
@@ -232,7 +237,7 @@ const validateSongScorePage = (value) => {
 
 function validateRequest(event) {
   if (!event || typeof event !== 'object' || !ACTIONS.has(event.action)) throw new Error('INVALID_ACTION');
-  const requestLimit = event.action === 'artistSettings:push'
+  const requestLimit = event.action === 'feelingsNotebook:save' ? 4 * 1024 * 1024 : event.action === 'artistSettings:push'
     ? ARTIST_SETTINGS_REQUEST_LIMIT
     : event.action === 'songScores:uploadPage' ? SONG_SCORE_UPLOAD_REQUEST_LIMIT : DEFAULT_REQUEST_LIMIT;
   if (Buffer.byteLength(JSON.stringify(event), 'utf8') > requestLimit) throw new Error('PAYLOAD_TOO_LARGE');
@@ -252,6 +257,10 @@ function validateRequest(event) {
   const alias = cleanText(event.alias, 30, 'INVALID_ALIAS');
   if (typeof event.password !== 'string' || event.password.length < 6 || event.password.length > 64) throw new Error('INVALID_PASSWORD');
   const base = { action: event.action, alias, password: event.password };
+  if (event.action === 'feelingsNotebook:save') {
+    if (!Number.isInteger(event.expectedRevision) || event.expectedRevision < 0) throw new Error('INVALID_NOTEBOOK');
+    return { ...base, expectedRevision: event.expectedRevision, pages: validateNotebookPages(event.pages) };
+  }
   if (event.action === 'featuredSongs:set') {
     if (!Array.isArray(event.songIds) || event.songIds.length > 500) throw new Error('INVALID_FEATURED_SONGS');
     const songIds = event.songIds.map((songId) => cleanText(songId, 100, 'INVALID_FEATURED_SONGS'));
