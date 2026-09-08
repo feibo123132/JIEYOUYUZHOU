@@ -5,6 +5,7 @@ import type { Song } from './songCatalog';
 import DailyPracticePanel from './DailyPracticePanel';
 import RoadshowFeelingsNotebook from './RoadshowFeelingsNotebook';
 import RoadshowCreateDialog from './RoadshowCreateDialog';
+import FixedQuizSongs from './FixedQuizSongs';
 import {
   buildQuizParticipantRanking,
   countRecognitionAttemptsForSong,
@@ -234,6 +235,11 @@ const RoadshowPanel = ({
         weather: candidate.weather?.trim() ?? '',
         performanceSongs: deduplicateRoadshowSongs(candidate.performanceSongs),
       });
+      if (candidate.recognitionSongs.some(song => Boolean(song.fixedBonus) !== Boolean(serverSaved.recognitionSongs.find(item => item.id === song.id)?.fixedBonus))) {
+        setEditing({ ...candidate, updatedAt: serverSaved.updatedAt });
+        setMessage('固定送分分类尚未同步，草稿已保留。请更新 songRequestSync 云函数后重新保存。');
+        return false;
+      }
       if (candidate.feelings !== undefined && serverSaved.feelings !== candidate.feelings.trim()) {
         setEditing({ ...candidate, updatedAt: serverSaved.updatedAt });
         setMessage('路演感受尚未同步，草稿已保留，请更新云端服务后重试。');
@@ -433,7 +439,7 @@ const RoadshowEditor = ({ credentials, record, allRecords, songRecords, catalogS
       </div>
 
       {editorTab === 'performance' && <SongListEditor key={record.id} title="路演歌曲" description="本次准备演唱的歌曲" songs={record.performanceSongs} allRecords={allRecords} recordId={record.id} songRecords={songRecords} catalogSongs={catalogSongs} onChange={(songs) => updateList('performanceSongs', songs)} onSave={(updatedSongs) => onSave({ ...record, performanceSongs: updatedSongs })} onOpenSongDetail={onOpenSongDetail} />}
-      {editorTab === 'recognition' && <RecognitionSongListEditor key={record.id} record={record} assignments={quizAssignments} allRecords={allRecords} busy={busy} onSave={onSave} onRecordAttempt={onRecordAttempt} onOpenSongDetail={onOpenSongDetail} />}
+      {editorTab === 'recognition' && <RecognitionSongListEditor key={record.id} catalogSongs={catalogSongs} record={record} assignments={quizAssignments} allRecords={allRecords} busy={busy} onSave={onSave} onRecordAttempt={onRecordAttempt} onOpenSongDetail={onOpenSongDetail} />}
       {editorTab === 'feelings' && (
         <RoadshowFeelingsNotebook key={credentials.alias} credentials={credentials} records={[...allRecords.filter(item => item.id !== record.id), record]} />
       )}
@@ -680,10 +686,11 @@ const RECOGNITION_LEVEL_STYLES: Record<QuizLevel, string> = {
   hell: 'border-rose-300/20 bg-rose-400/[.045] text-rose-100',
 };
 
-const RecognitionSongListEditor = ({ record, assignments, allRecords, busy, onSave, onRecordAttempt, onOpenSongDetail }: {
+const RecognitionSongListEditor = ({ record, assignments, allRecords, catalogSongs, busy, onSave, onRecordAttempt, onOpenSongDetail }: {
   record: RoadshowRecord;
   assignments: QuizAssignments;
   allRecords: RoadshowRecord[];
+  catalogSongs: Song[];
   busy: boolean;
   onSave: (record: RoadshowRecord) => void;
   onRecordAttempt: (record: RoadshowRecord) => void;
@@ -791,6 +798,13 @@ const RecognitionSongListEditor = ({ record, assignments, allRecords, busy, onSa
     onSave(result.record);
   };
 
+  const renderQuizSong = (song: RoadshowSong) => {
+    const appearances = findRecognitionUsageRoadshows(allRecords, song, record.id);
+    const attemptCount = countRecognitionAttemptsForSong(record, song);
+    const selected = selectedSongIds.includes(song.id);
+    return <button key={song.id} type="button" aria-label={participating ? `选择${song.title}` : `查看${song.title}详情和谱子`} aria-pressed={participating ? selected : undefined} disabled={participating && !selected && selectedSongIds.length === 4} onClick={() => participating ? toggleSong(song) : onOpenSongDetail(song)} className={`group flex w-full items-center gap-3 rounded-xl border p-3 text-left transition disabled:cursor-default ${selected ? 'border-orange-200/50 bg-orange-300/15 shadow-[0_0_20px_rgba(251,146,60,.08)]' : 'border-white/10 bg-black/25 enabled:hover:border-white/25'}`}><span className="min-w-0 flex-1"><strong className="block truncate text-sm text-white/90">{song.title}</strong><small className="block truncate text-white/35">{song.artist || '未填写歌手'}</small></span><SongAppearanceBadge appearances={appearances} activity="实际答题" />{attemptCount > 0 && <span title="本场实际答题次数" aria-label={`本场实际答题 ${attemptCount} 次`} className="shrink-0 rounded-full border border-white/10 bg-white/[.055] px-2 py-1 text-[10px] font-black tabular-nums text-white/45">{attemptCount}次</span>}{selected && <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-orange-300 text-xs font-black text-black">{selectedSongIds.indexOf(song.id) + 1}</span>}</button>;
+  };
+
   return (
     <section className="rounded-[1.75rem] border border-white/10 bg-[#09090c]/85 p-5 backdrop-blur-xl sm:p-7">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -876,12 +890,7 @@ const RecognitionSongListEditor = ({ record, assignments, allRecords, busy, onSa
               <small className="text-white/35">{groups[level.id].length} 首</small>
             </header>
             <div className="space-y-2">
-              {paginated.items.map((song) => {
-                const appearances = findRecognitionUsageRoadshows(allRecords, song, record.id);
-                const attemptCount = countRecognitionAttemptsForSong(record, song);
-                const selected = selectedSongIds.includes(song.id);
-                return <button key={song.id} type="button" aria-label={participating ? `选择${song.title}` : `查看${song.title}详情和谱子`} aria-pressed={participating ? selected : undefined} disabled={participating && !selected && selectedSongIds.length === 4} onClick={() => participating ? toggleSong(song) : onOpenSongDetail(song)} className={`group flex w-full items-center gap-3 rounded-xl border p-3 text-left transition disabled:cursor-default ${selected ? 'border-orange-200/50 bg-orange-300/15 shadow-[0_0_20px_rgba(251,146,60,.08)]' : 'border-white/10 bg-black/25 enabled:hover:border-white/25'}`}><span className="min-w-0 flex-1"><strong className="block truncate text-sm text-white/90">{song.title}</strong><small className="block truncate text-white/35">{song.artist || '未填写歌手'}</small></span><SongAppearanceBadge appearances={appearances} activity="实际答题" />{attemptCount > 0 && <span title="本场实际答题次数" aria-label={`本场实际答题 ${attemptCount} 次`} className="shrink-0 rounded-full border border-white/10 bg-white/[.055] px-2 py-1 text-[10px] font-black tabular-nums text-white/45">{attemptCount}次</span>}{selected && <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-orange-300 text-xs font-black text-black">{selectedSongIds.indexOf(song.id) + 1}</span>}</button>;
-              })}
+              {paginated.items.map(renderQuizSong)}
               {!groups[level.id].length && <p className="py-5 text-center text-[10px] text-white/20">暂无歌曲</p>}
             </div>
             <footer className="mt-auto flex items-center justify-center gap-3 pt-3 text-[10px] font-bold text-white/45">
@@ -893,6 +902,7 @@ const RecognitionSongListEditor = ({ record, assignments, allRecords, busy, onSa
           );
         })}
       </div>
+      <FixedQuizSongs record={record} catalogSongs={catalogSongs} managing={!participating && !joining} busy={busy} onSave={onSave} renderSong={renderQuizSong} />
     </section>
   );
 };

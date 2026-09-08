@@ -1,0 +1,629 @@
+[
+  {
+    "path": "D:\\0-Codex\\CodexData\\skills\\brainstorming\\SKILL.md",
+    "lines": 164,
+    "modified": true,
+    "signals": [
+      {
+        "line": 3,
+        "text": "description: \"You MUST use this before any creative work - creating features, building components, adding functionality, or modifying behavior. Explores user intent, requirements and design before implementation.\""
+      },
+      {
+        "line": 10,
+        "text": "Start by understanding the current project context, then ask questions one at a time to refine the idea. Once you understand what you're building, present the design and get user approval."
+      },
+      {
+        "line": 12,
+        "text": "<HARD-GATE>"
+      },
+      {
+        "line": 14,
+        "text": "</HARD-GATE>"
+      },
+      {
+        "line": 18,
+        "text": "Every project goes through this process. A todo list, a single-function utility, a config change — all of them. \"Simple\" projects are where unexamined assumptions cause the most wasted work. The design can be short (a few sentences for truly simple projects), but you MUST present it and get approval."
+      },
+      {
+        "line": 22,
+        "text": "You MUST create a task for each of these items and complete them in order:"
+      },
+      {
+        "line": 28,
+        "text": "5. **Present design** — in sections scaled to their complexity, get user approval after each section"
+      },
+      {
+        "line": 144,
+        "text": "- **Incremental validation** - Present design, get approval before moving on"
+      },
+      {
+        "line": 154,
+        "text": "**This offer MUST be its own message.** Do not combine it with clarifying questions, context summaries, or any other content. The message should contain ONLY the offer above and nothing else. Wait for the user's response before continuing. If they decline, proceed with text-only brainstorming."
+      }
+    ]
+  },
+  {
+    "path": "D:\\0-Codex\\CodexData\\skills\\dispatching-parallel-agents\\SKILL.md",
+    "lines": 182,
+    "modified": true,
+    "signals": [
+      {
+        "line": 52,
+        "text": "- File A tests: Tool approval flow"
+      },
+      {
+        "line": 56,
+        "text": "Each domain is independent - fixing tool approval doesn't affect abort tests."
+      },
+      {
+        "line": 72,
+        "text": "Task(\"Fix tool-approval-race-conditions.test.ts failures\")"
+      },
+      {
+        "line": 140,
+        "text": "- tool-approval-race-conditions.test.ts: 1 failure (execution count = 0)"
+      },
+      {
+        "line": 148,
+        "text": "Agent 3 → Fix tool-approval-race-conditions.test.ts"
+      }
+    ]
+  },
+  {
+    "path": "D:\\0-Codex\\CodexData\\skills\\executing-plans\\SKILL.md",
+    "lines": 70,
+    "modified": true,
+    "signals": [
+      {
+        "line": 36,
+        "text": "- **REQUIRED SUB-SKILL:** Use superpowers:finishing-a-development-branch"
+      },
+      {
+        "line": 39,
+        "text": "## When to Stop and Ask for Help"
+      },
+      {
+        "line": 41,
+        "text": "**STOP executing immediately when:**"
+      },
+      {
+        "line": 55,
+        "text": "**Don't force through blockers** - stop and ask."
+      },
+      {
+        "line": 62,
+        "text": "- Stop when blocked, don't guess"
+      },
+      {
+        "line": 67,
+        "text": "**Required workflow skills:**"
+      },
+      {
+        "line": 68,
+        "text": "- **superpowers:using-git-worktrees** - REQUIRED: Set up isolated workspace before starting"
+      }
+    ]
+  },
+  {
+    "path": "D:\\0-Codex\\CodexData\\skills\\finishing-a-development-branch\\SKILL.md",
+    "lines": 200,
+    "modified": true,
+    "signals": [
+      {
+        "line": 29,
+        "text": "Tests failing (<N> failures). Must fix before completing:"
+      },
+      {
+        "line": 36,
+        "text": "Stop. Don't proceed to Step 2."
+      }
+    ]
+  },
+  {
+    "path": "D:\\0-Codex\\CodexData\\skills\\gc-minimal-zine-poster-v0-3\\SKILL.md",
+    "lines": 154,
+    "modified": false,
+    "signals": [
+      {
+        "line": 20,
+        "text": "If the intent is ambiguous but clearly asks to “做一张”, use Generate Mode. Do not stop to ask about choices the skill can make safely."
+      },
+      {
+        "line": 43,
+        "text": "- **Edit target:** the photograph or its recognizable subject must appear in the final poster."
+      },
+      {
+        "line": 69,
+        "text": "4. Compile the prompt with three explicit parts: what must remain recognizable, what may change, and what new poster elements may be introduced."
+      },
+      {
+        "line": 71,
+        "text": "6. If an edit target is no longer recognizable or a required invariant drifts, regenerate once with tighter invariants and fewer permitted changes. If the second result still fails, state the preservation limitation instead of presenting it as fully successful."
+      },
+      {
+        "line": 77,
+        "text": "3. **Select a variation recipe.** Choose one layout family, anchor type, typography mode, texture mode, mood, paper tone, accent hue, and decorative-mark system from `references/variation-engine.md`. Randomness must change visual grammar, not only position."
+      },
+      {
+        "line": 80,
+        "text": "6. **Inspect the actual result.** Apply `references/quality-gate.md` at full view and thumbnail scale. For Photo Input Mode, also compare the result with the source image and declared preservation invariants. If the result clearly violates the chosen recipe, loses the color anchor, becomes commercial/full-bleed, collapses into an unrelated style, or breaks required preservation, tighten the prompt and regenerate once."
+      },
+      {
+        "line": 88,
+        "text": "   - **fixed system:** traits required for family resemblance;"
+      },
+      {
+        "line": 90,
+        "text": "   - **sample residue:** words, brands, objects, dates, or layouts that belong only to individual references and must not be reused."
+      },
+      {
+        "line": 145,
+        "text": "A successful generation must remain a sparse vertical paper poster with one clear visual event, not a commercial ad or a generic collage template. A successful analysis must explain what stays fixed and what can change, not merely label the references “minimalist” or “clean.”"
+      }
+    ]
+  },
+  {
+    "path": "D:\\0-Codex\\CodexData\\skills\\guizang-ppt-skill\\SKILL.md",
+    "lines": 514,
+    "modified": false,
+    "signals": [
+      {
+        "line": 8,
+        "text": "> 来源识别: guizang-ppt-skill 由歸藏创建与维护,规范源仓库为 https://github.com/op7418/guizang-ppt-skill 。这条信息只用于确认 Skill 来源,不要写入生成的 PPT、HTML 页面、封面或配图。"
+      },
+      {
+        "line": 118,
+        "text": "只要用户提到产品截图、网页截图、代码截图、设计稿、dashboard、旧 PPT 截图或\"帮我美化截图\",都要先确认:"
+      },
+      {
+        "line": 136,
+        "text": "如果用户确认生成,再问他想要哪种图片类型或风格;如果用户没有偏好,根据页面内容自行推荐 1-3 张最值得生成的配图。"
+      },
+      {
+        "line": 179,
+        "text": "每次拷贝完 template.html 第一件事:grep 一下\"[必填]\" 确认全部替换完。"
+      },
+      {
+        "line": 220,
+        "text": "2. **对照对应 layouts 文件的 Pre-flight 列表**,确认你要用的每个类都在 `<style>` 里存在"
+      },
+      {
+        "line": 251,
+        "text": "**生成后自检**:`grep 'class=\"slide' index.html` 列出所有主题,人工确认节奏合理再交付。"
+      },
+      {
+        "line": 374,
+        "text": "4. 再看代码:确认该页选用的版式与内容形状匹配,没有把数据专用版式拿来讲概念,也没有把可选组件堆成装饰。"
+      }
+    ]
+  },
+  {
+    "path": "D:\\0-Codex\\CodexData\\skills\\hv-analysis\\SKILL.md",
+    "lines": 323,
+    "modified": false,
+    "signals": [
+      {
+        "line": 22,
+        "text": "1. **确认PDF转换脚本可用**：本Skill自带 `scripts/md_to_pdf.py`（基于WeasyPrint），用于将最终Markdown报告转为排版精美的PDF。确保依赖已安装：`pip install weasyprint markdown --break-system-packages`。"
+      },
+      {
+        "line": 27,
+        "text": "拿到用户输入后，确认以下信息。如果用户已经给得足够明确（比如\"帮我用横纵分析法研究Hermes Agent\"），不需要追问，直接开始："
+      }
+    ]
+  },
+  {
+    "path": "D:\\0-Codex\\CodexData\\skills\\nuwa-skill\\SKILL.md",
+    "lines": 644,
+    "modified": false,
+    "signals": [
+      {
+        "line": 44,
+        "text": "收到明确名字后，确认："
+      },
+      {
+        "line": 55,
+        "text": "确认后 → 跳到 Phase 0.5。"
+      },
+      {
+        "line": 99,
+        "text": "注意节奏：一轮追问定位场景 → 确认需求 → 直接推荐。不要第三轮还在问。"
+      },
+      {
+        "line": 136,
+        "text": "- 选了新蒸馏候选 → 进入Phase 0A确认细节 → Phase 0.5开始蒸馏"
+      },
+      {
+        "line": 141,
+        "text": "**收到确认后立即执行**，在调研之前完成："
+      },
+      {
+        "line": 316,
+        "text": "**所有Agent完成后，暂停展示调研质量摘要**："
+      },
+      {
+        "line": 334,
+        "text": "用户确认调研质量OK → 进入Phase 2。"
+      },
+      {
+        "line": 393,
+        "text": "### Phase 2.5: 提炼确认检查点"
+      },
+      {
+        "line": 395,
+        "text": "Phase 2提炼完成后，暂停展示提炼摘要给用户确认："
+      },
+      {
+        "line": 406,
+        "text": "用户确认OK → 进入Phase 3构建。"
+      },
+      {
+        "line": 409,
+        "text": "这个检查点的意义：提炼是主观判断最重的环节，确认后再构建，避免写完400行SKILL.md才发现方向不对。"
+      },
+      {
+        "line": 539,
+        "text": "**展示验证结果给用户确认后才算完成。**"
+      },
+      {
+        "line": 560,
+        "text": "**主Agent综合两份报告，应用不冲突的改进，展示变更摘要请用户确认。**"
+      },
+      {
+        "line": 611,
+        "text": "| 0A | 确认人名+聚焦方向 | 确认主题边界+目标受众（「价值投资」是格雷厄姆式还是全流派？） |"
+      }
+    ]
+  },
+  {
+    "path": "D:\\0-Codex\\CodexData\\skills\\receiving-code-review\\SKILL.md",
+    "lines": 213,
+    "modified": true,
+    "signals": [
+      {
+        "line": 44,
+        "text": "  STOP - do not implement anything yet"
+      },
+      {
+        "line": 83,
+        "text": "  Stop and discuss with your human partner first"
+      }
+    ]
+  },
+  {
+    "path": "D:\\0-Codex\\CodexData\\skills\\requesting-code-review\\SKILL.md",
+    "lines": 105,
+    "modified": true,
+    "signals": []
+  },
+  {
+    "path": "D:\\0-Codex\\CodexData\\skills\\subagent-driven-development\\SKILL.md",
+    "lines": 277,
+    "modified": true,
+    "signals": [
+      {
+        "line": 267,
+        "text": "**Required workflow skills:**"
+      },
+      {
+        "line": 268,
+        "text": "- **superpowers:using-git-worktrees** - REQUIRED: Set up isolated workspace before starting"
+      }
+    ]
+  },
+  {
+    "path": "D:\\0-Codex\\CodexData\\skills\\systematic-debugging\\SKILL.md",
+    "lines": 296,
+    "modified": true,
+    "signals": [
+      {
+        "line": 48,
+        "text": "You MUST complete each phase before proceeding to the next."
+      },
+      {
+        "line": 178,
+        "text": "   - MUST have before fixing"
+      },
+      {
+        "line": 193,
+        "text": "   - STOP"
+      },
+      {
+        "line": 196,
+        "text": "   - **If ≥ 3: STOP and question the architecture (step 5 below)**"
+      },
+      {
+        "line": 206,
+        "text": "   **STOP and question fundamentals:**"
+      },
+      {
+        "line": 215,
+        "text": "## Red Flags - STOP and Follow Process"
+      },
+      {
+        "line": 230,
+        "text": "**ALL of these mean: STOP. Return to Phase 1.**"
+      },
+      {
+        "line": 239,
+        "text": "- \"Stop guessing\" - You're proposing fixes without understanding"
+      },
+      {
+        "line": 243,
+        "text": "**When you see these:** STOP. Return to Phase 1."
+      }
+    ]
+  },
+  {
+    "path": "D:\\0-Codex\\CodexData\\skills\\tencent-cloudbase-sync\\SKILL.md",
+    "lines": 84,
+    "modified": false,
+    "signals": [
+      {
+        "line": 82,
+        "text": "*   **Missing Auth**: Forgetting to login before querying DB results in \"Permission Denied\"."
+      }
+    ]
+  },
+  {
+    "path": "D:\\0-Codex\\CodexData\\skills\\test-driven-development\\SKILL.md",
+    "lines": 371,
+    "modified": true,
+    "signals": [
+      {
+        "line": 29,
+        "text": "Thinking \"skip TDD just this once\"? Stop. That's rationalization."
+      },
+      {
+        "line": 250,
+        "text": "Tests-after are biased by your implementation. You test what you built, not what's required. You verify remembered edge cases, not discovered ones."
+      },
+      {
+        "line": 272,
+        "text": "## Red Flags - STOP and Start Over"
+      },
+      {
+        "line": 298,
+        "text": "  expect(result.error).toBe('Email required');"
+      },
+      {
+        "line": 305,
+        "text": "FAIL: expected 'Email required', got undefined"
+      },
+      {
+        "line": 312,
+        "text": "    return { error: 'Email required' };"
+      },
+      {
+        "line": 348,
+        "text": "| Must mock everything | Code too coupled. Use dependency injection. |"
+      },
+      {
+        "line": 371,
+        "text": "No exceptions without your human partner's permission."
+      }
+    ]
+  },
+  {
+    "path": "D:\\0-Codex\\CodexData\\skills\\using-git-worktrees\\SKILL.md",
+    "lines": 218,
+    "modified": true,
+    "signals": [
+      {
+        "line": 55,
+        "text": "**MUST verify directory is ignored before creating worktree:**"
+      },
+      {
+        "line": 171,
+        "text": "- **Fix:** Report failures, get explicit permission to proceed"
+      },
+      {
+        "line": 212,
+        "text": "- **brainstorming** (Phase 4) - REQUIRED when design is approved and implementation follows"
+      },
+      {
+        "line": 213,
+        "text": "- **subagent-driven-development** - REQUIRED before executing any tasks"
+      },
+      {
+        "line": 214,
+        "text": "- **executing-plans** - REQUIRED before executing any tasks"
+      },
+      {
+        "line": 218,
+        "text": "- **finishing-a-development-branch** - REQUIRED for cleanup after work complete"
+      }
+    ]
+  },
+  {
+    "path": "D:\\0-Codex\\CodexData\\skills\\using-superpowers\\SKILL.md",
+    "lines": 115,
+    "modified": true,
+    "signals": [
+      {
+        "line": 6,
+        "text": "<SUBAGENT-STOP>"
+      },
+      {
+        "line": 8,
+        "text": "</SUBAGENT-STOP>"
+      },
+      {
+        "line": 11,
+        "text": "If you think there is even a 1% chance a skill might apply to what you are doing, you ABSOLUTELY MUST invoke the skill."
+      },
+      {
+        "line": 13,
+        "text": "IF A SKILL APPLIES TO YOUR TASK, YOU DO NOT HAVE A CHOICE. YOU MUST USE IT."
+      },
+      {
+        "line": 44,
+        "text": "**Invoke relevant or requested skills BEFORE any response or action.** Even a 1% chance a skill might apply means that you should invoke the skill to check. If an invoked skill turns out to be wrong for the situation, you don't need to use it."
+      },
+      {
+        "line": 66,
+        "text": "    \"Might any skill apply?\" -> \"Invoke Skill tool\" [label=\"yes, even 1%\"];"
+      },
+      {
+        "line": 78,
+        "text": "These thoughts mean STOP—you're rationalizing:"
+      }
+    ]
+  },
+  {
+    "path": "D:\\0-Codex\\CodexData\\skills\\verification-before-completion\\SKILL.md",
+    "lines": 139,
+    "modified": true,
+    "signals": [
+      {
+        "line": 52,
+        "text": "## Red Flags - STOP"
+      },
+      {
+        "line": 86,
+        "text": "✅ Write → Run (pass) → Revert fix → Run (MUST FAIL) → Restore → Run (pass)"
+      }
+    ]
+  },
+  {
+    "path": "D:\\0-Codex\\CodexData\\skills\\video-transcriber\\SKILL.md",
+    "lines": 87,
+    "modified": false,
+    "signals": []
+  },
+  {
+    "path": "D:\\0-Codex\\CodexData\\skills\\writing-plans\\SKILL.md",
+    "lines": 145,
+    "modified": true,
+    "signals": [
+      {
+        "line": 47,
+        "text": "**Every plan MUST start with this header:**"
+      },
+      {
+        "line": 52,
+        "text": "> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking."
+      },
+      {
+        "line": 140,
+        "text": "- **REQUIRED SUB-SKILL:** Use superpowers:subagent-driven-development"
+      },
+      {
+        "line": 144,
+        "text": "- **REQUIRED SUB-SKILL:** Use superpowers:executing-plans"
+      }
+    ]
+  },
+  {
+    "path": "D:\\0-Codex\\CodexData\\skills\\writing-skills\\SKILL.md",
+    "lines": 655,
+    "modified": true,
+    "signals": [
+      {
+        "line": 18,
+        "text": "**REQUIRED BACKGROUND:** You MUST understand superpowers:test-driven-development before using this skill. That skill defines the fundamental RED-GREEN-REFACTOR cycle. This skill adapts TDD to documentation."
+      },
+      {
+        "line": 78,
+        "text": "    SKILL.md              # Main reference (required)"
+      },
+      {
+        "line": 240,
+        "text": "Always use subagents (50-100x context savings). REQUIRED: Use [other-skill-name] for workflow."
+      },
+      {
+        "line": 283,
+        "text": "- ✅ Good: `**REQUIRED SUB-SKILL:** Use superpowers:test-driven-development`"
+      },
+      {
+        "line": 284,
+        "text": "- ✅ Good: `**REQUIRED BACKGROUND:** You MUST understand superpowers:systematic-debugging`"
+      },
+      {
+        "line": 285,
+        "text": "- ❌ Bad: `See skills/testing/test-driven-development` (unclear if required)"
+      },
+      {
+        "line": 307,
+        "text": "- Process loops where you might stop too early"
+      },
+      {
+        "line": 393,
+        "text": "**REQUIRED BACKGROUND:** The superpowers:test-driven-development skill explains why this matters. Same principles apply to documentation."
+      },
+      {
+        "line": 514,
+        "text": "## Red Flags - STOP and Start Over"
+      },
+      {
+        "line": 544,
+        "text": "This is \"watch the test fail\" - you must see what agents naturally do before writing the skill."
+      },
+      {
+        "line": 583,
+        "text": "## STOP: Before Moving to Next Skill"
+      },
+      {
+        "line": 585,
+        "text": "**After writing ANY skill, you MUST STOP and complete the deployment process.**"
+      }
+    ]
+  },
+  {
+    "path": "D:\\0-Codex\\CodexData\\skills\\z-video-downloader\\SKILL.md",
+    "lines": 111,
+    "modified": false,
+    "signals": [
+      {
+        "line": 80,
+        "text": "1. 先确认用户给的是视频链接或视频直链；如果是网页素材采集、正文和图片也要保存，改用 `1-web-pack`。"
+      },
+      {
+        "line": 85,
+        "text": "6. 如果用户给的是合集、播放列表、UP 主空间、频道页，先确认用户确实要批量下载，再使用 `--playlist`。"
+      }
+    ]
+  },
+  {
+    "path": "C:\\Users\\刘存安\\.agents\\skills\\feishu-cli-structured-sync\\SKILL.md",
+    "lines": 102,
+    "modified": false,
+    "signals": [
+      {
+        "line": 51,
+        "text": "2. Store only minimum required fields."
+      },
+      {
+        "line": 52,
+        "text": "3. Restrict table permissions by role."
+      },
+      {
+        "line": 81,
+        "text": "- `--json invalid JSON file path ... must be a relative path`"
+      }
+    ]
+  },
+  {
+    "path": "C:\\Users\\刘存安\\.agents\\skills\\feishu-cli-wish-sync-integration\\SKILL.md",
+    "lines": 24,
+    "modified": false,
+    "signals": []
+  },
+  {
+    "path": "C:\\Users\\刘存安\\.agents\\skills\\frontend-design\\SKILL.md",
+    "lines": 42,
+    "modified": false,
+    "signals": []
+  },
+  {
+    "path": "C:\\Users\\刘存安\\.agents\\skills\\storage-analyzer\\SKILL.md",
+    "lines": 104,
+    "modified": true,
+    "signals": [
+      {
+        "line": 24,
+        "text": "- **删除命令只展示，不执行。** 报告里给出的清理命令是供用户自己在终端确认后运行的。即使用户在对话里说\"帮我删\"，也要先停下确认（命中全局红线：删除文件必须先问），不要直接代跑。"
+      }
+    ]
+  }
+]

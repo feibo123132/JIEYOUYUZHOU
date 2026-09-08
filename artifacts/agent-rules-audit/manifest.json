@@ -1,0 +1,130 @@
+[
+  {
+    "target": "D:\\0-Codex\\CodexData\\AGENTS.md",
+    "file": "AGENTS.md",
+    "before": "6c24dfe95497a66704513e42daff91d3395feaff18f32f97ebc974660f19a297",
+    "after": "2f9fd8641af9613beb4c81ec0781185f989c33457e1bcf85803655288fc55262",
+    "beforeBytes": 2165,
+    "afterBytes": 3629
+  },
+  {
+    "target": "D:\\0-Codex\\CodexData\\skills\\using-superpowers\\SKILL.md",
+    "file": "using-superpowers.md",
+    "before": "5fa548a85ce639dc6a2ea53607f9d405363c9b935004d0d95dc16e9629752d00",
+    "after": "ee2b6a4a6a1755545b05c242a218d9108709ea63420f6e3a77d05c9f157d9a4d",
+    "beforeBytes": 5219,
+    "afterBytes": 830
+  },
+  {
+    "target": "D:\\0-Codex\\CodexData\\skills\\brainstorming\\SKILL.md",
+    "file": "brainstorming.md",
+    "before": "58353e42ac33396a4b3cc62e69df35f3d3f1d18e60877bf39d492c77dc6a928d",
+    "after": "3a30bee9b9c82f0e33f32986571ab797f6dde4db2c07bff2f3127d40a81a3ad5",
+    "beforeBytes": 10571,
+    "afterBytes": 830
+  },
+  {
+    "target": "D:\\0-Codex\\CodexData\\skills\\writing-plans\\SKILL.md",
+    "file": "writing-plans.md",
+    "before": "d936159ad11f2e79ba8ae8b8653f87bb924ddaf78ae11dc3a424b4032ad1bd23",
+    "after": "e014b7d76c4d7910a37cb658e72455b36393f0c49f57eb8c20f6ae7d42a44fc5",
+    "beforeBytes": 5399,
+    "afterBytes": 675
+  },
+  {
+    "target": "D:\\0-Codex\\CodexData\\skills\\executing-plans\\SKILL.md",
+    "file": "executing-plans.md",
+    "before": "a711f83fb762e2ea0fa151f598893da9911a408895c91cc7a7e0770dd59a27b3",
+    "after": "dc57df9465567d8bd3cc0ee5aedfbcbc14e1a89268d0577aa32cae659831507b",
+    "beforeBytes": 2459,
+    "afterBytes": 602
+  },
+  {
+    "target": "D:\\0-Codex\\CodexData\\skills\\test-driven-development\\SKILL.md",
+    "file": "test-driven-development.md",
+    "before": "7dee67b4af6bdccc7a914ca34533184d64592d0f5b23aeae631538168db14994",
+    "after": "950f792e8f26ec569e68c60e628a3ed60cdec43a34407a99de83bfbc31d63d70",
+    "beforeBytes": 9867,
+    "afterBytes": 800
+  },
+  {
+    "target": "D:\\0-Codex\\CodexData\\skills\\verification-before-completion\\SKILL.md",
+    "file": "verification-before-completion.md",
+    "before": "ea52d15aabaf72bc6b558efe2c126f161b53961090ddcd712000273bfe8c7b6c",
+    "after": "930e89eaf88e559d2386c00e286d6d8666ac7d70391429f8bffbeea9c90dad96",
+    "beforeBytes": 4201,
+    "afterBytes": 745
+  },
+  {
+    "target": "D:\\0-Codex\\CodexData\\skills\\using-git-worktrees\\SKILL.md",
+    "file": "using-git-worktrees.md",
+    "before": "de9dcde34840eee074047ec327d4ea6ca4954c5a73a6d874dc48f25fe46c9e7c",
+    "after": "9f951fe270f3f2b10b439fa72eb1b4a1f832109073f92958c243a26669e385bd",
+    "beforeBytes": 5635,
+    "afterBytes": 949
+  },
+  {
+    "target": "D:\\0-Codex\\CodexData\\skills\\subagent-driven-development\\SKILL.md",
+    "file": "subagent-driven-development.md",
+    "before": "081ad3869e55c80bf8f890b4768a90c0e8057daf94b1b6fadebfc85ea5b8304a",
+    "after": "cfd42a432f985147d6b40041bab4f715a12a67cd816f37b2e3d1f54aed922e5a",
+    "beforeBytes": 12139,
+    "afterBytes": 808
+  },
+  {
+    "target": "D:\\0-Codex\\CodexData\\skills\\dispatching-parallel-agents\\SKILL.md",
+    "file": "dispatching-parallel-agents.md",
+    "before": "76806091c7f923ba2596546b19cccd98a08e57a68745df77c3a7b998fe838e2b",
+    "after": "307df28163f46af0c4e50ffc19430ec126bb42d01c4defe3574a3acecaf8be2c",
+    "beforeBytes": 6441,
+    "afterBytes": 651
+  },
+  {
+    "target": "D:\\0-Codex\\CodexData\\skills\\requesting-code-review\\SKILL.md",
+    "file": "requesting-code-review.md",
+    "before": "a5ff68586ccf62d1803cedeb71d60fd96ec05591d29c8d123196117eefd34cd0",
+    "after": "a62dd106304a3a2862dd9657cc8c7c87ba9e306f4dcf57f59a399f14f9d1889b",
+    "beforeBytes": 2935,
+    "afterBytes": 716
+  },
+  {
+    "target": "D:\\0-Codex\\CodexData\\skills\\receiving-code-review\\SKILL.md",
+    "file": "receiving-code-review.md",
+    "before": "c9382e92b8f32363566068ecfed19d3b2651eaf40d3942b24840f839dedfc406",
+    "after": "a89c88610136bacf4e4417d8f5f982cdb027550b0cc4ebd218ea038837d599be",
+    "beforeBytes": 6314,
+    "afterBytes": 604
+  },
+  {
+    "target": "D:\\0-Codex\\CodexData\\skills\\finishing-a-development-branch\\SKILL.md",
+    "file": "finishing-a-development-branch.md",
+    "before": "dd2f82c6dc8582b621f9eb57fcb65f557f88eadf872727ac81d0840ae12c504e",
+    "after": "8efbc69a7adc839c1d97c0ed9195070507a9c28180dd8c3c1d1fbdcb3cb2b62c",
+    "beforeBytes": 4250,
+    "afterBytes": 754
+  },
+  {
+    "target": "D:\\0-Codex\\CodexData\\skills\\systematic-debugging\\SKILL.md",
+    "file": "systematic-debugging.md",
+    "before": "4999cb851360485eca5074e727bbdd62ef20549c5d5b01216fcbf5831badb473",
+    "after": "a095cf9e2b06e20c4abfab74b76392ed8744f0086433b5a6edce87fd755e4452",
+    "beforeBytes": 9884,
+    "afterBytes": 848
+  },
+  {
+    "target": "D:\\0-Codex\\CodexData\\skills\\writing-skills\\SKILL.md",
+    "file": "writing-skills.md",
+    "before": "d83a09d6a1c6976f6cc2f40addeae653a4a6eb5903097ebc365d90242e00e379",
+    "after": "9ba7b4af8cc08e2d4747f5e8b6d099d02fac7e0b80e85806492fa4702e431c96",
+    "beforeBytes": 22465,
+    "afterBytes": 890
+  },
+  {
+    "target": "C:\\Users\\刘存安\\.agents\\skills\\storage-analyzer\\SKILL.md",
+    "file": "storage-analyzer.md",
+    "before": "4b41cc77494638ee0f010f5c50b8015e4dff82e522c9184d4bbeba14b776eae4",
+    "after": "7d3000cb378911d0b1b4ca08d569c052aa294a605b661c5b5742a9cf48f3eea6",
+    "beforeBytes": 11410,
+    "afterBytes": 11446
+  }
+]

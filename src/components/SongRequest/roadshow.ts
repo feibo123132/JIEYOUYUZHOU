@@ -12,6 +12,7 @@ export interface RoadshowSong {
   title: string;
   artist: string;
   source: 'catalog' | 'manual';
+  fixedBonus?: boolean;
 }
 
 export interface RecognitionAttempt {
@@ -114,6 +115,27 @@ export const groupRoadshowRecognitionSongs = (
 
 const normalize = (value: string) => value.trim().toLocaleLowerCase().replace(/\s+/g, ' ');
 
+export const addFixedQuizSong = (record: RoadshowRecord, song: RoadshowSong): RoadshowRecord => {
+  const matches = (item: RoadshowSong) => item.id === song.id
+    || Boolean(item.catalogId && item.catalogId === song.catalogId)
+    || (normalize(item.title) === normalize(song.title) && normalize(item.artist) === normalize(song.artist));
+  const exists = record.recognitionSongs.some(matches);
+  if (!exists && record.recognitionSongs.length >= 100) throw new Error('本场识曲歌曲已达100首，请先移除部分歌曲。');
+  return { ...record, recognitionSongs: deduplicateRoadshowSongs(exists
+    ? record.recognitionSongs.map((item) => matches(item) ? { ...item, fixedBonus: true } : item)
+    : [...record.recognitionSongs, { ...song, fixedBonus: true }]) };
+};
+
+export const removeFixedQuizSong = (record: RoadshowRecord, songId: string): RoadshowRecord => ({
+  ...record,
+  recognitionSongs: record.recognitionSongs.map((song) => {
+    if (song.id !== songId) return song;
+    const next = { ...song };
+    delete next.fixedBonus;
+    return next;
+  }),
+});
+
 // 历史记录可能被重复导入；先去重再分组、计数和分页，避免重复 React key。
 export const deduplicateRoadshowSongs = (songs: RoadshowSong[]): RoadshowSong[] => {
   const ids = new Set<string>();
@@ -164,6 +186,7 @@ const isSong = (value: unknown): value is RoadshowSong => {
   if (!value || typeof value !== 'object') return false;
   const song = value as Partial<RoadshowSong>;
   return typeof song.id === 'string'
+    && (song.fixedBonus === undefined || typeof song.fixedBonus === 'boolean')
     && typeof song.title === 'string'
     && typeof song.artist === 'string'
     && (song.source === 'catalog' || song.source === 'manual');

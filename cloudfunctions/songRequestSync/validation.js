@@ -72,6 +72,10 @@ const validateSong = (value) => {
     source,
   };
   if (source === 'catalog') song.catalogId = cleanText(value.catalogId, 80, 'INVALID_SONG');
+  if (value.fixedBonus !== undefined) {
+    if (typeof value.fixedBonus !== 'boolean') throw new Error('INVALID_SONG');
+    song.fixedBonus = value.fixedBonus;
+  }
   return song;
 };
 

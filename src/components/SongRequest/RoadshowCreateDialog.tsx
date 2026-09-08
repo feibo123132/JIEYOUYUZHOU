@@ -44,7 +44,7 @@ export default function RoadshowCreateDialog({ draft, records, assignments, onCa
           <div aria-live="polite" className="mt-3 space-y-2 text-xs leading-6 text-white/50">
             {source && <p>来自：{source.title} · {source.date.replace(/-/g, '/')}</p>}
             {!inherit ? <p>本场从空歌单开始，之后可自行添加歌曲。</p> : songs.length ? <>
-              <p>共 {songs.length} 首：{QUIZ_LEVELS.map((level) => `${level.label} ${groups[level.id].length}`).join(' · ')}</p>
+              <p>共 {songs.length} 首：{QUIZ_LEVELS.map((level) => `${level.label} ${groups[level.id].length}`).join(' · ')}{songs.some(song => song.fixedBonus) && ` · 固定送分 ${songs.filter(song => song.fixedBonus).length}`}</p>
               <p>已经玩过的歌曲也会保留，本场答题记录从零开始。</p>
             </> : <p>{source ? '上一场暂无歌曲可继承，本场从空歌单开始。' : '暂无可继承的路演，本场从空歌单开始。'}</p>}
           </div>
