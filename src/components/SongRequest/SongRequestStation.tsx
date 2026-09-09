@@ -23,7 +23,7 @@ import {
   pullCloudQuizAssignments, pullPublicPracticeRanking, pullPublicQuizRanking, pullRoadshows, pullSongRecords, pullSongScores, pushArtistSettings,
   saveCloudFeaturedSongIds, saveCloudQuizAssignments, saveRoadshow, syncSongScoreToCloud, deleteSongScore,
 } from './songRequestCloud';
-import RoadshowPanel from './RoadshowPanel';
+import RoadshowPanel, { type RoadshowEditorTab } from './RoadshowPanel';
 import SongDetailPanel from './SongDetailPanel';
 import PopularSongBarrage from './PopularSongBarrage';
 import { createInitialBarragePreferences, setBarragePreference } from '../StarrySky/barragePreferences';
@@ -210,6 +210,8 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   const [rankingArtistQuery, setRankingArtistQuery] = useState('');
   const [selectedArtist, setSelectedArtist] = useState<string | null>(null);
   const [selectedSong, setSelectedSong] = useState<Song | null>(null);
+  // Keep the source tab while the archive panel is unmounted for song details.
+  const [roadshowEditorTab, setRoadshowEditorTab] = useState<RoadshowEditorTab>('performance');
   const [popularActionSong, setPopularActionSong] = useState<Song | null>(null);
   const [query, setQuery] = useState('');
   const [artistLanguageFilter, setArtistLanguageFilter] = useState<ArtistLanguageFilter>('chinese');
@@ -2195,6 +2197,8 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
 
             {activeSection === 'roadshows' && (
               <RoadshowPanel
+                editorTab={roadshowEditorTab}
+                onEditorTabChange={setRoadshowEditorTab}
                 onIncrementSingCount={(songId, delta = 1) => {
                   setPendingSingCounts((current) => {
                     const next = { ...current, [songId]: Math.max(0, (current[songId] ?? 0) + delta) };

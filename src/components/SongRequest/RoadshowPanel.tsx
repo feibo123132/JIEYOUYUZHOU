@@ -60,7 +60,11 @@ interface Credentials {
   password: string;
 }
 
+export type RoadshowEditorTab = 'performance' | 'recognition' | 'feelings';
+
 interface RoadshowPanelProps {
+  editorTab: RoadshowEditorTab;
+  onEditorTabChange: (tab: RoadshowEditorTab) => void;
   onIncrementSingCount?: (songId: string, delta?: 1 | -1) => void;
   pendingSingCounts?: Record<string, number>;
   defaultAlias?: string;
@@ -114,6 +118,8 @@ const resolveRoadshowSong = (songs: Song[], roadshowSong: RoadshowSong): Song =>
 );
 
 const RoadshowPanel = ({
+  editorTab,
+  onEditorTabChange,
   onIncrementSingCount = () => undefined,
   pendingSingCounts = {},
   defaultAlias = '',
@@ -314,6 +320,8 @@ const RoadshowPanel = ({
   if (editing) {
     return (
       <RoadshowEditor
+        editorTab={editorTab}
+        setEditorTab={onEditorTabChange}
         onIncrementSingCount={onIncrementSingCount}
         pendingSingCounts={pendingSingCounts}
         credentials={credentials}
@@ -389,6 +397,8 @@ const RoadshowPanel = ({
 };
 
 interface EditorProps {
+  editorTab: RoadshowEditorTab;
+  setEditorTab: (tab: RoadshowEditorTab) => void;
   onIncrementSingCount: (songId: string, delta?: 1 | -1) => void;
   pendingSingCounts: Record<string, number>;
   credentials: Credentials;
@@ -410,9 +420,8 @@ interface EditorProps {
   onLock: () => void;
 }
 
-const RoadshowEditor = ({ onIncrementSingCount, pendingSingCounts, credentials, record, allRecords, songRecords, catalogSongs, busy, message, quizAssignments, canManageFeaturedSongs = false, onChange, onBack, onSwitch, onSave, onRecordAttempt, onOpenSongDetail, onDelete, onLock }: EditorProps) => {
+const RoadshowEditor = ({ editorTab, setEditorTab, onIncrementSingCount, pendingSingCounts, credentials, record, allRecords, songRecords, catalogSongs, busy, message, quizAssignments, canManageFeaturedSongs = false, onChange, onBack, onSwitch, onSave, onRecordAttempt, onOpenSongDetail, onDelete, onLock }: EditorProps) => {
   const updateList = (key: 'performanceSongs' | 'recognitionSongs', songs: RoadshowSong[]) => onChange({ ...record, [key]: songs });
-  const [editorTab, setEditorTab] = useState<'performance' | 'recognition' | 'feelings'>('performance');
   return (
     <fieldset disabled={busy} className="min-w-0 space-y-5">
       <div className="rounded-[1.75rem] border border-orange-200/15 bg-[#120b08]/85 p-5 backdrop-blur-xl sm:p-7">

@@ -1558,7 +1558,7 @@ test('路演档案提供独立感受页并保留每场感受', async () => {
 
   const source = readFileSync(roadshowPanelUrl, 'utf8')
   const editor = source.slice(source.indexOf('const RoadshowEditor'))
-  assert.match(editor, /useState<'performance' \| 'recognition' \| 'feelings'>/)
+  assert.match(source, /type RoadshowEditorTab = 'performance' \| 'recognition' \| 'feelings'/)
   assert.match(editor, /data-roadshow-editor-tabs[^>]*grid-cols-3/)
   assert.match(editor, />路演感受</)
   assert.match(editor, /aria-label="记录本次路演感受"/)
