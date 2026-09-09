@@ -1,7 +1,7 @@
 import type { Song } from './songCatalog.ts';
 
 export type VoteCounts = Record<string, number>;
-export interface EditableCatalog { version: 7; artists: string[]; songs: Song[]; }
+export interface EditableCatalog { version: 8; artists: string[]; songs: Song[]; }
 
 interface ReadableStorage {
   getItem: (key: string) => string | null;
@@ -51,7 +51,7 @@ export const orderPersonalRankingItems = <T extends object>(
 };
 
 export const createEditableCatalog = (songs: Song[]): EditableCatalog => ({
-  version: 7,
+  version: 8,
   artists: [...new Set(songs.map((song) => song.artist))],
   songs: [...songs],
 });
@@ -183,8 +183,18 @@ export const loadEditableCatalog = (storage: ReadableStorage, fallbackSongs: Son
     if (!Array.isArray(parsed.artists) || !Array.isArray(parsed.songs)
       || !parsed.artists.every((artist) => typeof artist === 'string' && artist.trim())
       || !parsed.songs.every(isSong)) return createEditableCatalog(fallbackSongs);
+    if (parsed.version === 8) {
+      return { version: 8, artists: [...new Set(parsed.artists)], songs: parsed.songs };
+    }
     if (parsed.version === 7) {
-      return { version: 7, artists: [...new Set(parsed.artists)], songs: parsed.songs };
+      const addedIds = new Set(['xs-huan-ting', 'xs-ban-cheng-yan-sha', 'xs-nan-shan-yi']);
+      const additions = fallbackSongs.filter((song) => addedIds.has(song.id)
+        && !parsed.songs!.some((cached: Song) => cached.id === song.id || (cached.title === song.title && cached.artist === song.artist)));
+      return {
+        version: 8,
+        artists: [...new Set([...parsed.artists, ...additions.map((song) => song.artist)])],
+        songs: [...parsed.songs, ...additions],
+      };
     }
     if (parsed.version === 1 || parsed.version === 2 || parsed.version === 3 || parsed.version === 4 || parsed.version === 5 || parsed.version === 6) {
       const defaultCatalog = createEditableCatalog(fallbackSongs);
@@ -197,7 +207,7 @@ export const loadEditableCatalog = (storage: ReadableStorage, fallbackSongs: Son
         return cachedSong && cachedSong.artist !== song.artist ? [cachedSong.artist] : [];
       }));
       return {
-        version: 7,
+        version: 8,
         artists: [...new Set([
           ...defaultCatalog.artists,
           ...parsed.artists.filter((artist) => !renamedDefaultArtists.has(artist) || customSongArtists.has(artist)),

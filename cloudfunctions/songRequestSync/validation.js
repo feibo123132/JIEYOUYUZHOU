@@ -1,5 +1,8 @@
 const { validateNotebookPages } = require('./feelingsNotebook');
+const { validateSongGroups } = require('./songGroups');
 const ACTIONS = new Set([
+  'songGroups:pull',
+  'songGroups:save',
   'feelingsNotebook:pull',
   'feelingsNotebook:save',
   'votes:pull',
@@ -141,7 +144,18 @@ const validateSongRecord = (value) => {
     const feelings = cleanOptionalText(value.feelings, 2000, 'INVALID_SONG_RECORD');
     const problems = cleanOptionalText(value.problems, 2000, 'INVALID_SONG_RECORD');
     const improvements = cleanOptionalText(value.improvements, 2000, 'INVALID_SONG_RECORD');
-    return { ...base, kind: 'practice', matchScore: value.matchScore, feelings, problems, improvements };
+    if (value.needsMorePractice !== undefined && typeof value.needsMorePractice !== 'boolean') throw new Error('INVALID_SONG_RECORD');
+    if (value.needsImprovement !== undefined && typeof value.needsImprovement !== 'boolean') throw new Error('INVALID_SONG_RECORD');
+    return {
+      ...base,
+      kind: 'practice',
+      matchScore: value.matchScore,
+      feelings,
+      problems,
+      improvements,
+      needsMorePractice: Boolean(value.needsMorePractice),
+      needsImprovement: Boolean(value.needsImprovement),
+    };
   }
   if (value.kind === 'roadshow') {
     return {
@@ -251,7 +265,7 @@ function validateRequest(event) {
   }
   if (event.action === 'songRecords:publicRanking'
     || event.action === 'artistSettings:pull' || event.action === 'featuredSongs:pull'
-    || event.action === 'quizLibrary:pull') return { action: event.action };
+    || event.action === 'quizLibrary:pull' || event.action === 'songGroups:pull') return { action: event.action };
   if (event.action === 'votes:increment') {
     const songId = cleanText(event.songId, 80, 'INVALID_SONG_ID');
     if (!/^[a-z0-9-]+$/i.test(songId)) throw new Error('INVALID_SONG_ID');
@@ -261,6 +275,10 @@ function validateRequest(event) {
   const alias = cleanText(event.alias, 30, 'INVALID_ALIAS');
   if (typeof event.password !== 'string' || event.password.length < 6 || event.password.length > 64) throw new Error('INVALID_PASSWORD');
   const base = { action: event.action, alias, password: event.password };
+  if (event.action === 'songGroups:save') {
+    if (!Number.isInteger(event.expectedRevision) || event.expectedRevision < 0) throw new Error('INVALID_SONG_GROUPS');
+    return { ...base, expectedRevision: event.expectedRevision, groups: validateSongGroups(event.groups) };
+  }
   if (event.action === 'feelingsNotebook:save') {
     if (!Number.isInteger(event.expectedRevision) || event.expectedRevision < 0) throw new Error('INVALID_NOTEBOOK');
     return { ...base, expectedRevision: event.expectedRevision, pages: validateNotebookPages(event.pages) };

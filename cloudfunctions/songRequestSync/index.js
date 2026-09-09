@@ -1,6 +1,7 @@
 const crypto = require('node:crypto');
 const { validateRequest } = require('./validation');
 const { legacyNotebook, saveNotebookAtomically } = require('./feelingsNotebook');
+const { saveSongGroupsAtomically } = require('./songGroups');
 
 const PUBLIC_ERRORS = new Set([
   'INVALID_ACTION', 'PAYLOAD_TOO_LARGE', 'INVALID_SONG_ID', 'INVALID_ALIAS', 'INVALID_PASSWORD',
@@ -12,6 +13,7 @@ const PUBLIC_ERRORS = new Set([
   'SCORE_UPLOAD_FAILED',
   'INVALID_LOCATION',
   'INVALID_NOTEBOOK',
+  'INVALID_SONG_GROUPS',
 ]);
 
 const FEATURED_SONGS_OWNER_ALIAS = '2421415030@qq.com';
@@ -205,6 +207,10 @@ function createHandler(store) {
         const assignments = owner?.quizLibraryAssignments;
         return { ok: true, assignments: assignments && typeof assignments === 'object' && !Array.isArray(assignments) ? assignments : null };
       }
+      if (request.action === 'songGroups:pull') {
+        const saved = await store.getWorkspace('shared-song-groups');
+        return { ok: true, snapshot: saved ? { revision: saved.revision, groups: saved.groups } : { revision: 0, groups: [] } };
+      }
       if (request.action === 'votes:increment') {
         const owner = await store.getWorkspace(workspaceId(FEATURED_SONGS_OWNER_ALIAS));
         const location = ROADSHOW_LOCATION_KEYS[request.location] ? request.location : latestRoadshowLocation(owner);
@@ -235,6 +241,10 @@ function createHandler(store) {
         throw error;
       }
       const { id, workspace } = authenticated;
+      if (request.action === 'songGroups:save') {
+        if (id !== workspaceId(FEATURED_SONGS_OWNER_ALIAS)) throw new Error('AUTH_FAILED');
+        return { ok: true, snapshot: await store.saveSongGroupsAtomically('shared-song-groups', request.expectedRevision, request.groups) };
+      }
       if (request.action === 'feelingsNotebook:pull') {
         const saved = await store.getWorkspace(`feelings:${id}`);
         return { ok: true, notebook: saved ? { version: 1, revision: saved.revision, pages: saved.pages, updatedAt: saved.updatedAt } : legacyNotebook(workspace.roadshows) };
@@ -383,6 +393,7 @@ exports.main = async (event) => {
       },
       setWorkspace: (id, value) => workspaces.doc(id).set(buildWritableWorkspace(value)),
       saveNotebookAtomically: (id, revision, pages) => saveNotebookAtomically(db, id, revision, pages),
+      saveSongGroupsAtomically: (id, revision, groups) => saveSongGroupsAtomically(db, id, revision, groups),
       setFeaturedSongIds: (id, songIds, updatedAt) => workspaces.doc(id).update({ featuredSongIds: songIds, updatedAt }),
       setQuizLibraryAssignments: (id, assignments, updatedAt) => workspaces.doc(id).update({ quizLibraryAssignments: assignments, updatedAt }),
       getVotes: readVoteCounts,

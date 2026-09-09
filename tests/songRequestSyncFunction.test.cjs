@@ -573,15 +573,30 @@ test('validates private song practice and roadshow record payloads', () => {
   };
 
   assert.equal(validateRequest({ action: 'songRecords:save', ...auth, record: practice }).record.matchScore, 88);
+  assert.deepEqual(
+    {
+      needsMorePractice: validateRequest({ action: 'songRecords:save', ...auth, record: { ...practice, needsMorePractice: true, needsImprovement: true } }).record.needsMorePractice,
+      needsImprovement: validateRequest({ action: 'songRecords:save', ...auth, record: { ...practice, needsMorePractice: true, needsImprovement: true } }).record.needsImprovement,
+    },
+    { needsMorePractice: true, needsImprovement: true },
+  );
+  assert.deepEqual(
+    {
+      needsMorePractice: validateRequest({ action: 'songRecords:save', ...auth, record: practice }).record.needsMorePractice,
+      needsImprovement: validateRequest({ action: 'songRecords:save', ...auth, record: practice }).record.needsImprovement,
+    },
+    { needsMorePractice: false, needsImprovement: false },
+  );
   const roadshowArchive = {
     id: 'roadshow-1', title: '第一次路演', date: '2026-09-05', feelings: '第一次在夜色里和大家合唱。',
     performanceSongs: [], recognitionSongs: [], updatedAt: '2026-09-05T12:00:00.000Z',
   };
   assert.equal(validateRequest({ action: 'roadshows:save', ...auth, record: roadshowArchive }).record.feelings, roadshowArchive.feelings);
-  assert.throws(() => validateRequest({ action: 'roadshows:save', ...auth, record: { ...roadshowArchive, feelings: '感'.repeat(2001) } }), /INVALID_RECORD/);
+  assert.throws(() => validateRequest({ action: 'roadshows:save', ...auth, record: { ...roadshowArchive, feelings: '感'.repeat(10001) } }), /INVALID_RECORD/);
   assert.equal('durationMinutes' in validateRequest({ action: 'songRecords:save', ...auth, record: { ...practice, durationMinutes: 30 } }).record, false);
   assert.equal(validateRequest({ action: 'songRecords:save', ...auth, record: { ...practice, matchScore: 70 } }).record.matchScore, 70);
   assert.deepEqual(validateRequest({ action: 'songRecords:save', ...auth, record: { ...practice, feelings: '', problems: '', improvements: '' } }).record.feelings, '');
+  assert.throws(() => validateRequest({ action: 'songRecords:save', ...auth, record: { ...practice, needsMorePractice: 'true' } }), /INVALID_SONG_RECORD/);
   assert.throws(() => validateRequest({ action: 'songRecords:save', ...auth, record: { ...practice, matchScore: 69 } }), /INVALID_SONG_RECORD/);
   assert.throws(() => validateRequest({ action: 'songRecords:save', ...auth, record: { ...practice, kind: 'roadshow', audienceName: '', feedback: '' } }), /INVALID_SONG_RECORD/);
   assert.equal(validateRequest({ action: 'songRecords:saveBatch', ...auth, records: [practice, { ...practice, id: 'practice-2' }] }).records.length, 2);
@@ -629,6 +644,30 @@ test('roadshow save strips the CloudBase reserved workspace id before writing', 
   assert.deepEqual(buildWritableWorkspace(workspace), { version: 1, alias: 'JIEYOU', roadshows: [] });
   assert.match(readFileSync(functionPath, 'utf8'), /setWorkspace: \(id, value\) => workspaces\.doc\(id\)\.set\(buildWritableWorkspace\(value\)\)/);
 })
+
+test('preserves practice markers through save, reload, edit, and clearing', async () => {
+  const store = memoryStore();
+  const { createHandler } = loadFunction();
+  const handler = createHandler(store);
+  const auth = { alias: 'JIEYOU', password: 'guitar-2026' };
+  await handler({ action: 'roadshows:register', ...auth });
+  for (const [needsMorePractice, needsImprovement] of [[true, false], [false, true], [true, true], [false, false]]) {
+    const record = {
+      id: 'practice-markers', kind: 'practice', songId: 'qing-tian', songTitle: '晴天', songArtist: '周杰伦',
+      occurredAt: '2026-08-25T10:00:00.000Z', matchScore: 88,
+      feelings: '慢练', problems: '', improvements: '', updatedAt: '2026-08-25T10:00:00.000Z',
+      needsMorePractice, needsImprovement,
+    };
+    const saved = await handler({ action: 'songRecords:save', ...auth, record });
+    assert.equal(saved.ok, true);
+    assert.equal(saved.record.needsMorePractice, needsMorePractice);
+    assert.equal(saved.record.needsImprovement, needsImprovement);
+    const reloaded = await handler({ action: 'songRecords:pull', ...auth });
+    assert.equal(reloaded.records.length, 1);
+    assert.equal(reloaded.records[0].needsMorePractice, needsMorePractice);
+    assert.equal(reloaded.records[0].needsImprovement, needsImprovement);
+  }
+});
 
 test('keeps private song records isolated, independent, and soft-deleted', async () => {
   const store = memoryStore();

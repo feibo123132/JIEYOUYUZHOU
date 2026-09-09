@@ -13,6 +13,7 @@ import {
 } from './songScores';
 import type { ArtistSettingsPayload, ArtistSettingsSnapshot } from './artistSettings';
 import type { QuizAssignments } from './songQuizLibrary';
+import type { SongGroupsSnapshot } from './songGroups';
 
 export interface Credentials {
   alias: string;
@@ -74,6 +75,14 @@ export const saveCloudFeaturedSongIds = async (credentials: Credentials, songIds
 export const pullCloudQuizAssignments = async (): Promise<QuizAssignments | null> => (
   await callSync<{ assignments: QuizAssignments | null }>({ action: 'quizLibrary:pull' })
 ).assignments;
+
+export const pullSongGroups = async (): Promise<SongGroupsSnapshot> => (
+  await callSync<{ snapshot: SongGroupsSnapshot }>({ action: 'songGroups:pull' })
+).snapshot;
+
+export const saveSongGroups = async (credentials: Credentials, snapshot: SongGroupsSnapshot): Promise<SongGroupsSnapshot> => (
+  await callSync<{ snapshot: SongGroupsSnapshot }>({ action: 'songGroups:save', ...credentials, expectedRevision: snapshot.revision, groups: snapshot.groups })
+).snapshot;
 
 export const saveCloudQuizAssignments = async (
   credentials: Credentials,

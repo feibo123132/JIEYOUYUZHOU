@@ -107,6 +107,7 @@ export const groupRoadshowRecognitionSongs = (
     hell: [],
   };
   for (const song of songs) {
+    if (song.fixedBonus) continue;
     const level = song.catalogId ? assignments[song.catalogId] : undefined;
     groups[level ?? 'standard'].push(song);
   }
@@ -319,6 +320,29 @@ export const preserveRecognitionParticipantNames = (
     return participantName ? { ...attempt, participantName } : attempt;
   });
   return { ...saved, recognitionAttempts };
+};
+
+export const summarizePreviousQuizSongs = (attempts: RecognitionAttempt[], currentAttemptIds: string[] = []) => {
+  const excluded = new Set(currentAttemptIds);
+  const seen = new Set<string>();
+  const songs = new Map<string, { title: string; artist: string; count: number }>();
+  for (const attempt of attempts) {
+    if (excluded.has(attempt.id) || seen.has(attempt.id)) continue;
+    seen.add(attempt.id);
+    const key = JSON.stringify([attempt.title.trim(), attempt.artist.trim()]);
+    const song = songs.get(key) ?? { title: attempt.title, artist: attempt.artist, count: 0 };
+    song.count += 1;
+    songs.set(key, song);
+  }
+  return [...songs.values()];
+};
+
+export const nextQuizParticipantName = (records: Pick<RoadshowRecord, 'recognitionAttempts'>[]): string => {
+  const names = new Set(records.flatMap((record) => record.recognitionAttempts ?? [])
+    .map((attempt) => attempt.participantName?.trim().toLocaleLowerCase()).filter(Boolean));
+  let number = names.size + 1;
+  while (names.has(String(number).padStart(3, '0'))) number += 1;
+  return String(number).padStart(3, '0');
 };
 
 export const buildQuizParticipantRanking = (

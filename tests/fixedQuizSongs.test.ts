@@ -6,14 +6,27 @@ const { validateRequest } = createRequire(import.meta.url)('../cloudfunctions/so
 const song = { id: 'catalog:a', catalogId: 'a', title: '小星星', artist: '童谣', source: 'catalog' as const };
 const empty: RoadshowRecord = { id: 'first', title: '第一场', date: '2026-09-08', updatedAt: '', performanceSongs: [], recognitionSongs: [] };
 
-test('送分是独立标签，歌曲同时保留在原难度档且重复添加去重', () => {
+test('固定送分不进入四档分组且重复添加去重', () => {
   const first = addFixedQuizSong({ ...empty, recognitionSongs: [song] }, song);
   assert.equal(first.recognitionSongs.length, 1);
   assert.equal(first.recognitionSongs[0].fixedBonus, true);
-  assert.deepEqual(groupRoadshowRecognitionSongs(first.recognitionSongs, { a: 'warmup' }).warmup, first.recognitionSongs);
+  assert.deepEqual(groupRoadshowRecognitionSongs(first.recognitionSongs, { a: 'warmup' }).warmup, []);
   assert.deepEqual(addFixedQuizSong(first, song), first);
   assert.equal(addFixedQuizSong(empty, song).recognitionSongs.length, 1);
   assert.equal('fixedBonus' in song, false);
+});
+
+test('新增固定送分不改变任何难度档的歌曲和数量', () => {
+  const regular = { ...song, id: 'regular', catalogId: 'regular', title: '普通题目' };
+  const before = { ...empty, recognitionSongs: [regular] };
+  for (const level of ['warmup', 'standard', 'hard', 'hell'] as const) {
+    const assignments = { regular: level, a: level };
+    assert.deepEqual(
+      groupRoadshowRecognitionSongs(addFixedQuizSong(before, song).recognitionSongs, assignments),
+      groupRoadshowRecognitionSongs(before.recognitionSongs, assignments),
+    );
+  }
+  assert.deepEqual(groupRoadshowRecognitionSongs(addFixedQuizSong(empty, song).recognitionSongs, {}).standard, []);
 });
 
 test('从固定送分移除只取消标签，歌曲仍留在原难度档', () => {

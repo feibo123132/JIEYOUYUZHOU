@@ -23,6 +23,8 @@ export interface PracticeRecord extends SongRecordBase {
   feelings: string;
   problems: string;
   improvements: string;
+  needsMorePractice: boolean;
+  needsImprovement: boolean;
 }
 
 export interface SongRoadshowRecord extends SongRecordBase {
@@ -62,7 +64,9 @@ export const isValidSongRecord = (value: unknown): value is SongRecord => {
   if (!commonValid) return false;
   if (record.kind === 'practice') {
     return Number.isInteger(record.matchScore) && Number(record.matchScore) >= 70 && Number(record.matchScore) <= 100
-      && isText(record.feelings, 2000, false) && isText(record.problems, 2000, false) && isText(record.improvements, 2000, false);
+      && isText(record.feelings, 2000, false) && isText(record.problems, 2000, false) && isText(record.improvements, 2000, false)
+      && (record.needsMorePractice === undefined || typeof record.needsMorePractice === 'boolean')
+      && (record.needsImprovement === undefined || typeof record.needsImprovement === 'boolean');
   }
   return record.kind === 'roadshow'
     && isText(record.audienceName, 100, false)
@@ -196,6 +200,8 @@ const cleanSongRecord = (record: SongRecord): SongRecord => {
         feelings: record.feelings,
         problems: record.problems,
         improvements: record.improvements,
+        needsMorePractice: Boolean(record.needsMorePractice),
+        needsImprovement: Boolean(record.needsImprovement),
       }
     : {
         ...base,

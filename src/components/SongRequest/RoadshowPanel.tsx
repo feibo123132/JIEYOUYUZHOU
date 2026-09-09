@@ -6,8 +6,11 @@ import DailyPracticePanel from './DailyPracticePanel';
 import RoadshowFeelingsNotebook from './RoadshowFeelingsNotebook';
 import RoadshowCreateDialog from './RoadshowCreateDialog';
 import FixedQuizSongs from './FixedQuizSongs';
+import SharedSongGroups from './SharedSongGroups';
 import {
   buildQuizParticipantRanking,
+  nextQuizParticipantName,
+  summarizePreviousQuizSongs,
   countRecognitionAttemptsForSong,
   findRecognitionUsageRoadshows,
   findSongAppearances,
@@ -58,6 +61,8 @@ interface Credentials {
 }
 
 interface RoadshowPanelProps {
+  onIncrementSingCount?: (songId: string, delta?: 1 | -1) => void;
+  pendingSingCounts?: Record<string, number>;
   defaultAlias?: string;
   songs?: Song[];
   records?: SongRecord[];
@@ -109,6 +114,8 @@ const resolveRoadshowSong = (songs: Song[], roadshowSong: RoadshowSong): Song =>
 );
 
 const RoadshowPanel = ({
+  onIncrementSingCount = () => undefined,
+  pendingSingCounts = {},
   defaultAlias = '',
   songs = SONGS,
   records: songRecords = [],
@@ -307,6 +314,8 @@ const RoadshowPanel = ({
   if (editing) {
     return (
       <RoadshowEditor
+        onIncrementSingCount={onIncrementSingCount}
+        pendingSingCounts={pendingSingCounts}
         credentials={credentials}
         record={editing}
         allRecords={records}
@@ -380,6 +389,8 @@ const RoadshowPanel = ({
 };
 
 interface EditorProps {
+  onIncrementSingCount: (songId: string, delta?: 1 | -1) => void;
+  pendingSingCounts: Record<string, number>;
   credentials: Credentials;
   record: RoadshowRecord;
   allRecords: RoadshowRecord[];
@@ -399,7 +410,7 @@ interface EditorProps {
   onLock: () => void;
 }
 
-const RoadshowEditor = ({ credentials, record, allRecords, songRecords, catalogSongs, busy, message, quizAssignments, canManageFeaturedSongs = false, onChange, onBack, onSwitch, onSave, onRecordAttempt, onOpenSongDetail, onDelete, onLock }: EditorProps) => {
+const RoadshowEditor = ({ onIncrementSingCount, pendingSingCounts, credentials, record, allRecords, songRecords, catalogSongs, busy, message, quizAssignments, canManageFeaturedSongs = false, onChange, onBack, onSwitch, onSave, onRecordAttempt, onOpenSongDetail, onDelete, onLock }: EditorProps) => {
   const updateList = (key: 'performanceSongs' | 'recognitionSongs', songs: RoadshowSong[]) => onChange({ ...record, [key]: songs });
   const [editorTab, setEditorTab] = useState<'performance' | 'recognition' | 'feelings'>('performance');
   return (
@@ -438,7 +449,7 @@ const RoadshowEditor = ({ credentials, record, allRecords, songRecords, catalogS
         </div>
       </div>
 
-      {editorTab === 'performance' && <SongListEditor key={record.id} title="路演歌曲" description="本次准备演唱的歌曲" songs={record.performanceSongs} allRecords={allRecords} recordId={record.id} songRecords={songRecords} catalogSongs={catalogSongs} onChange={(songs) => updateList('performanceSongs', songs)} onSave={(updatedSongs) => onSave({ ...record, performanceSongs: updatedSongs })} onOpenSongDetail={onOpenSongDetail} />}
+      {editorTab === 'performance' && <SongListEditor key={record.id} onIncrementSingCount={onIncrementSingCount} pendingSingCounts={pendingSingCounts} title="路演歌曲" description="本次准备演唱的歌曲" songs={record.performanceSongs} allRecords={allRecords} recordId={record.id} songRecords={songRecords} catalogSongs={catalogSongs} onChange={(songs) => updateList('performanceSongs', songs)} onSave={(updatedSongs) => onSave({ ...record, performanceSongs: updatedSongs })} onOpenSongDetail={onOpenSongDetail} />}
       {editorTab === 'recognition' && <RecognitionSongListEditor key={record.id} catalogSongs={catalogSongs} record={record} assignments={quizAssignments} allRecords={allRecords} busy={busy} onSave={onSave} onRecordAttempt={onRecordAttempt} onOpenSongDetail={onOpenSongDetail} />}
       {editorTab === 'feelings' && (
         <RoadshowFeelingsNotebook key={credentials.alias} credentials={credentials} records={[...allRecords.filter(item => item.id !== record.id), record]} />
@@ -453,6 +464,8 @@ const RoadshowEditor = ({ credentials, record, allRecords, songRecords, catalogS
 };
 
 interface SongListEditorProps {
+  onIncrementSingCount: (songId: string, delta?: 1 | -1) => void;
+  pendingSingCounts: Record<string, number>;
   title: string;
   description: string;
   songs: RoadshowSong[];
@@ -495,9 +508,9 @@ const renderMatchScore = (score: number | null) => {
   return <span className={`shrink-0 text-[10px] font-black ${MATCH_TONE_CLASS[quality.tone]}`}>{quality.label} {score}</span>;
 };
 
-const SongListEditor = ({ title, description, songs, allRecords, recordId, songRecords, catalogSongs, onChange, onSave, onOpenSongDetail }: SongListEditorProps) => {
+const SongListEditor = ({ onIncrementSingCount, pendingSingCounts, title, description, songs, allRecords, recordId, songRecords, catalogSongs, onChange, onSave, onOpenSongDetail }: SongListEditorProps) => {
   const [tierPages, setTierPages] = useState<Record<PerformanceMatchTier, number>>({ rareLegend: 1, fineDeep: 1, fineLight: 1, good: 1 });
-  const [unrankedPage, setUnrankedPage] = useState(1);
+  const [showSungCounts, setShowSungCounts] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerQuery, setPickerQuery] = useState('');
   const [songEditMode, setSongEditMode] = useState(false);
@@ -556,7 +569,12 @@ const SongListEditor = ({ title, description, songs, allRecords, recordId, songR
             {song.artist || '未填写歌手'}
           </small>
         </button>
-        <SongAppearanceBadge appearances={appearances} />
+        {showSungCounts ? (
+          <div className="flex shrink-0 items-center gap-1">
+            <button type="button" aria-label={`${song.title}演唱次数减1`} title="撤回1次" disabled={(pendingSingCounts[resolveRoadshowSong(catalogSongs, song).id] ?? 0) <= 0} onClick={() => onIncrementSingCount(resolveRoadshowSong(catalogSongs, song).id, -1)} className="grid h-7 w-7 place-items-center rounded-full border border-orange-200/20 bg-orange-300/10 text-sm font-bold text-orange-200 transition enabled:hover:bg-orange-300/20 disabled:cursor-default disabled:opacity-25">−</button>
+            <button type="button" aria-label={`${song.title}演唱次数加1`} title="点击增加1次" onClick={() => onIncrementSingCount(resolveRoadshowSong(catalogSongs, song).id)} className="shrink-0 rounded-xl border border-orange-200/20 bg-orange-300/10 px-3 py-1.5 text-xs font-black text-orange-200 transition hover:bg-orange-300/20 hover:text-orange-100">{pendingSingCounts[resolveRoadshowSong(catalogSongs, song).id] ?? 0}次</button>
+          </div>
+        ) : <SongAppearanceBadge appearances={appearances} />}
         {songEditMode && (
           <button type="button" onClick={(event) => { event.stopPropagation(); onChange(songs.filter((item) => item.id !== song.id)); }} aria-label={`移除${song.title}`} className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-white/30 hover:bg-red-300/10 hover:text-red-200">
             <X className="h-4 w-4" />
@@ -568,12 +586,15 @@ const SongListEditor = ({ title, description, songs, allRecords, recordId, songR
 
   return (
     <section className="rounded-[1.75rem] border border-white/10 bg-[#09090c]/85 p-5 backdrop-blur-xl sm:p-7">
-      <div className="flex items-end justify-between gap-4">
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h3 className="font-serif text-2xl font-black">{title}</h3>
           <p className="mt-1 text-xs text-white/35">{description}</p>
         </div>
         <div className="flex items-center gap-3">
+          <button type="button" aria-label="切换路演次数与已唱次数" aria-pressed={showSungCounts} title={showSungCounts ? '点击显示加入路演次数' : '点击显示点歌榜已唱次数'} onClick={() => setShowSungCounts((current) => !current)} className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-orange-200/25 bg-orange-300/10 px-3.5 py-1.5 text-xs font-bold text-orange-100 transition hover:bg-orange-300/20">
+            <Copy className="h-3.5 w-3.5" />{showSungCounts ? '已唱次数' : '路演次数'}
+          </button>
           <button type="button" onClick={() => setSongEditMode((v) => !v)} className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-bold transition ${songEditMode ? 'border-red-200/40 bg-red-300/15 text-red-100' : 'border-white/10 bg-white/[.045] text-white/60 hover:border-white/20 hover:text-white/80'}`}>
             <Trash2 className="h-3.5 w-3.5" />歌曲编辑
           </button>
@@ -645,9 +666,7 @@ const SongListEditor = ({ title, description, songs, allRecords, recordId, songR
           );
         })}
       </div>
-      {unranked.length > 0 && (() => {
-        const paginated = paginateRoadshowSongs(unranked, unrankedPage);
-        return (
+      {unranked.length > 0 && (
           <section className="mt-3 flex min-h-24 flex-col rounded-2xl border border-white/10 bg-white/[.02] p-3 text-white/50">
             <header className="mb-3 flex items-center justify-between gap-2 border-b border-white/10 pb-3">
               <span className="flex items-center gap-2">
@@ -657,16 +676,10 @@ const SongListEditor = ({ title, description, songs, allRecords, recordId, songR
               <small className="text-white/35">{unranked.length} 首</small>
             </header>
             <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-              {paginated.items.map(renderSongRow)}
+              {unranked.map(renderSongRow)}
             </div>
-            <footer className="mt-auto flex items-center justify-center gap-3 pt-3 text-[10px] font-bold text-white/45">
-              <button type="button" aria-label="未入框上一页" disabled={paginated.page === 1} onClick={() => setUnrankedPage(paginated.page - 1)} className="grid h-7 w-7 place-items-center rounded-full border border-white/10 transition enabled:hover:border-white/25 enabled:hover:text-white disabled:opacity-20">‹</button>
-              <span>{paginated.page} / {paginated.pageCount}</span>
-              <button type="button" aria-label="未入框下一页" disabled={paginated.page === paginated.pageCount} onClick={() => setUnrankedPage(paginated.page + 1)} className="grid h-7 w-7 place-items-center rounded-full border border-white/10 transition enabled:hover:border-white/25 enabled:hover:text-white disabled:opacity-20">›</button>
-            </footer>
           </section>
-        );
-      })()}
+      )}
     </section>
   );
 };
@@ -698,6 +711,7 @@ const RecognitionSongListEditor = ({ record, assignments, allRecords, catalogSon
 }) => {
   const songs = record.recognitionSongs;
   const [inheritanceMessage, setInheritanceMessage] = useState('');
+  const [songEditMode, setSongEditMode] = useState(false);
   const [participating, setParticipating] = useState(false);
   const [joining, setJoining] = useState(false);
   const [participantInput, setParticipantInput] = useState('');
@@ -715,9 +729,11 @@ const RecognitionSongListEditor = ({ record, assignments, allRecords, catalogSon
   const hasAnswer = (songId: string) => Object.prototype.hasOwnProperty.call(answers, songId);
   const roundComplete = selectedSongIds.length === 4 && selectedSongIds.every(hasAnswer);
   const participants = buildQuizParticipantRanking([record]);
+  const previousQuizSongs = summarizePreviousQuizSongs(record.recognitionAttempts ?? [], Object.values(attemptIds));
 
   useEffect(() => {
     setInheritanceMessage('');
+    setSongEditMode(false);
     setParticipating(false);
     setJoining(false);
     setParticipantInput('');
@@ -736,7 +752,9 @@ const RecognitionSongListEditor = ({ record, assignments, allRecords, catalogSon
   };
 
   const toggleParticipation = () => {
+    setSongEditMode(false);
     if (!participating) {
+      setParticipantInput(nextQuizParticipantName([...allRecords.filter((item) => item.id !== record.id), record]));
       setJoining(true);
       return;
     }
@@ -754,7 +772,20 @@ const RecognitionSongListEditor = ({ record, assignments, allRecords, catalogSon
     setParticipantName(name);
     setParticipating(true);
     setJoining(false);
-    resetRound();
+    setAttemptIds({});
+    setAnswers({});
+  };
+
+  const startNextPlayer = () => {
+    if (!roundComplete || busy) return;
+    setParticipantInput('');
+    setParticipantName('');
+    setParticipating(false);
+    setJoining(false);
+    setSongEditMode(false);
+    setDeletingParticipants(false);
+    setAttemptIds({});
+    setAnswers({});
   };
 
   const finishRound = () => {
@@ -802,6 +833,21 @@ const RecognitionSongListEditor = ({ record, assignments, allRecords, catalogSon
     const appearances = findRecognitionUsageRoadshows(allRecords, song, record.id);
     const attemptCount = countRecognitionAttemptsForSong(record, song);
     const selected = selectedSongIds.includes(song.id);
+    if (songEditMode && !song.fixedBonus) {
+      return (
+        <div key={song.id} className="group flex items-center gap-3 rounded-xl border border-white/10 bg-black/25 p-3">
+          <button type="button" onClick={() => onOpenSongDetail(song)} className="min-w-0 flex-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-orange-300/50">
+            <strong className="block truncate text-sm transition group-hover:text-orange-100">{song.title}</strong>
+            <small className="block truncate text-white/35">{song.artist || '未填写歌手'}</small>
+          </button>
+          <SongAppearanceBadge appearances={appearances} activity="实际答题" />
+          {attemptCount > 0 && <span title="本场实际答题次数" className="shrink-0 text-[10px] font-black text-white/45">{attemptCount}次</span>}
+          <button type="button" disabled={busy} onClick={() => onSave({ ...record, recognitionSongs: songs.filter((item) => item.id !== song.id) })} aria-label={`移除${song.title}`} className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-white/30 hover:bg-red-300/10 hover:text-red-200 disabled:opacity-35">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      );
+    }
     return <button key={song.id} type="button" aria-label={participating ? `选择${song.title}` : `查看${song.title}详情和谱子`} aria-pressed={participating ? selected : undefined} disabled={participating && !selected && selectedSongIds.length === 4} onClick={() => participating ? toggleSong(song) : onOpenSongDetail(song)} className={`group flex w-full items-center gap-3 rounded-xl border p-3 text-left transition disabled:cursor-default ${selected ? 'border-orange-200/50 bg-orange-300/15 shadow-[0_0_20px_rgba(251,146,60,.08)]' : 'border-white/10 bg-black/25 enabled:hover:border-white/25'}`}><span className="min-w-0 flex-1"><strong className="block truncate text-sm text-white/90">{song.title}</strong><small className="block truncate text-white/35">{song.artist || '未填写歌手'}</small></span><SongAppearanceBadge appearances={appearances} activity="实际答题" />{attemptCount > 0 && <span title="本场实际答题次数" aria-label={`本场实际答题 ${attemptCount} 次`} className="shrink-0 rounded-full border border-white/10 bg-white/[.055] px-2 py-1 text-[10px] font-black tabular-nums text-white/45">{attemptCount}次</span>}{selected && <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-orange-300 text-xs font-black text-black">{selectedSongIds.indexOf(song.id) + 1}</span>}</button>;
   };
 
@@ -810,6 +856,20 @@ const RecognitionSongListEditor = ({ record, assignments, allRecords, catalogSon
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div><h3 className="font-serif text-2xl font-black">听歌识曲</h3><p className="mt-1 text-xs text-white/35">互动游戏准备的题目歌曲</p></div>
         <div className="flex flex-wrap items-center gap-2">
+        {!joining && !participating && <>
+          <button type="button" disabled={busy} aria-pressed={songEditMode} onClick={() => setSongEditMode((value) => !value)} className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-bold transition disabled:opacity-35 ${songEditMode ? 'border-red-200/40 bg-red-300/15 text-red-100' : 'border-white/10 bg-white/[.045] text-white/60 hover:border-white/20 hover:text-white/80'}`}>
+            <Trash2 className="h-3.5 w-3.5" />歌曲编辑
+          </button>
+          {songEditMode && <button type="button" disabled={busy} onClick={() => {
+            const count = songs.filter((song) => !song.fixedBonus).length;
+            if (count && window.confirm(`确定要清空全部 ${count} 首识曲歌曲吗？此操作不可恢复。固定送分歌曲和已有答题记录将保留。`)) {
+              onSave({ ...record, recognitionSongs: songs.filter((song) => song.fixedBonus) });
+              setSongEditMode(false);
+            }
+          }} className="inline-flex items-center gap-1.5 rounded-full border border-red-300/30 bg-red-300/10 px-3.5 py-1.5 text-xs font-bold text-red-200 transition hover:bg-red-300/20 hover:text-red-100 disabled:opacity-35">
+            <Trash2 className="h-3.5 w-3.5" />清空全部
+          </button>}
+        </>}
         {!joining && !participating && <button type="button" disabled={busy} onClick={inheritSongs} title="继承上一场全部识曲歌曲，保留本场歌曲和答题记录" className="inline-flex h-10 items-center gap-2 rounded-full border border-orange-200/25 bg-orange-300/10 px-4 text-xs font-black text-orange-200 transition hover:border-orange-200/50 hover:bg-orange-300/20 disabled:cursor-not-allowed disabled:opacity-35"><Copy className="h-4 w-4" /><span>继承</span></button>}
         {joining ? (
           <form onSubmit={(event) => { event.preventDefault(); startParticipation(); }} className="flex items-center gap-2">
@@ -877,7 +937,15 @@ const RecognitionSongListEditor = ({ record, assignments, allRecords, catalogSon
               );
             })}
           </div>
-          {roundComplete && <button type="button" onClick={finishRound} className="mt-4 inline-flex h-10 items-center gap-2 rounded-full border border-emerald-200/25 bg-emerald-300/10 px-4 text-xs font-black text-emerald-100 transition hover:bg-emerald-300/20"><UsersRound className="h-4 w-4" />下一位玩家</button>}
+          {previousQuizSongs.length > 0 && (
+            <div className="mt-4 border-t border-white/10 pt-3">
+              <p className="mb-2 text-[10px] font-bold text-white/35">此前已选题目</p>
+              <div className="flex flex-wrap gap-x-2 gap-y-2">
+                {previousQuizSongs.map((song) => <span key={JSON.stringify([song.title, song.artist])} title={song.artist} className="max-w-full break-words rounded-lg border border-orange-200/10 bg-orange-300/[.045] px-2.5 py-1 text-xs text-orange-100/70">{song.title}{song.count > 1 && <b className="ml-0.5 text-orange-200">×{song.count}</b>}</span>)}
+              </div>
+            </div>
+          )}
+          {roundComplete && <button type="button" disabled={busy} onClick={startNextPlayer} className="mt-4 inline-flex h-10 items-center gap-2 rounded-full border border-emerald-200/25 bg-emerald-300/10 px-4 text-xs font-black text-emerald-100 transition hover:bg-emerald-300/20 disabled:cursor-not-allowed disabled:opacity-40"><UsersRound className="h-4 w-4" />下一位玩家</button>}
         </section>
       )}
       <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -903,6 +971,7 @@ const RecognitionSongListEditor = ({ record, assignments, allRecords, catalogSon
         })}
       </div>
       <FixedQuizSongs record={record} catalogSongs={catalogSongs} managing={!participating && !joining} busy={busy} onSave={onSave} renderSong={renderQuizSong} />
+      <SharedSongGroups catalogSongs={catalogSongs} managing={!participating && !joining} onOpenSong={song => onOpenSongDetail(createRoadshowSong(song))} />
     </section>
   );
 };

@@ -86,6 +86,8 @@ const SongDetailPanel = ({
   const [matchScore, setMatchScore] = useState<number | ''>(80);
   const [feelings, setFeelings] = useState('');
   const [singingReflection, setSingingReflection] = useState('');
+  const [needsMorePractice, setNeedsMorePractice] = useState(false);
+  const [needsImprovement, setNeedsImprovement] = useState(false);
   const [roadshowAt, setRoadshowAt] = useState(localDateTime);
   const [audienceName, setAudienceName] = useState('');
   const [feedback, setFeedback] = useState('');
@@ -126,6 +128,8 @@ const SongDetailPanel = ({
       setMatchScore(record.matchScore);
       setFeelings(record.feelings);
       setSingingReflection(getPracticeReflection(record));
+      setNeedsMorePractice(record.needsMorePractice);
+      setNeedsImprovement(record.needsImprovement);
     } else {
       setRoadshowAt(localDateTime(record.occurredAt));
       setAudienceName(record.audienceName);
@@ -140,7 +144,8 @@ const SongDetailPanel = ({
     const record: PracticeRecord = {
       id: editingRecord?.kind === 'practice' ? editingRecord.id : recordId('practice'), kind: 'practice', songId: song.id, songTitle: song.title, songArtist: song.artist,
       occurredAt: new Date(practiceAt).toISOString(), matchScore: Number(matchScore),
-      feelings: feelings.trim(), problems: singingReflection.trim(), improvements: '', updatedAt: now,
+      feelings: feelings.trim(), problems: singingReflection.trim(), improvements: '',
+      needsMorePractice, needsImprovement, updatedAt: now,
     };
     if (!isValidSongRecord(record)) {
       setMessage('请填写有效的时间和 70–100 分。');
@@ -148,10 +153,17 @@ const SongDetailPanel = ({
     }
     setBusy('practice'); setMessage('');
     try {
-      commitSaved(await saveSongRecord(session, record));
+      const saved = await saveSongRecord(session, record);
+      commitSaved(saved);
+      if (saved.kind !== 'practice' || Boolean(saved.needsMorePractice) !== needsMorePractice || Boolean(saved.needsImprovement) !== needsImprovement) {
+        setEditingRecord(record);
+        setMessage('练习内容已保存，但练习标识未同步。已保留当前选择，请更新云端服务后再次保存。');
+        return;
+      }
       const wasEditing = editingRecord?.kind === 'practice';
       setEditingRecord(null);
       setFeelings(''); setSingingReflection('');
+      setNeedsMorePractice(false); setNeedsImprovement(false);
       setMessage(wasEditing ? '练习记录修改已同步' : '练习记录已同步');
     } catch (error) { setMessage(mapSongRecordSyncError(error)); }
     finally { setBusy(''); }
@@ -397,6 +409,7 @@ const SongDetailPanel = ({
               <Field label="匹配度（70–100）"><input type="number" min="70" max="100" value={matchScore} onChange={(event) => setMatchScore(parseMatchScoreInput(event.target.value))} className={inputClass} /></Field>
               <Field label="品质"><div aria-readonly="true" className={`${inputClass} flex items-center font-black ${matchQuality ? qualityTextClass[matchQuality.tone] : 'text-white/25'}`}>{matchQuality?.label ?? '—'}</div></Field>
             </div>
+            <PracticeMarkerOptions needsMorePractice={needsMorePractice} needsImprovement={needsImprovement} onToggleMorePractice={() => setNeedsMorePractice((value) => !value)} onToggleImprovement={() => setNeedsImprovement((value) => !value)} />
             <Field label="练习感受"><textarea value={feelings} onChange={(event) => setFeelings(event.target.value)} placeholder="音色、情绪、舒适程度……" className={areaClass} /></Field>
             <button type="button" disabled={Boolean(busy)} onClick={() => void submitPractice()} className="inline-flex h-11 items-center gap-2 rounded-full bg-orange-400 px-5 text-sm font-black text-black transition hover:bg-orange-300 disabled:opacity-40"><Save className="h-4 w-4" />{editingRecord?.kind === 'practice' ? '保存修改' : '保存练习记录'}</button>
           </> : <>
@@ -430,6 +443,21 @@ const Stat = ({ label, value }: { label: string; value: string }) => (
     <small className="mt-1 block truncate text-[10px] tracking-[.14em] text-white/30">{label}</small>
   </div>
 );
+const PracticeMarkerOptions = ({ needsMorePractice, needsImprovement, onToggleMorePractice, onToggleImprovement }: { needsMorePractice: boolean; needsImprovement: boolean; onToggleMorePractice: () => void; onToggleImprovement: () => void }) => (
+  <div>
+    <span className="mb-2 block text-xs font-bold text-white/45">练习标识</span>
+    <details aria-label="练习标识" className="group relative w-fit min-w-40">
+      <summary className="flex h-10 cursor-pointer list-none items-center justify-between gap-4 rounded-xl border border-orange-200/25 bg-black/20 px-3 text-sm font-bold text-orange-100 transition hover:border-orange-200/50 [&::-webkit-details-marker]:hidden">
+        <span>{[needsMorePractice && '多练习', needsImprovement && '待提升'].filter(Boolean).join(' · ') || '无标识'}</span>
+        <ChevronDown className="h-4 w-4 transition group-open:rotate-180" />
+      </summary>
+      <div className="absolute right-0 top-full z-20 mt-1 w-full min-w-40 rounded-xl border border-orange-200/20 bg-[#17110d] p-1 shadow-xl">
+        <label className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-orange-100 hover:bg-white/10"><input type="checkbox" checked={needsMorePractice} onChange={onToggleMorePractice} className="accent-orange-300" />多练习</label>
+        <label className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-cyan-100 hover:bg-white/10"><input type="checkbox" checked={needsImprovement} onChange={onToggleImprovement} className="accent-cyan-200" />待提升</label>
+      </div>
+    </details>
+  </div>
+);
 const Field = ({ label, children }: { label: string; children: React.ReactNode }) => <label className="block"><span className="mb-2 block text-xs font-bold text-white/45">{label}</span>{children}</label>;
 const JournalColumn = ({ icon, title, subtitle, children }: { icon: React.ReactNode; title: string; subtitle: string; children: React.ReactNode }) => <section className="rounded-[1.75rem] border border-white/10 bg-[#09090d]/80 p-5 backdrop-blur-xl sm:p-7"><div className="mb-6 flex items-start gap-3"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-orange-200/15 bg-orange-300/10 text-orange-200">{icon}</span><div><h2 className="font-serif text-2xl font-black">{title}</h2><p className="mt-1 text-xs leading-5 text-white/35">{subtitle}</p></div></div><div className="space-y-4">{children}</div></section>;
 
@@ -458,8 +486,17 @@ const RecordTimeline = ({ records, busy, editingId, onEdit, onDelete, label = 'H
 
 const PracticeRecordDetails = ({ record }: { record: PracticeRecord }) => {
   const reflection = getPracticeReflection(record);
-  return <><p className="mt-2 text-sm font-bold text-orange-100">匹配度 {record.matchScore}</p>{record.feelings && <RecordText label="感受" text={record.feelings} />}{reflection && <RecordText label="弹唱感想" text={reflection} />}</>;
+  return <><div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1"><p className="text-sm font-bold text-orange-100">匹配度 {record.matchScore}</p><PracticeMarkerBadges record={record} /></div>{record.feelings && <RecordText label="感受" text={record.feelings} />}{reflection && <RecordText label="弹唱感想" text={reflection} />}</>;
 };
+
+const PracticeMarkerBadges = ({ record }: { record: PracticeRecord }) => (
+  (record.needsMorePractice || record.needsImprovement) ? (
+    <p className="flex flex-wrap gap-1.5 text-[10px] font-black">
+      {record.needsMorePractice && <span className="rounded-full border border-orange-200/25 bg-orange-300/10 px-2 py-1 text-orange-100">多练习</span>}
+      {record.needsImprovement && <span className="rounded-full border border-cyan-200/25 bg-cyan-300/10 px-2 py-1 text-cyan-100">待提升</span>}
+    </p>
+  ) : null
+);
 
 const RecordText = ({ label, text }: { label: string; text: string }) => <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-white/50"><span className="mr-2 text-[10px] font-black tracking-wider text-white/25">{label}</span>{text}</p>;
 

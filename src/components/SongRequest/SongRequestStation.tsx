@@ -14,7 +14,7 @@ import {
   type EditableCatalog, type RankingDisplayMode, type VoteCounts,
 } from './songRequest';
 import {
-  buildQuizParticipantRanking, collectUsedRecognitionSongIds, createRoadshowSong, deduplicateRoadshowSongs, getLatestRoadshow, groupSongsByArtist, parseRoadshowCache,
+  buildQuizParticipantRanking, collectUsedRecognitionSongIds, createRoadshowSong, deduplicateRoadshowSongs, findSongAppearances, getLatestRoadshow, groupSongsByArtist, parseRoadshowCache,
   parsePublicQuizParticipantRanking, parsePublicQuizRanking, prepareLatestRoadshowPerformanceSong, prepareLatestRoadshowRecognitionSong, prepareLatestRoadshowRecognitionSongs, ROADSHOW_CACHE_KEY, ROADSHOW_RANKING_LOCATIONS,
   type PublicQuizParticipantRankingItem, type PublicQuizRankingItem, type RoadshowRankingLocation, type RoadshowRecord, type RoadshowSong,
 } from './roadshow';
@@ -1483,11 +1483,15 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   const PracticeBadges = ({ song }: { song: Song }) => {
     if (!showPracticeBadges) return null;
     const stats = songPracticeStats.get(song.id);
-    if (!stats) return null;
+    const roadshowCount = findSongAppearances(roadshowArchives, { catalogId: song.id, title: song.title, artist: song.artist }, undefined, 'performanceSongs').length;
+    if (!stats && roadshowCount === 0) return null;
     return (
       <span className="inline-flex shrink-0 items-center gap-1">
-        <span className="rounded-md bg-white/[0.08] px-1 py-[1px] text-[10px] font-medium text-white/45">{stats.count}次</span>
-        <span className="rounded-md bg-white/[0.08] px-1 py-[1px] text-[10px] font-medium text-white/45">{stats.score}</span>
+        {stats && <span className="rounded-md bg-white/[0.08] px-1 py-[1px] text-[10px] font-medium text-white/45">{stats.count}次</span>}
+        {stats && <span className="rounded-md bg-white/[0.08] px-1 py-[1px] text-[10px] font-medium text-white/45">{stats.score}</span>}
+        {roadshowCount > 0 && (
+          <span title={`本曲已收录于 ${roadshowCount} 场路演`} aria-label={`本曲已收录于 ${roadshowCount} 场路演`} className="inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-white/15 bg-white/[0.08] px-1 text-[10px] font-medium tabular-nums text-white/45">{roadshowCount}</span>
+        )}
       </span>
     );
   };
@@ -1711,6 +1715,13 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                               <li key={song.id} className="flex items-center gap-4 rounded-2xl border border-white/10 bg-white/[.035] p-4">
                                 <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-full font-serif font-black ${RANKING_MEDAL_CLASSES[getRankingMedalTone(index, 3)]}`}>{index + 1}</span>
                                 <button type="button" onClick={() => openSongDetail(song)} className="min-w-0 flex-1 text-left"><p className="truncate font-bold hover:text-orange-100">{song.title}</p><p className="truncate text-xs text-white/40">{song.artist}</p></button>
+                                {(() => {
+                                  const included = latestRoadshow && prepareLatestRoadshowPerformanceSong([latestRoadshow], song).kind === 'duplicate';
+                                  return <div className="flex shrink-0 flex-col items-center gap-1.5" title={latestRoadshow ? `最新路演：${latestRoadshow.title} · ${latestRoadshow.date} · 路演歌曲` : undefined}>
+                                    <span className={`text-[10px] font-bold ${included ? 'text-emerald-200/80' : 'text-white/35'}`}>{!songRecordSession ? '解锁后查看' : !latestRoadshow ? '暂无路演数据' : included ? '已加入最新路演' : '未加入最新路演'}</span>
+                                    {!included && <button type="button" disabled={!songRecordSession || !latestRoadshow || Boolean(roadshowBusyId)} onClick={() => void addSongToLatestRoadshowPerformance(song)} aria-label={`将${song.title}加入最新路演`} className="inline-flex items-center gap-1 rounded-full border border-orange-200/25 bg-orange-300/10 px-2.5 py-1 text-[10px] font-black text-orange-100 transition hover:bg-orange-300/20 disabled:cursor-not-allowed disabled:opacity-30"><Plus className="h-3 w-3" />{roadshowBusyId === song.id ? '加入中…' : '加入'}</button>}
+                                  </div>;
+                                })()}
                                 <button type="button" onClick={() => { const next = { ...pendingSingCounts, [song.id]: (pendingSingCounts[song.id] ?? 0) + 1 }; setPendingSingCounts(next); try { window.localStorage.setItem(PENDING_SING_COUNTS_KEY, JSON.stringify(next)); } catch {} }} className="shrink-0 rounded-xl border border-orange-200/20 bg-orange-300/10 px-3 py-1.5 text-xs font-black text-orange-200 transition hover:bg-orange-300/20 hover:text-orange-100">已唱{pendingSingCounts[song.id] ?? 0}次</button>
                               </li>
                             ))}</ol>
@@ -2184,6 +2195,14 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
 
             {activeSection === 'roadshows' && (
               <RoadshowPanel
+                onIncrementSingCount={(songId, delta = 1) => {
+                  setPendingSingCounts((current) => {
+                    const next = { ...current, [songId]: Math.max(0, (current[songId] ?? 0) + delta) };
+                    try { window.localStorage.setItem(PENDING_SING_COUNTS_KEY, JSON.stringify(next)); } catch { /* 存储不可用时仍保留本次页面计数。 */ }
+                    return next;
+                  });
+                }}
+                pendingSingCounts={pendingSingCounts}
                 defaultAlias={nickname}
                 songs={catalogSongs}
                 records={songRecords}

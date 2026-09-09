@@ -184,6 +184,8 @@ export default function DailyPracticePanel({
       feelings: draft.feelings.trim(),
       problems: draft.reflection.trim(),
       improvements: '',
+      needsMorePractice: false,
+      needsImprovement: false,
       updatedAt,
     }));
 

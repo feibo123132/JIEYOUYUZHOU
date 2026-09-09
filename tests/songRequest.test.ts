@@ -394,7 +394,7 @@ test('第三版曲库缓存会补齐新默认歌曲并升级到第七版', async
 
   const catalog = loadEditableCatalog(storage, [...songs, newDefaultSong])
 
-  assert.equal(catalog.version, 7)
+  assert.equal(catalog.version, 8)
   assert.ok(catalog.artists.includes('新增歌手'))
   assert.equal(catalog.songs.find((song: { id: string }) => song.id === newDefaultSong.id)?.title, '新增默认歌')
 })
@@ -471,7 +471,7 @@ test('旧版曲库快照会补齐新版默认歌手并保留自定义歌曲', as
 
   const catalog = loadEditableCatalog(storage, [...songs, newDefaultSong])
 
-  assert.equal(catalog.version, 7)
+  assert.equal(catalog.version, 8)
   assert.deepEqual(catalog.artists, ['周杰伦', 'Coldplay', '新默认歌手', '自定义歌手'])
   assert.deepEqual(catalog.songs.map((song: { id: string }) => song.id), ['a', 'b', 'c', 'default:new', 'custom:legacy'])
 })
@@ -489,7 +489,7 @@ test('第四版曲库快照会补齐默认歌曲、同步热门标记并保留�
 
   const catalog = loadEditableCatalog(storage, [...songs, newDefaultSong])
 
-  assert.equal(catalog.version, 7)
+  assert.equal(catalog.version, 8)
   assert.equal(catalog.songs.find((song: { id: string }) => song.id === 'a')?.featured, true)
   assert.equal(catalog.songs.find((song: { id: string }) => song.id === 'default:new')?.title, '新版热门歌')
   assert.equal(catalog.songs.find((song: { id: string }) => song.id === 'custom:kept')?.title, '保留的自定义歌曲')
@@ -516,7 +516,7 @@ test('第五版曲库缓存会同步默认歌曲的歌手更正并保留自定�
 
   const catalog = loadEditableCatalog(storage, correctedSongs)
 
-  assert.equal(catalog.version, 7)
+  assert.equal(catalog.version, 8)
   assert.equal(catalog.songs.find((song: { id: string }) => song.id === songs[0].id)?.artist, '李佳薇')
   assert.equal(catalog.songs.find((song: { id: string }) => song.id === songs[1].id)?.artist, '王唯旖')
   assert.ok(catalog.songs.some((song: { id: string }) => song.id === 'custom:kept'))
@@ -535,7 +535,7 @@ test('第六版曲库缓存会补齐第七版新增歌手歌曲并保留自定�
 
   const catalog = loadEditableCatalog(storage, [...songs, newDefaultSong])
 
-  assert.equal(catalog.version, 7)
+  assert.equal(catalog.version, 8)
   assert.ok(catalog.artists.includes('新增歌手'))
   assert.ok(catalog.songs.some((song: { id: string }) => song.id === newDefaultSong.id))
   assert.ok(catalog.songs.some((song: { id: string }) => song.id === customSong.id))
@@ -554,6 +554,11 @@ test('歌曲记录支持同一首歌多次练习并按时间倒序过滤无效�
 
   assert.deepEqual(records.map((record: { id: string }) => record.id), ['newer', 'older'])
   assert.equal('durationMinutes' in records[1], false)
+  assert.equal((records[1] as { needsMorePractice: boolean }).needsMorePractice, false)
+  assert.equal((records[1] as { needsImprovement: boolean }).needsImprovement, false)
+  const tagged = parseSongRecords([{ ...practice('tagged', '2026-08-26T10:00:00.000Z'), needsMorePractice: true, needsImprovement: true }])[0] as { needsMorePractice: boolean; needsImprovement: boolean }
+  assert.equal(tagged.needsMorePractice, true)
+  assert.equal(tagged.needsImprovement, true)
 })
 
 test('歌曲记录校验匹配度、文本以及路演反馈', async () => {
@@ -565,6 +570,8 @@ test('歌曲记录校验匹配度、文本以及路演反馈', async () => {
   }
 
   assert.equal(isValidSongRecord(base), true)
+  assert.equal(isValidSongRecord({ ...base, needsMorePractice: true, needsImprovement: true }), true)
+  assert.equal(isValidSongRecord({ ...base, needsMorePractice: 'yes' }), false)
   assert.equal(isValidSongRecord({ ...base, matchScore: 70 }), true)
   assert.equal(isValidSongRecord({ ...base, matchScore: 69 }), false)
   assert.equal(isValidSongRecord({ ...base, feelings: '', problems: '', improvements: '' }), true)
@@ -603,6 +610,11 @@ test('练习时间匹配度和只读品质在同一行展示', () => {
 
   assert.match(panel, /sm:grid-cols-\[minmax\(0,1\.4fr\)_minmax\(90px,\.8fr\)_minmax\(90px,\.8fr\)\]/)
   assert.match(panel, /<Field label="品质">/)
+  assert.match(panel, /aria-label="练习标识"/)
+  assert.match(panel, /checked=\{needsMorePractice\}/)
+  assert.match(panel, /checked=\{needsImprovement\}/)
+  assert.match(panel, />多练习</)
+  assert.match(panel, />待提升</)
   assert.match(panel, /aria-readonly="true"/)
   assert.match(panel, /text-white/)
   assert.match(panel, /text-emerald-400/)
@@ -639,6 +651,16 @@ test('歌曲详情匹配度统计使用全部练习记录的平均值', async ()
   assert.equal(averageMatchScore([{ matchScore: 80 }, { matchScore: 85 }]), 82.5)
   assert.equal(averageMatchScore([{ matchScore: 80 }, { matchScore: 90 }]), 85)
   assert.equal(averageMatchScore([]), null)
+})
+
+test('歌手歌曲卡在匹配值右侧显示路演场次且随隐藏按钮一起隐藏', () => {
+  const station = readFileSync(stationUrl, 'utf8')
+  const badges = station.slice(station.indexOf('const PracticeBadges'), station.indexOf('const SongRows'))
+
+  assert.match(badges, /if \(!showPracticeBadges\) return null/)
+  assert.match(badges, /findSongAppearances\(roadshowArchives, \{ catalogId: song\.id, title: song\.title, artist: song\.artist \}, undefined, 'performanceSongs'\)\.length/)
+  assert.ok(badges.indexOf('{stats.score}') < badges.indexOf('{roadshowCount}'))
+  assert.match(badges, /本曲已收录于 \$\{roadshowCount\} 场路演/)
 })
 
 test('个人榜按每首歌的平均匹配度降序排名', async () => {
@@ -1892,6 +1914,9 @@ test('歌曲详情页提供练习与路演记录并保留点歌按钮的独立�
   assert.match(panel, /min="70" max="100"/)
   assert.doesNotMatch(panel, /匹配度（60–100）|min="60"/)
   assert.match(panel, /练习感受/)
+  assert.match(panel, /needsMorePractice, needsImprovement/)
+  assert.match(panel, /setNeedsMorePractice\(record\.needsMorePractice\)/)
+  assert.match(panel, /PracticeMarkerBadges record=\{record\}/)
   assert.match(panel, /label="弹唱感想"/)
   assert.match(panel, /getPracticeReflection\(record\)/)
   assert.doesNotMatch(panel, /label="问题描述"|label="改进办法"/)
