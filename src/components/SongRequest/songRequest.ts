@@ -183,24 +183,26 @@ export const loadEditableCatalog = (storage: ReadableStorage, fallbackSongs: Son
     if (!Array.isArray(parsed.artists) || !Array.isArray(parsed.songs)
       || !parsed.artists.every((artist) => typeof artist === 'string' && artist.trim())
       || !parsed.songs.every(isSong)) return createEditableCatalog(fallbackSongs);
+    const catalogArtists = parsed.artists as string[];
+    const catalogSongs = parsed.songs as Song[];
     if (parsed.version === 8) {
-      return { version: 8, artists: [...new Set(parsed.artists)], songs: parsed.songs };
+      return { version: 8, artists: [...new Set(catalogArtists)], songs: catalogSongs };
     }
     if (parsed.version === 7) {
       const addedIds = new Set(['xs-huan-ting', 'xs-ban-cheng-yan-sha', 'xs-nan-shan-yi']);
       const additions = fallbackSongs.filter((song) => addedIds.has(song.id)
-        && !parsed.songs!.some((cached: Song) => cached.id === song.id || (cached.title === song.title && cached.artist === song.artist)));
+        && !catalogSongs.some((cached) => cached.id === song.id || (cached.title === song.title && cached.artist === song.artist)));
       return {
         version: 8,
-        artists: [...new Set([...parsed.artists, ...additions.map((song) => song.artist)])],
-        songs: [...parsed.songs, ...additions],
+        artists: [...new Set([...catalogArtists, ...additions.map((song) => song.artist)])],
+        songs: [...catalogSongs, ...additions],
       };
     }
     if (parsed.version === 1 || parsed.version === 2 || parsed.version === 3 || parsed.version === 4 || parsed.version === 5 || parsed.version === 6) {
       const defaultCatalog = createEditableCatalog(fallbackSongs);
       const defaultSongIds = new Set(fallbackSongs.map((song) => song.id));
-      const cachedSongs = new Map(parsed.songs.map((song) => [song.id, song]));
-      const customSongs = parsed.songs.filter((song) => !defaultSongIds.has(song.id));
+      const cachedSongs = new Map(catalogSongs.map((song) => [song.id, song]));
+      const customSongs = catalogSongs.filter((song) => !defaultSongIds.has(song.id));
       const customSongArtists = new Set(customSongs.map((song) => song.artist));
       const renamedDefaultArtists = new Set(fallbackSongs.flatMap((song) => {
         const cachedSong = cachedSongs.get(song.id);
@@ -210,7 +212,7 @@ export const loadEditableCatalog = (storage: ReadableStorage, fallbackSongs: Son
         version: 8,
         artists: [...new Set([
           ...defaultCatalog.artists,
-          ...parsed.artists.filter((artist) => !renamedDefaultArtists.has(artist) || customSongArtists.has(artist)),
+          ...catalogArtists.filter((artist) => !renamedDefaultArtists.has(artist) || customSongArtists.has(artist)),
         ])],
         songs: [
           ...fallbackSongs.map((song) => ({ ...(cachedSongs.get(song.id) ?? {}), ...song })),
