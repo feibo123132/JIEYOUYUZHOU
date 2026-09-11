@@ -2,8 +2,14 @@ const crypto = require('node:crypto');
 const { validateRequest } = require('./validation');
 const { legacyNotebook, saveNotebookAtomically } = require('./feelingsNotebook');
 const { saveSongGroupsAtomically } = require('./songGroups');
+const { saveJournal } = require('./enoughJournal');
+const { ownerStars } = require('./ownerStars');
+const { invitationId, registerWithInvitation, revokeInvitation } = require('./invitations');
 
 const PUBLIC_ERRORS = new Set([
+  'INVALID_STAR',
+  'INVALID_JOURNAL',
+  'INVALID_INVITATION',
   'INVALID_ACTION', 'PAYLOAD_TOO_LARGE', 'INVALID_SONG_ID', 'INVALID_ALIAS', 'INVALID_PASSWORD',
   'INVALID_SONG', 'INVALID_SONG_LIST', 'INVALID_RECORD', 'ALREADY_REGISTERED', 'NOT_REGISTERED',
   'INVALID_SONG_RECORD', 'INVALID_ARTIST_SETTINGS', 'AUTH_FAILED', 'CONFLICT', 'NOT_FOUND',
@@ -220,15 +226,18 @@ function createHandler(store) {
       if (request.action === 'roadshows:register') {
         const id = workspaceId(request.alias);
         if (await store.getWorkspace(id)) throw new Error('ALREADY_REGISTERED');
+        // The existing owner logs in normally; public signup must never recreate the privileged account.
+        if (id === workspaceId(FEATURED_SONGS_OWNER_ALIAS)) throw new Error('AUTH_FAILED');
+        if (!request.invitationCode) throw new Error('INVALID_INVITATION');
         const salt = crypto.randomBytes(16).toString('hex');
-        await store.setWorkspace(id, {
+        await store.registerWithInvitation(id, {
           version: 1,
           alias: request.alias,
           passwordSalt: salt,
           passwordHash: passwordHash(request.password, salt),
           roadshows: [],
           updatedAt: store.now(),
-        });
+        }, request.invitationCode, store.now());
         return { ok: true, records: [] };
       }
 
@@ -241,6 +250,32 @@ function createHandler(store) {
         throw error;
       }
       const { id, workspace } = authenticated;
+      if (request.action.startsWith('stars:owner')) {
+        if (id !== workspaceId(FEATURED_SONGS_OWNER_ALIAS)) throw new Error('AUTH_FAILED');
+        return { ok: true, ...await store.ownerStars(request) };
+      }
+      if (request.action === 'stars:verifyOwner') {
+        if (id !== workspaceId(FEATURED_SONGS_OWNER_ALIAS)) throw new Error('AUTH_FAILED');
+        return { ok: true, owner: true };
+      }
+      if (request.action === 'enough:pull') {
+        const journal = await store.getWorkspace(`enough-${id}`);
+        return { ok: true, journal: journal ? { revision: journal.revision, entries: journal.entries } : { revision: 0, entries: [] } };
+      }
+      if (request.action === 'enough:save') return { ok: true, journal: await store.saveJournal(id, request.expectedRevision, request.entries) };
+      if (request.action === 'invitations:create' || request.action === 'invitations:revoke') {
+        if (id !== workspaceId(FEATURED_SONGS_OWNER_ALIAS)) throw new Error('AUTH_FAILED');
+        if (request.action === 'invitations:revoke') {
+          if (!request.invitationCode) throw new Error('INVALID_INVITATION');
+          await store.revokeInvitation(request.invitationCode, store.now());
+          return { ok: true };
+        }
+        const code = crypto.randomBytes(16).toString('hex').toUpperCase();
+        const createdAt = store.now();
+        const expiresAt = new Date(Date.parse(createdAt) + 7 * 86400000).toISOString();
+        await store.setWorkspace(invitationId(code), { kind: 'invitation', boundAlias: request.boundAlias, createdAt, expiresAt });
+        return { ok: true, code, expiresAt };
+      }
       if (request.action === 'songGroups:save') {
         if (id !== workspaceId(FEATURED_SONGS_OWNER_ALIAS)) throw new Error('AUTH_FAILED');
         return { ok: true, snapshot: await store.saveSongGroupsAtomically('shared-song-groups', request.expectedRevision, request.groups) };
@@ -392,6 +427,10 @@ exports.main = async (event) => {
         }
       },
       setWorkspace: (id, value) => workspaces.doc(id).set(buildWritableWorkspace(value)),
+      saveJournal: (id, revision, entries) => saveJournal(db, id, revision, entries),
+      ownerStars: request => ownerStars(db, request),
+      registerWithInvitation: (id, account, code, now) => registerWithInvitation(db, id, account, code, now),
+      revokeInvitation: (code, now) => revokeInvitation(db, code, now),
       saveNotebookAtomically: (id, revision, pages) => saveNotebookAtomically(db, id, revision, pages),
       saveSongGroupsAtomically: (id, revision, groups) => saveSongGroupsAtomically(db, id, revision, groups),
       setFeaturedSongIds: (id, songIds, updatedAt) => workspaces.doc(id).update({ featuredSongIds: songIds, updatedAt }),

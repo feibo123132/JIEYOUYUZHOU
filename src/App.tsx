@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Toaster, toast } from 'sonner';
 import ThemeHub from './components/Theme/ThemeHub';
-import KeepsakeStudio from './components/Keepsake/KeepsakeStudio';
+import EnoughJournal from './components/Enough/EnoughJournalPage';
 import SongRequestStation from './components/SongRequest/SongRequestStation';
 import WelcomeScreen from './components/Welcome/WelcomeScreen';
 import NicknameInput from './components/Welcome/NicknameInput';
@@ -9,6 +9,10 @@ import StarrySky from './components/StarrySky/StarrySky';
 import StarryCanvas from './components/StarrySky/StarryCanvas';
 import services from './services/starService';
 import useAppStore from './store/appStore';
+import { isReservedStarName, STAR_OWNER_ALIAS, STAR_OWNER_ID } from './components/Welcome/starOwner';
+import { readSongRecordSession } from './components/SongRequest/songRecords';
+import { verifyStarOwner } from './components/SongRequest/songRequestCloud';
+import { ROADSHOW_SESSION_KEY } from './components/SongRequest/roadshow';
 import { tryGetThemeConfig, type ThemeId } from './themes/themeConfig';
 
 const { userService } = services;
@@ -27,7 +31,7 @@ function App() {
   const {
     activeTheme,
     currentView,
-    enterKeepsakeStudio,
+    enterEnoughJournal,
     enterSongRequestStation,
     enterStarrySky,
     enterTheme,
@@ -45,12 +49,12 @@ function App() {
 
   useEffect(() => {
     const url = new URL(window.location.href);
-    if (url.searchParams.get('view') !== 'keepsake') return;
+    if (!['keepsake', 'enough'].includes(url.searchParams.get('view') ?? '')) return;
 
-    enterKeepsakeStudio();
+    enterEnoughJournal();
     url.searchParams.delete('view');
     window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
-  }, [enterKeepsakeStudio]);
+  }, [enterEnoughJournal]);
 
   useEffect(() => {
     const audio = new Audio();
@@ -144,10 +148,17 @@ function App() {
     enterTheme(themeId);
   };
 
-  const handleNicknameSubmit = async (nickname: string, destination: 'stars' | 'my-messages' | 'star-messages') => {
+  const handleNicknameSubmit = async (nickname: string, destination: 'stars' | 'my-messages' | 'star-messages', ownerPassword?: string) => {
     setIsLoading(true);
     try {
-      if (!user || user.nickname !== nickname) {
+      if (isReservedStarName(nickname)) {
+        const session = readSongRecordSession(sessionStorage);
+        const password = ownerPassword || (session?.alias.trim().toLowerCase() === STAR_OWNER_ALIAS ? session.password : '');
+        if (!password) throw new Error('OWNER_PASSWORD_REQUIRED');
+        await verifyStarOwner({ alias: STAR_OWNER_ALIAS, password });
+        sessionStorage.setItem(ROADSHOW_SESSION_KEY, JSON.stringify({ alias: STAR_OWNER_ALIAS, password }));
+        setUser({ id: STAR_OWNER_ID, nickname: 'JIEYOU', isAuthenticated: true });
+      } else if (!user || user.nickname !== nickname) {
         const userData = await userService.createUser(nickname);
         setUser({
           id: userData.id,
@@ -159,7 +170,7 @@ function App() {
       enterStarrySky();
     } catch (error) {
       console.error('创建用户失败:', error);
-      toast.error('暂时无法进入星空，请稍后重试');
+      toast.error(isReservedStarName(nickname) ? 'JIEYOU 仅限站长本人使用，请检查站长口令及云端服务。' : '暂时无法进入星空，请稍后重试');
     } finally {
       setIsLoading(false);
     }
@@ -178,10 +189,10 @@ function App() {
       />
 
       {currentView === 'theme-hub' && (
-        <ThemeHub onSelect={handleSelectTheme} onOpenSongRequest={enterSongRequestStation} onOpenKeepsake={enterKeepsakeStudio} />
+        <ThemeHub onSelect={handleSelectTheme} onOpenSongRequest={enterSongRequestStation} onOpenEnough={enterEnoughJournal} />
       )}
 
-      {currentView === 'keepsake-studio' && <KeepsakeStudio onBack={returnToThemeHub} />}
+      {currentView === 'enough-journal' && <EnoughJournal onBack={returnToThemeHub} />}
 
       {currentView === 'song-request' && <SongRequestStation onBack={returnToThemeHub} />}
 

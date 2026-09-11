@@ -2,10 +2,11 @@ import React, { useState } from 'react';
 import { Sparkles, User } from 'lucide-react';
 import type { ThemeConfig } from '../../themes/themeConfig';
 import { readSyncedNickname } from './nicknameSync';
+import { isReservedStarName } from './starOwner';
 
 interface NicknameInputProps {
   theme: ThemeConfig;
-  onSubmit: (nickname: string, target: 'stars' | 'my-messages' | 'star-messages') => void;
+  onSubmit: (nickname: string, target: 'stars' | 'my-messages' | 'star-messages', ownerPassword?: string) => void;
   isLoading?: boolean;
   initialNickname?: string;
 }
@@ -17,6 +18,7 @@ const NicknameInput: React.FC<NicknameInputProps> = ({ theme, onSubmit, isLoadin
       : readSyncedNickname(window.localStorage) || initialNickname
   ));
   const [error, setError] = useState('');
+  const [ownerPassword, setOwnerPassword] = useState('');
   const isLife = theme.id === 'life';
 
   const submitNickname = (target: 'stars' | 'my-messages' | 'star-messages') => {
@@ -35,7 +37,7 @@ const NicknameInput: React.FC<NicknameInputProps> = ({ theme, onSubmit, isLoadin
       return;
     }
     setError('');
-    onSubmit(value, target);
+    onSubmit(value, target, ownerPassword);
   };
 
   const handleSubmit = (event: React.FormEvent) => {
@@ -74,6 +76,9 @@ const NicknameInput: React.FC<NicknameInputProps> = ({ theme, onSubmit, isLoadin
           {error && <span className="text-red-300">{error}</span>}
         </div>
 
+        {isReservedStarName(nickname) && <label className="block text-xs text-amber-100/80">JIEYOU 为站长专属昵称，请验证站长账号口令。
+          <input aria-label="站长账号口令" type="password" autoComplete="current-password" maxLength={64} value={ownerPassword} disabled={isLoading} onChange={event => setOwnerPassword(event.target.value)} placeholder="已在我的档案登录站长账号时可留空" className="mt-2 w-full rounded-xl border border-white/20 bg-black/40 px-3 py-3 text-white" />
+        </label>}
         <div className="grid grid-cols-3 gap-3">
           <button
             type="submit"

@@ -1,7 +1,7 @@
 // src/components/StarrySky/StarrySky.tsx (修正后的完整版)
 
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
-import { ArrowLeft, ArrowRight, Camera, Pencil, RotateCcw, Trash2, Sparkles, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Pencil, RotateCcw, Trash2, Sparkles, X } from 'lucide-react';
 import { Star as PStar, Heart, Cloud, Moon, Mountains, Leaf, MusicNotes, Bird, Cat, Dog, Waves, PaperPlane } from 'phosphor-react';
 import UserStar from './UserStar';
 import { toast } from 'sonner';
@@ -9,6 +9,7 @@ import CreateStarModal from './CreateStarModal';
 import AssistantSidebar from './AssistantSidebar';
 import MessageBarrage, { type BarrageMessage } from './MessageBarrage';
 import MyMessagesPage from './MyMessagesPage';
+import { isReservedStarName, countParticipantStars } from '../Welcome/starOwner';
 import StarMessagesPage from './StarMessagesPage';
 import HappinessSkyPage from './HappinessSkyPage';
 import StarTrashPage from './StarTrashPage';
@@ -18,7 +19,6 @@ import { createInitialBarragePreferences, setBarragePreference } from './barrage
 import { openHappinessMeowGenerator } from '../../utils/meowGenerator';
 import { selectVisibleStars } from './starDisplay';
 import { restoreHappinessPortraitFocus } from './happinessPortrait';
-import useAppStore from '../../store/appStore';
 
 // ↓↓↓↓↓↓ [修正] 使用正确的默认导入并解构出 starService ↓↓↓↓↓↓
 import services from '../../services/starService';
@@ -154,7 +154,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
       setBarragePreferences(createInitialStarrySkyBarragePreferences());
       setLoadState('loading');
       try {
-        const allStars = await starService.getAllStars(theme.id);
+        const allStars = await starService.getVisibleStars(theme.id, userNickname);
         const formattedStars = allStars.map(star => ({
           id: star.id,
           x: star.position_x,
@@ -180,7 +180,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
 
     loadStars();
     return () => { active = false; };
-  }, [initialView, loadAttempt, theme.id, theme.sky.unavailableMessage]);
+  }, [initialView, loadAttempt, theme.id, theme.sky.unavailableMessage, userNickname]);
 
   useEffect(() => {
     try {
@@ -290,7 +290,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
       };
       setStars(prev => {
         const next = [...prev, newStar];
-        setWelcomeInfo({ nickname: userNickname, count: next.length });
+        if (!isReservedStarName(userNickname)) setWelcomeInfo({ nickname: userNickname, count: countParticipantStars(next) });
         return next;
       });
       if (!bypass) {
@@ -536,13 +536,6 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
       createdAt: selectedStar.createdAt,
       nickname: selectedStar.nickname,
     });
-  };
-
-  const handleOpenKeepsake = () => {
-    if (!selectedStar) return;
-    (window as any).playClickSound?.();
-    useAppStore.getState().enterKeepsakeStudio(selectedStar.message ?? '', selectedStar.nickname);
-    toast.success('已把留言带入纪念留影');
   };
 
   const handleBarrageSelect = (starId: string) => {
@@ -860,14 +853,6 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
                 >
                   找杰宝
                 </button>
-                <button
-                  type="button"
-                  onClick={handleOpenKeepsake}
-                  className="flex-1 bg-gradient-to-r from-sky-500 to-indigo-500 hover:from-sky-400 hover:to-indigo-400 text-white font-bold py-2 px-4 rounded-lg transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2"
-                >
-                  <Camera className="w-4 h-4" />
-                  <span>纪念留影</span>
-                </button>
                 {isAdminDevice && (
                   <button
                     type="button"
@@ -952,7 +937,7 @@ const StarrySky: React.FC<StarrySkyProps> = ({ theme, userNickname, onBack, user
         defaultColor={theme.visual.defaultStarColor}
         allowSfx={isAdminDevice || userNickname === 'JIEYOU不解忧' || readQuota().count < 3}
         onPreCheck={preCheckSfx}
-        incomingIndex={stars.length + 1}
+        incomingIndex={countParticipantStars(stars) + 1}
       />
       <CreateStarModal
         key={editingStar?.id ?? 'no-edit'}

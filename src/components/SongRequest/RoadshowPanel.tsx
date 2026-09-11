@@ -134,6 +134,7 @@ const RoadshowPanel = ({
   const [credentials, setCredentials] = useState<Credentials | null>(() => readSession());
   const [alias, setAlias] = useState(() => readSession()?.alias || defaultAlias);
   const [password, setPassword] = useState(() => readSession()?.password || '');
+  const [invitationCode, setInvitationCode] = useState('');
   const [records, setRecords] = useState<RoadshowRecord[]>(() => {
     try { return parseRoadshowCache(localStorage.getItem(ROADSHOW_CACHE_KEY)); } catch { return []; }
   });
@@ -210,11 +211,12 @@ const RoadshowPanel = ({
     setMessage('');
     try {
       const cloudRecords = mode === 'register'
-        ? await registerRoadshowWorkspace(next)
+        ? await registerRoadshowWorkspace(next, invitationCode)
         : await pullRoadshows(next);
       sessionStorage.setItem(ROADSHOW_SESSION_KEY, JSON.stringify(next));
       window.dispatchEvent(new Event(SONG_REQUEST_SESSION_EVENT));
       setCredentials(next);
+      setInvitationCode('');
       setRecords(cloudRecords);
       cacheRecords(cloudRecords);
     } catch (error) {
@@ -307,6 +309,10 @@ const RoadshowPanel = ({
         <div className="mt-6 space-y-3">
           <input value={alias} onChange={(event) => setAlias(event.target.value)} placeholder="你的别称" maxLength={30} className="h-12 w-full rounded-xl border border-white/10 bg-black/35 px-4 outline-none focus:border-orange-300/45" />
           <input value={password} onChange={(event) => setPassword(event.target.value)} placeholder="管理口令（至少 6 位）" type="password" maxLength={64} className="h-12 w-full rounded-xl border border-white/10 bg-black/35 px-4 outline-none focus:border-orange-300/45" />
+        </div>
+        <div className="mt-3">
+          <input aria-label="首次启用邀请码" value={invitationCode} onChange={(event) => setInvitationCode(event.target.value)} placeholder="站主提供的邀请码（仅首次启用需要）" maxLength={32} autoComplete="off" className="h-12 w-full rounded-xl border border-white/10 bg-black/35 px-4 text-sm outline-none focus:border-orange-300/45" />
+          <p className="mt-2 text-xs text-white/45">新账号须先向站主申请邀请码；已有账号直接进入。</p>
         </div>
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
           <button type="button" disabled={busy} onClick={() => void authenticate('login')} className="h-12 rounded-xl bg-orange-400 font-black text-black transition hover:bg-orange-300 disabled:opacity-50">进入我的档案</button>

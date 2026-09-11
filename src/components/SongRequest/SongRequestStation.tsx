@@ -24,6 +24,7 @@ import {
   saveCloudFeaturedSongIds, saveCloudQuizAssignments, saveRoadshow, syncSongScoreToCloud, deleteSongScore,
 } from './songRequestCloud';
 import RoadshowPanel, { type RoadshowEditorTab } from './RoadshowPanel';
+import AccountInvitations from './AccountInvitations';
 import SongDetailPanel from './SongDetailPanel';
 import PopularSongBarrage from './PopularSongBarrage';
 import { createInitialBarragePreferences, setBarragePreference } from '../StarrySky/barragePreferences';
@@ -2196,6 +2197,8 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
             )}
 
             {activeSection === 'roadshows' && (
+              <div>
+              {canManageFeaturedSongs && songRecordSession && <AccountInvitations credentials={songRecordSession} />}
               <RoadshowPanel
                 editorTab={roadshowEditorTab}
                 onEditorTabChange={setRoadshowEditorTab}
@@ -2216,6 +2219,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                 onRecordsChange={commitSongRecords}
                 onOpenSongDetail={openSongDetail}
               />
+              </div>
             )}
           </section>
         )}

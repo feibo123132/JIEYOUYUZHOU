@@ -2,6 +2,14 @@ const assert = require('node:assert/strict');
 const { existsSync, readFileSync } = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
+const crypto = require('node:crypto');
+
+// Existing accounts predate invitation-only signup; provision them directly as fixtures.
+async function seedExistingAccount(store, { alias, password }) {
+  const id = crypto.createHash('sha256').update(alias.trim().toLowerCase()).digest('hex');
+  const passwordSalt = crypto.randomBytes(16).toString('hex');
+  await store.setWorkspace(id, { alias, passwordSalt, passwordHash: crypto.scryptSync(password, passwordSalt, 32).toString('hex'), roadshows: [] });
+}
 
 const functionPath = path.join(__dirname, '..', 'cloudfunctions', 'songRequestSync', 'index.js');
 const validationPath = path.join(__dirname, '..', 'cloudfunctions', 'songRequestSync', 'validation.js');
@@ -177,7 +185,7 @@ test('已认证谱子图片由云函数上传，浏览器不再直传云存储',
   const handler = createHandler(store);
   const auth = { alias: 'JIEYOU', password: 'guitar-2026' };
   const pageBytes = Buffer.from([0xff, 0xd8, 0xff, 0xdb]);
-  await handler({ action: 'roadshows:register', ...auth });
+  await seedExistingAccount(store, auth);
 
   const result = await handler({
     action: 'songScores:uploadPage', ...auth, songId: 'qing-tian',
@@ -197,7 +205,7 @@ test('谱子图片云存储失败时返回可识别的错误，而不是笼统�
   const { createHandler } = loadFunction();
   const handler = createHandler(store);
   const auth = { alias: 'JIEYOU', password: 'guitar-2026' };
-  await handler({ action: 'roadshows:register', ...auth });
+  await seedExistingAccount(store, auth);
 
   const result = await handler({
     action: 'songScores:uploadPage', ...auth, songId: 'qing-tian',
@@ -218,7 +226,7 @@ test('保存谱子时由云函数返回可显示的临时地址', async () => {
   const { createHandler } = loadFunction();
   const handler = createHandler(store);
   const auth = { alias: 'JIEYOU', password: 'guitar-2026' };
-  await handler({ action: 'roadshows:register', ...auth });
+  await seedExistingAccount(store, auth);
   const fileId = `cloud://env-123/song-request-scores/${'a'.repeat(64)}/${'b'.repeat(64)}/123e4567-e89b-12d3-a456-426614174000.jpg`;
 
   const result = await handler({
@@ -259,8 +267,8 @@ test('publishes and transactionally protects one global artist settings snapshot
   const handler = createHandler(store);
   const owner = { alias: '2421415030@qq.com', password: 'guitar-2026' };
   const other = { alias: 'OTHER', password: 'guitar-2026' };
-  await handler({ action: 'roadshows:register', ...owner });
-  await handler({ action: 'roadshows:register', ...other });
+  await seedExistingAccount(store, owner);
+  await seedExistingAccount(store, other);
 
   assert.deepEqual(await handler({ action: 'artistSettings:pull' }), { ok: true, snapshot: null });
   const first = await handler({ action: 'artistSettings:push', ...owner, expectedRevision: null, snapshot: artistSettingsPayload() });
@@ -284,7 +292,7 @@ test('rejects a non-owner before the global artist settings document exists', as
   const { createHandler } = loadFunction();
   const handler = createHandler(store);
   const visitor = { alias: 'VISITOR', password: 'guitar-2026' };
-  await handler({ action: 'roadshows:register', ...visitor });
+  await seedExistingAccount(store, visitor);
 
   assert.deepEqual(await handler({
     action: 'artistSettings:push',
@@ -324,7 +332,7 @@ test('artist settings datastore failures remain sync failures and never look emp
   const { createHandler } = loadFunction();
   assert.deepEqual(await createHandler(readStore)({ action: 'artistSettings:pull' }), { ok: false, error: 'SYNC_FAILED' });
   const writeHandler = createHandler(writeStore);
-  await writeHandler({ action: 'roadshows:register', alias: '2421415030@qq.com', password: 'guitar-2026' });
+  await seedExistingAccount(writeStore, { alias: '2421415030@qq.com', password: 'guitar-2026' });
   assert.deepEqual(await writeHandler({ action: 'artistSettings:push', alias: '2421415030@qq.com', password: 'guitar-2026', expectedRevision: null, snapshot: artistSettingsPayload() }), { ok: false, error: 'SYNC_FAILED' });
 })
 
@@ -343,8 +351,8 @@ test('only the authenticated owner can move every pending vote into cumulative s
   const handler = createHandler(store);
   const owner = { alias: '2421415030@qq.com', password: 'guitar-2026' };
   const visitor = { alias: 'visitor@example.com', password: 'guitar-2026' };
-  await handler({ action: 'roadshows:register', ...owner });
-  await handler({ action: 'roadshows:register', ...visitor });
+  await seedExistingAccount(store, owner);
+  await seedExistingAccount(store, visitor);
   await handler({ action: 'votes:increment', songId: 'qing-tian' });
   await handler({ action: 'votes:increment', songId: 'qing-tian' });
   await handler({ action: 'votes:increment', songId: 'hua-hai' });
@@ -370,8 +378,8 @@ test('only the authenticated owner email can publish global featured songs', asy
   const handler = createHandler(store);
   const owner = { alias: '2421415030@qq.com', password: 'guitar-2026' };
   const visitor = { alias: 'visitor@example.com', password: 'guitar-2026' };
-  await handler({ action: 'roadshows:register', ...owner });
-  await handler({ action: 'roadshows:register', ...visitor });
+  await seedExistingAccount(store, owner);
+  await seedExistingAccount(store, visitor);
 
   assert.deepEqual(await handler({ action: 'featuredSongs:pull' }), { ok: true, songIds: null });
   assert.deepEqual(await handler({ action: 'featuredSongs:set', ...visitor, songIds: ['a'] }), { ok: false, error: 'AUTH_FAILED' });
@@ -397,8 +405,8 @@ test('识曲歌库仅允许固定管理员发布并可公开读取', async () =>
   const handler = createHandler(store);
   const owner = { alias: '2421415030@qq.com', password: 'guitar-2026' };
   const visitor = { alias: 'visitor@example.com', password: 'guitar-2026' };
-  await handler({ action: 'roadshows:register', ...owner });
-  await handler({ action: 'roadshows:register', ...visitor });
+  await seedExistingAccount(store, owner);
+  await seedExistingAccount(store, visitor);
 
   assert.deepEqual(await handler({ action: 'quizLibrary:pull' }), { ok: true, assignments: null });
   assert.deepEqual(await handler({ action: 'quizLibrary:set', ...visitor, assignments: { a: 'warmup' } }), { ok: false, error: 'AUTH_FAILED' });
@@ -417,7 +425,7 @@ test('segments pending and sung vote counts by the owner latest roadshow locatio
     id, title: id, date, location, updatedAt: `${date}T12:00:00.000Z`, performanceSongs: [], recognitionSongs: [],
   });
 
-  await handler({ action: 'roadshows:register', ...owner });
+  await seedExistingAccount(store, owner);
   await handler({ action: 'roadshows:save', ...owner, record: roadshow('武鸣场', '2026-09-01', '医大（武鸣）') });
   await handler({ action: 'votes:increment', songId: 'qing-tian' });
   assert.deepEqual(await handler({ action: 'votes:pull', location: '医大（武鸣）' }), { ok: true, counts: { 'qing-tian': 1 }, sungCounts: {} });
@@ -454,7 +462,7 @@ test('publishes only sanitized practice averages to guests without credentials',
     feelings: '私人感受', problems: '私人问题', improvements: '私人计划', updatedAt: '2026-08-26T12:00:00.000Z',
   });
 
-  await handler({ action: 'roadshows:register', ...auth });
+  await seedExistingAccount(store, auth);
   await handler({ action: 'songRecords:saveBatch', ...auth, records: [
     practice('practice-1', 'guang-nian-zhi-wai', '光年之外', 86),
     practice('practice-2', 'guang-nian-zhi-wai', '光年之外', 83),
@@ -477,7 +485,7 @@ test('protects private roadshows with an alias and password', async () => {
   const { createHandler } = loadFunction();
   const handler = createHandler(store);
 
-  assert.deepEqual(await handler({ action: 'roadshows:register', alias: 'JIEYOU', password: 'guitar-2026' }), { ok: true, records: [] });
+  await seedExistingAccount(store, { alias: 'JIEYOU', password: 'guitar-2026' });
   assert.deepEqual(await handler({ action: 'roadshows:pull', alias: 'JIEYOU', password: 'wrong-password' }), { ok: false, error: 'AUTH_FAILED' });
   assert.deepEqual(await handler({ action: 'roadshows:pull', alias: 'JIEYOU', password: 'guitar-2026' }), { ok: true, records: [] });
 
@@ -498,7 +506,7 @@ test('saves roadshows and keeps soft-deleted records out of pulls', async () => 
     recognitionSongs: [{ id: 'manual:test', title: '测试歌曲', artist: '', source: 'manual' }],
   };
 
-  await handler({ action: 'roadshows:register', ...auth });
+  await seedExistingAccount(store, auth);
   assert.deepEqual(await handler({ action: 'roadshows:save', ...auth, record }), { ok: true, record: { ...record, updatedAt: '2026-08-25T12:00:00.000Z' } });
   assert.equal((await handler({ action: 'roadshows:pull', ...auth })).records.length, 1);
   assert.deepEqual(await handler({ action: 'roadshows:delete', ...auth, id: 'roadshow-1' }), { ok: true });
@@ -523,8 +531,8 @@ test('publishes a quiz ranking from roadshow answers without exposing private wo
     performanceSongs: [], recognitionSongs: [], recognitionAttempts,
   });
 
-  await handler({ action: 'roadshows:register', ...first });
-  await handler({ action: 'roadshows:register', ...second });
+  await seedExistingAccount(store, first);
+  await seedExistingAccount(store, second);
   await handler({ action: 'roadshows:save', ...first, record: roadshow('第一场', [
     song('a', '晴天', '周杰伦', true, 'attempt-1', '小安'),
     song('a', '晴天', '周杰伦', false, 'attempt-2', '小安'),
@@ -615,7 +623,7 @@ test('batch saves daily practices after one authentication', async () => {
     feelings: '', problems: '', improvements: '', updatedAt: '2026-08-26T12:00:00.000Z',
   });
 
-  await handler({ action: 'roadshows:register', ...auth });
+  await seedExistingAccount(store, auth);
   const result = await handler({ action: 'songRecords:saveBatch', ...auth, records: [practice('a', 80), practice('b', 90)] });
   assert.equal(result.ok, true);
   assert.deepEqual(result.records.map((record) => [record.id, record.matchScore]), [['a', 80], ['b', 90]]);
@@ -650,22 +658,28 @@ test('preserves practice markers through save, reload, edit, and clearing', asyn
   const { createHandler } = loadFunction();
   const handler = createHandler(store);
   const auth = { alias: 'JIEYOU', password: 'guitar-2026' };
-  await handler({ action: 'roadshows:register', ...auth });
+  await seedExistingAccount(store, auth);
   for (const [needsMorePractice, needsImprovement] of [[true, false], [false, true], [true, true], [false, false]]) {
+    const singingMoods = needsMorePractice ? ['快乐', '感动'] : needsImprovement ? ['想哭'] : [];
     const record = {
       id: 'practice-markers', kind: 'practice', songId: 'qing-tian', songTitle: '晴天', songArtist: '周杰伦',
       occurredAt: '2026-08-25T10:00:00.000Z', matchScore: 88,
       feelings: '慢练', problems: '', improvements: '', updatedAt: '2026-08-25T10:00:00.000Z',
       needsMorePractice, needsImprovement,
+      singingMoods,
     };
     const saved = await handler({ action: 'songRecords:save', ...auth, record });
     assert.equal(saved.ok, true);
     assert.equal(saved.record.needsMorePractice, needsMorePractice);
     assert.equal(saved.record.needsImprovement, needsImprovement);
+    assert.deepEqual(saved.record.singingMoods, singingMoods);
     const reloaded = await handler({ action: 'songRecords:pull', ...auth });
     assert.equal(reloaded.records.length, 1);
     assert.equal(reloaded.records[0].needsMorePractice, needsMorePractice);
     assert.equal(reloaded.records[0].needsImprovement, needsImprovement);
+    assert.deepEqual(reloaded.records[0].singingMoods, singingMoods);
+    assert.deepEqual(await handler({ action: 'songRecords:save', ...auth, record: { ...record, singingMoods: ['未知'] } }), { ok: false, error: 'INVALID_SONG_RECORD' });
+    assert.deepEqual(await handler({ action: 'songRecords:save', ...auth, record: { ...record, singingMoods: '快乐' } }), { ok: false, error: 'INVALID_SONG_RECORD' });
   }
 });
 
@@ -685,8 +699,8 @@ test('keeps private song records isolated, independent, and soft-deleted', async
     occurredAt: '2026-08-25T11:00:00.000Z', audienceName: '小林', feedback: '副歌很有共鸣', updatedAt: '2026-08-25T11:00:00.000Z',
   };
 
-  await handler({ action: 'roadshows:register', ...auth });
-  await handler({ action: 'roadshows:register', ...otherAuth });
+  await seedExistingAccount(store, auth);
+  await seedExistingAccount(store, otherAuth);
   assert.equal((await handler({ action: 'songRecords:save', ...auth, record: practice })).record.updatedAt, '2026-08-25T12:00:00.000Z');
   assert.equal((await handler({ action: 'songRecords:save', ...auth, record: roadshow })).record.id, 'feedback-1');
   assert.equal((await handler({ action: 'songRecords:pull', ...auth })).records.length, 2);

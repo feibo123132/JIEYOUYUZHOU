@@ -1,6 +1,12 @@
 const { validateNotebookPages } = require('./feelingsNotebook');
 const { validateSongGroups } = require('./songGroups');
+const { validateEntries } = require('./enoughJournal');
 const ACTIONS = new Set([
+  'stars:verifyOwner',
+  'stars:ownerPull', 'stars:ownerCreate', 'stars:ownerUpdate', 'stars:ownerDelete', 'stars:ownerRestore', 'stars:ownerPurge',
+  'enough:pull', 'enough:save',
+  'invitations:create',
+  'invitations:revoke',
   'songGroups:pull',
   'songGroups:save',
   'feelingsNotebook:pull',
@@ -146,6 +152,7 @@ const validateSongRecord = (value) => {
     const improvements = cleanOptionalText(value.improvements, 2000, 'INVALID_SONG_RECORD');
     if (value.needsMorePractice !== undefined && typeof value.needsMorePractice !== 'boolean') throw new Error('INVALID_SONG_RECORD');
     if (value.needsImprovement !== undefined && typeof value.needsImprovement !== 'boolean') throw new Error('INVALID_SONG_RECORD');
+    if (value.singingMoods !== undefined && (!Array.isArray(value.singingMoods) || value.singingMoods.length > 3 || !value.singingMoods.every((mood) => ['快乐', '感动', '想哭'].includes(mood)))) throw new Error('INVALID_SONG_RECORD');
     return {
       ...base,
       kind: 'practice',
@@ -155,6 +162,7 @@ const validateSongRecord = (value) => {
       improvements,
       needsMorePractice: Boolean(value.needsMorePractice),
       needsImprovement: Boolean(value.needsImprovement),
+      singingMoods: [...new Set(value.singingMoods ?? [])],
     };
   }
   if (value.kind === 'roadshow') {
@@ -255,7 +263,7 @@ const validateSongScorePage = (value) => {
 
 function validateRequest(event) {
   if (!event || typeof event !== 'object' || !ACTIONS.has(event.action)) throw new Error('INVALID_ACTION');
-  const requestLimit = event.action === 'feelingsNotebook:save' ? 4 * 1024 * 1024 : event.action === 'artistSettings:push'
+  const requestLimit = event.action === 'enough:save' ? 650000 : event.action === 'feelingsNotebook:save' ? 4 * 1024 * 1024 : event.action === 'artistSettings:push'
     ? ARTIST_SETTINGS_REQUEST_LIMIT
     : event.action === 'songScores:uploadPage' ? SONG_SCORE_UPLOAD_REQUEST_LIMIT : DEFAULT_REQUEST_LIMIT;
   if (Buffer.byteLength(JSON.stringify(event), 'utf8') > requestLimit) throw new Error('PAYLOAD_TOO_LARGE');
@@ -275,6 +283,17 @@ function validateRequest(event) {
   const alias = cleanText(event.alias, 30, 'INVALID_ALIAS');
   if (typeof event.password !== 'string' || event.password.length < 6 || event.password.length > 64) throw new Error('INVALID_PASSWORD');
   const base = { action: event.action, alias, password: event.password };
+  if (event.action.startsWith('stars:owner')) return { ...base, themeId: event.themeId, id: event.id, star: event.star };
+  if (event.action === 'enough:save') {
+    if (!Number.isSafeInteger(event.expectedRevision) || event.expectedRevision < 0) throw new Error('INVALID_JOURNAL');
+    return { ...base, expectedRevision: event.expectedRevision, entries: validateEntries(event.entries) };
+  }
+  if (event.action === 'invitations:create') return { ...base, boundAlias: event.boundAlias ? cleanText(event.boundAlias, 30, 'INVALID_ALIAS').toLowerCase() : '' };
+  if (event.action === 'roadshows:register' || event.action === 'invitations:revoke') {
+    const code = typeof event.invitationCode === 'string' ? event.invitationCode.trim().toUpperCase() : '';
+    if (code && !/^[A-F0-9]{32}$/.test(code)) throw new Error('INVALID_INVITATION');
+    return { ...base, invitationCode: code };
+  }
   if (event.action === 'songGroups:save') {
     if (!Number.isInteger(event.expectedRevision) || event.expectedRevision < 0) throw new Error('INVALID_SONG_GROUPS');
     return { ...base, expectedRevision: event.expectedRevision, groups: validateSongGroups(event.groups) };

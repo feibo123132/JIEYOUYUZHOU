@@ -45,14 +45,14 @@ test('returning to the hub preserves identity and clears theme stars', () => {
   assert.equal(useAppStore.getState().activeTheme, null)
 })
 
-test('keepsake studio navigation changes only the current view', () => {
+test('enough journal navigation changes only the current view', () => {
   const user = { id: 'u2', nickname: '留影者', isAuthenticated: false }
   const stars = [{ id: 's2', x: 24, y: 36, nickname: '留影者', createdAt: '2026-08-23' }]
   useAppStore.setState({ activeTheme: 'life', currentView: 'welcome', user, stars })
 
-  useAppStore.getState().enterKeepsakeStudio()
+  useAppStore.getState().enterEnoughJournal()
 
-  assert.equal(useAppStore.getState().currentView, 'keepsake-studio')
+  assert.equal(useAppStore.getState().currentView, 'enough-journal')
   assert.equal(useAppStore.getState().activeTheme, 'life')
   assert.deepEqual(useAppStore.getState().user, user)
   assert.deepEqual(useAppStore.getState().stars, stars)
@@ -61,16 +61,18 @@ test('keepsake studio navigation changes only the current view', () => {
   assert.equal(useAppStore.getState().currentView, 'theme-hub')
 })
 
-test('keepsake studio is opened from Meow Generator instead of a duplicate homepage card', () => {
+test('enough journal replaces keepsake and old deep links enter the replacement', () => {
   const hubSource = readFileSync(new URL('../src/components/Theme/ThemeHub.tsx', import.meta.url), 'utf8')
   const appSource = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
 
   assert.doesNotMatch(hubSource, /onOpenKeepsake/)
   assert.doesNotMatch(hubSource, /MEMORY STUDIO/)
   assert.doesNotMatch(hubSource, /进入留影工坊/)
-  assert.match(appSource, /view.*keepsake/)
-  assert.match(appSource, /enterKeepsakeStudio\(\)/)
-  assert.match(appSource, /currentView === 'keepsake-studio'/)
+  assert.match(hubSource, /onOpenEnough/)
+  assert.match(hubSource, /此刻已足/)
+  assert.match(appSource, /\['keepsake', 'enough'\]/)
+  assert.match(appSource, /enterEnoughJournal\(\)/)
+  assert.match(appSource, /currentView === 'enough-journal'/)
 })
 
 test('song request navigation changes only the current view', () => {
@@ -111,7 +113,7 @@ test('all four homepage cards share one responsive size contract', () => {
   const hubSource = readFileSync(new URL('../src/components/Theme/ThemeHub.tsx', import.meta.url), 'utf8')
 
   assert.match(hubSource, /const HUB_CARD_SIZE_CLASS = 'h-\[300px\] md:h-\[310px\]'/)
-  assert.equal(hubSource.match(/\$\{HUB_CARD_SIZE_CLASS\}/g)?.length, 3)
+  assert.equal(hubSource.match(/\$\{HUB_CARD_SIZE_CLASS\}/g)?.length, 4)
   assert.doesNotMatch(hubSource, /min-h-36/)
 })
 
@@ -119,6 +121,6 @@ test('all four homepage cards share the compact content rhythm', () => {
   const hubSource = readFileSync(new URL('../src/components/Theme/ThemeHub.tsx', import.meta.url), 'utf8')
 
   assert.match(hubSource, /const HUB_CARD_CONTENT_CLASS = 'relative flex h-full flex-col gap-5'/)
-  assert.equal(hubSource.match(/\{HUB_CARD_CONTENT_CLASS\}/g)?.length, 3)
+  assert.equal(hubSource.match(/\{HUB_CARD_CONTENT_CLASS\}/g)?.length, 4)
   assert.doesNotMatch(hubSource, /justify-between gap-16/)
 })

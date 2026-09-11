@@ -7,6 +7,15 @@ import {
   tcbService,
 } from './tcb';
 import { enqueue } from '../utils/syncQueue';
+import { isReservedStarName, STAR_OWNER_ALIAS } from '../components/Welcome/starOwner';
+import { readSongRecordSession } from '../components/SongRequest/songRecords';
+import { callOwnerStars } from '../components/SongRequest/songRequestCloud';
+
+const ownerCall = <T,>(action: string, themeId: ThemeId, payload: Record<string, unknown> = {}) => {
+  const credentials = readSongRecordSession(sessionStorage);
+  if (credentials?.alias.trim().toLowerCase() !== STAR_OWNER_ALIAS) throw new Error('AUTH_FAILED');
+  return callOwnerStars<T>(credentials, action, { themeId, ...payload });
+};
 import { getThemeConfig, type ThemeId } from '../themes/themeConfig';
 
 export interface StarData {
@@ -42,6 +51,7 @@ const requireReachableTcbTheme = async (themeId: ThemeId) => {
 
 const userService = {
   async createUser(nickname: string): Promise<UserData> {
+    if (isReservedStarName(nickname)) throw new Error('RESERVED_NICKNAME');
     if (supabase) {
       const { data, error } = await supabase
         .from('users')
@@ -78,6 +88,12 @@ const userService = {
 };
 
 const starService = {
+  async getVisibleStars(themeId: ThemeId, nickname: string): Promise<StarData[]> {
+    const publicStars = await this.getAllStars(themeId);
+    if (!isReservedStarName(nickname)) return publicStars;
+    const { stars } = await ownerCall<{ stars: StarData[] }>('stars:ownerPull', themeId);
+    return [...publicStars, ...stars.filter(star => !star.deleted_at && !(star as StarData & { deletedAt?: number }).deletedAt)];
+  },
   async createStar(
     themeId: ThemeId,
     userId: string,
@@ -85,6 +101,7 @@ const starService = {
     position: { x: number; y: number },
     options?: { color?: string; size?: number; shape?: string; message?: string; isAdminDevice?: boolean },
   ): Promise<StarData> {
+    if (isReservedStarName(nickname)) return (await ownerCall<{ star: StarData }>('stars:ownerCreate', themeId, { star: { ...options, position_x: position.x, position_y: position.y } })).star;
     if (supabase) {
       const table = getThemeConfig(themeId).data.starsCollection;
       const { data, error } = await supabase
@@ -147,22 +164,29 @@ const starService = {
       return (data || []).map((star: any) => ({
         ...star,
         nickname: star.users?.nickname || star.nickname,
-      })).filter((star: StarData) => !star.deleted_at);
+      })).filter((star: StarData) => !star.deleted_at && !isReservedStarName(star.nickname));
     }
 
     if (tcbApp) {
       await requireReachableTcbTheme(themeId);
-      return (await tcbService.getAllStars(themeId)).filter((star: StarData) => !star.deleted_at);
+      return (await tcbService.getAllStars(themeId)).filter((star: StarData) => !star.deleted_at && !isReservedStarName(star.nickname));
     }
 
     if (await isBackendReachable(themeId)) {
-      return (await api.getAllStars(themeId)).filter((star: StarData) => !star.deleted_at);
+      return (await api.getAllStars(themeId)).filter((star: StarData) => !star.deleted_at && !isReservedStarName(star.nickname));
     }
 
-    return (await mockDatabase.getAllStars(themeId)).filter((star: StarData) => !star.deleted_at) as StarData[];
+    return (await mockDatabase.getAllStars(themeId)).filter((star: StarData) => !star.deleted_at && !isReservedStarName(star.nickname)) as StarData[];
   },
 
   async getTrashStars(themeId: ThemeId): Promise<StarData[]> {
+    const publicTrash = (await this.getPublicTrashStars(themeId)).filter(star => !isReservedStarName(star.nickname));
+    const credentials = readSongRecordSession(sessionStorage);
+    if (credentials?.alias.trim().toLowerCase() !== STAR_OWNER_ALIAS) return publicTrash;
+    const { stars } = await ownerCall<{ stars: StarData[] }>('stars:ownerPull', themeId);
+    return [...publicTrash, ...stars.filter(star => Boolean(star.deleted_at || (star as StarData & { deletedAt?: number }).deletedAt))];
+  },
+  async getPublicTrashStars(themeId: ThemeId): Promise<StarData[]> {
     if (supabase) {
       const table = getThemeConfig(themeId).data.starsCollection;
       const { data, error } = await supabase
@@ -212,6 +236,7 @@ const starService = {
   },
 
   async deleteStar(themeId: ThemeId, starId: string): Promise<boolean> {
+    if (starId.startsWith('owner-star-')) { await ownerCall('stars:ownerDelete', themeId, { id: starId }); return true; }
     if (supabase) {
       const table = getThemeConfig(themeId).data.starsCollection;
       const { error } = await supabase.from(table).update({ deleted_at: Date.now() }).eq('id', starId);
@@ -233,6 +258,7 @@ const starService = {
   },
 
   async restoreStar(themeId: ThemeId, starId: string): Promise<boolean> {
+    if (starId.startsWith('owner-star-')) { await ownerCall('stars:ownerRestore', themeId, { id: starId }); return true; }
     if (supabase) {
       const table = getThemeConfig(themeId).data.starsCollection;
       const { error } = await supabase.from(table).update({ deleted_at: null }).eq('id', starId);
@@ -248,6 +274,7 @@ const starService = {
   },
 
   async permanentDeleteStar(themeId: ThemeId, starId: string): Promise<boolean> {
+    if (starId.startsWith('owner-star-')) { await ownerCall('stars:ownerPurge', themeId, { id: starId }); return true; }
     if (supabase) {
       const table = getThemeConfig(themeId).data.starsCollection;
       const { error } = await supabase.from(table).delete().eq('id', starId);
@@ -267,6 +294,7 @@ const starService = {
     starId: string,
     updates: Partial<{ color?: string; size?: number; shape?: string; message?: string }>
   ): Promise<boolean> {
+    if (starId.startsWith('owner-star-')) { await ownerCall('stars:ownerUpdate', themeId, { id: starId, star: updates }); return true; }
     if (supabase) {
       const table = getThemeConfig(themeId).data.starsCollection;
       const { error } = await supabase.from(table).update(updates).eq('id', starId);

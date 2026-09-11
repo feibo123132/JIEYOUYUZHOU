@@ -14,11 +14,20 @@ import {
 import type { ArtistSettingsPayload, ArtistSettingsSnapshot } from './artistSettings';
 import type { QuizAssignments } from './songQuizLibrary';
 import type { SongGroupsSnapshot } from './songGroups';
+import type { JournalEntry, JournalSnapshot } from '../Enough/journalModel';
+
+export const pullEnoughJournal = async (credentials: Credentials): Promise<JournalSnapshot> =>
+  (await callSync<{ journal: JournalSnapshot }>({ action: 'enough:pull', ...credentials })).journal;
+export const saveEnoughJournal = async (credentials: Credentials, expectedRevision: number, entries: JournalEntry[]): Promise<JournalSnapshot> =>
+  (await callSync<{ journal: JournalSnapshot }>({ action: 'enough:save', ...credentials, expectedRevision, entries })).journal;
 
 export interface Credentials {
   alias: string;
   password: string;
 }
+
+export const verifyStarOwner = (credentials: Credentials) => callSync<{ owner: true }>({ action: 'stars:verifyOwner', ...credentials });
+export const callOwnerStars = <T,>(credentials: Credentials, action: string, payload: Record<string, unknown>) => callSync<T>({ ...payload, action, ...credentials });
 
 export interface CloudVoteState {
   counts: VoteCounts;
@@ -91,9 +100,14 @@ export const saveCloudQuizAssignments = async (
   await callSync<{ assignments: QuizAssignments }>({ action: 'quizLibrary:set', ...credentials, assignments })
 ).assignments;
 
-export const registerRoadshowWorkspace = async (credentials: Credentials): Promise<RoadshowRecord[]> => (
-  await callSync<{ records: RoadshowRecord[] }>({ action: 'roadshows:register', ...credentials })
+export const registerRoadshowWorkspace = async (credentials: Credentials, invitationCode = ''): Promise<RoadshowRecord[]> => (
+  await callSync<{ records: RoadshowRecord[] }>({ action: 'roadshows:register', ...credentials, invitationCode })
 ).records;
+
+export const createAccountInvitation = (credentials: Credentials, boundAlias: string) =>
+  callSync<{ code: string; expiresAt: string }>({ action: 'invitations:create', ...credentials, boundAlias });
+export const revokeAccountInvitation = (credentials: Credentials, invitationCode: string) =>
+  callSync({ action: 'invitations:revoke', ...credentials, invitationCode });
 
 export const pullRoadshows = async (credentials: Credentials): Promise<RoadshowRecord[]> => (
   await callSync<{ records: RoadshowRecord[] }>({ action: 'roadshows:pull', ...credentials })
@@ -272,6 +286,7 @@ export const mapArtistSettingsSyncError = (error: unknown) => {
 };
 
 export const mapRoadshowSyncError = (error: unknown) => {
+  if (error instanceof Error && error.message === 'INVALID_INVITATION') return '邀请码无效、已使用、已撤销、已过期或与账号不匹配，请向站主申请。';
   const code = error instanceof Error ? error.message : 'SYNC_FAILED';
   if (code === 'ALREADY_REGISTERED') return '这个别称已经设置过管理口令，请直接进入。';
   if (code === 'NOT_REGISTERED') return '这个别称还没有路演档案，请先首次启用。';

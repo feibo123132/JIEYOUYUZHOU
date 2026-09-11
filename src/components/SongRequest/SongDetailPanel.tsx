@@ -88,6 +88,7 @@ const SongDetailPanel = ({
   const [singingReflection, setSingingReflection] = useState('');
   const [needsMorePractice, setNeedsMorePractice] = useState(false);
   const [needsImprovement, setNeedsImprovement] = useState(false);
+  const [singingMoods, setSingingMoods] = useState<NonNullable<PracticeRecord['singingMoods']>>([]);
   const [roadshowAt, setRoadshowAt] = useState(localDateTime);
   const [audienceName, setAudienceName] = useState('');
   const [feedback, setFeedback] = useState('');
@@ -130,6 +131,7 @@ const SongDetailPanel = ({
       setSingingReflection(getPracticeReflection(record));
       setNeedsMorePractice(record.needsMorePractice);
       setNeedsImprovement(record.needsImprovement);
+      setSingingMoods(record.singingMoods ?? []);
     } else {
       setRoadshowAt(localDateTime(record.occurredAt));
       setAudienceName(record.audienceName);
@@ -145,7 +147,7 @@ const SongDetailPanel = ({
       id: editingRecord?.kind === 'practice' ? editingRecord.id : recordId('practice'), kind: 'practice', songId: song.id, songTitle: song.title, songArtist: song.artist,
       occurredAt: new Date(practiceAt).toISOString(), matchScore: Number(matchScore),
       feelings: feelings.trim(), problems: singingReflection.trim(), improvements: '',
-      needsMorePractice, needsImprovement, updatedAt: now,
+      needsMorePractice, needsImprovement, singingMoods, updatedAt: now,
     };
     if (!isValidSongRecord(record)) {
       setMessage('请填写有效的时间和 70–100 分。');
@@ -155,15 +157,16 @@ const SongDetailPanel = ({
     try {
       const saved = await saveSongRecord(session, record);
       commitSaved(saved);
-      if (saved.kind !== 'practice' || Boolean(saved.needsMorePractice) !== needsMorePractice || Boolean(saved.needsImprovement) !== needsImprovement) {
+      if (saved.kind !== 'practice' || Boolean(saved.needsMorePractice) !== needsMorePractice || Boolean(saved.needsImprovement) !== needsImprovement || JSON.stringify([...(saved.singingMoods ?? [])].sort()) !== JSON.stringify([...singingMoods].sort())) {
         setEditingRecord(record);
-        setMessage('练习内容已保存，但练习标识未同步。已保留当前选择，请更新云端服务后再次保存。');
+        setMessage('练习内容已保存，但练习标识或演唱心情未同步。已保留当前选择，请更新云端服务后再次保存。');
         return;
       }
       const wasEditing = editingRecord?.kind === 'practice';
       setEditingRecord(null);
       setFeelings(''); setSingingReflection('');
       setNeedsMorePractice(false); setNeedsImprovement(false);
+      setSingingMoods([]);
       setMessage(wasEditing ? '练习记录修改已同步' : '练习记录已同步');
     } catch (error) { setMessage(mapSongRecordSyncError(error)); }
     finally { setBusy(''); }
@@ -409,7 +412,20 @@ const SongDetailPanel = ({
               <Field label="匹配度（70–100）"><input type="number" min="70" max="100" value={matchScore} onChange={(event) => setMatchScore(parseMatchScoreInput(event.target.value))} className={inputClass} /></Field>
               <Field label="品质"><div aria-readonly="true" className={`${inputClass} flex items-center font-black ${matchQuality ? qualityTextClass[matchQuality.tone] : 'text-white/25'}`}>{matchQuality?.label ?? '—'}</div></Field>
             </div>
-            <PracticeMarkerOptions needsMorePractice={needsMorePractice} needsImprovement={needsImprovement} onToggleMorePractice={() => setNeedsMorePractice((value) => !value)} onToggleImprovement={() => setNeedsImprovement((value) => !value)} />
+            <div className="flex flex-wrap items-start gap-4">
+              <PracticeMarkerOptions needsMorePractice={needsMorePractice} needsImprovement={needsImprovement} onToggleMorePractice={() => setNeedsMorePractice((value) => !value)} onToggleImprovement={() => setNeedsImprovement((value) => !value)} />
+              <div>
+                <span className="mb-2 block text-xs font-bold text-white/45">演唱心情</span>
+                <details aria-label="演唱心情" className="group relative w-fit min-w-40">
+                  <summary className="flex h-10 cursor-pointer list-none items-center justify-between gap-4 rounded-xl border border-orange-200/25 bg-black/20 px-3 text-sm font-bold text-orange-100 hover:border-orange-200/50 [&::-webkit-details-marker]:hidden">
+                    <span>{singingMoods.join(' · ') || '未选择'}</span><ChevronDown className="h-4 w-4 transition group-open:rotate-180" />
+                  </summary>
+                  <div className="absolute right-0 top-full z-20 mt-1 w-full min-w-40 rounded-xl border border-orange-200/20 bg-[#17110d] p-1 shadow-xl">
+                    {(['快乐', '感动', '想哭'] as const).map((mood) => <label key={mood} className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-orange-100 hover:bg-white/10"><input type="checkbox" checked={singingMoods.includes(mood)} onChange={() => setSingingMoods((current) => current.includes(mood) ? current.filter((item) => item !== mood) : [...current, mood])} className="accent-orange-300" />{mood}</label>)}
+                  </div>
+                </details>
+              </div>
+            </div>
             <Field label="练习感受"><textarea value={feelings} onChange={(event) => setFeelings(event.target.value)} placeholder="音色、情绪、舒适程度……" className={areaClass} /></Field>
             <button type="button" disabled={Boolean(busy)} onClick={() => void submitPractice()} className="inline-flex h-11 items-center gap-2 rounded-full bg-orange-400 px-5 text-sm font-black text-black transition hover:bg-orange-300 disabled:opacity-40"><Save className="h-4 w-4" />{editingRecord?.kind === 'practice' ? '保存修改' : '保存练习记录'}</button>
           </> : <>
@@ -490,10 +506,11 @@ const PracticeRecordDetails = ({ record }: { record: PracticeRecord }) => {
 };
 
 const PracticeMarkerBadges = ({ record }: { record: PracticeRecord }) => (
-  (record.needsMorePractice || record.needsImprovement) ? (
+  (record.needsMorePractice || record.needsImprovement || record.singingMoods?.length) ? (
     <p className="flex flex-wrap gap-1.5 text-[10px] font-black">
       {record.needsMorePractice && <span className="rounded-full border border-orange-200/25 bg-orange-300/10 px-2 py-1 text-orange-100">多练习</span>}
       {record.needsImprovement && <span className="rounded-full border border-cyan-200/25 bg-cyan-300/10 px-2 py-1 text-cyan-100">待提升</span>}
+      {record.singingMoods?.map((mood) => <span key={mood} className="rounded-full border border-rose-200/25 bg-rose-300/10 px-2 py-1 text-rose-100">{mood}</span>)}
     </p>
   ) : null
 );
