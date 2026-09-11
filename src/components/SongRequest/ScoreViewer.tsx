@@ -17,12 +17,15 @@ interface ScoreViewerProps {
   songTitle: string;
   songArtist: string;
   pages: string[];
+  /** 谱子用的是云端签名地址，过期会变裂图：加载失败时通知上层换一批新地址。 */
+  onPagesStale?: (force?: boolean) => void;
   onClose: () => void;
 }
 
-const ScoreViewer = ({ songId, songTitle, songArtist, pages, onClose }: ScoreViewerProps) => {
+const ScoreViewer = ({ songId, songTitle, songArtist, pages, onPagesStale, onClose }: ScoreViewerProps) => {
   const total = pages.length;
   const [page, setPage] = useState(() => Math.min(readScorePage(window.localStorage, songId), Math.max(total - 1, 0)));
+  const [pageError, setPageError] = useState(false);
   const [zoom, setZoom] = useState(SCORE_ZOOM_MIN);
   const [viewportSize, setViewportSize] = useState<ScoreSize>({ width: 0, height: 0 });
   const [imageSize, setImageSize] = useState<ScoreSize>({ width: 0, height: 0 });
@@ -76,6 +79,7 @@ const ScoreViewer = ({ songId, songTitle, songArtist, pages, onClose }: ScoreVie
     zoomRef.current = SCORE_ZOOM_MIN;
     setZoom(SCORE_ZOOM_MIN);
     setImageSize({ width: 0, height: 0 });
+    setPageError(false);
     stageRef.current?.scrollTo({ left: 0, top: 0 });
   }, [page]);
 
@@ -249,10 +253,17 @@ const ScoreViewer = ({ songId, songTitle, songArtist, pages, onClose }: ScoreVie
             src={pages[page]}
             alt={`${songTitle} 谱子 第 ${page + 1} 页`}
             draggable={false}
-            onLoad={(event) => setImageSize({
-              width: event.currentTarget.naturalWidth,
-              height: event.currentTarget.naturalHeight,
-            })}
+            onLoad={(event) => {
+              setPageError(false);
+              setImageSize({
+                width: event.currentTarget.naturalWidth,
+                height: event.currentTarget.naturalHeight,
+              });
+            }}
+            onError={() => {
+              setPageError(true);
+              onPagesStale?.();
+            }}
             onDoubleClick={toggleReadingZoom}
             className={zoomed ? 'absolute max-w-none cursor-zoom-out' : 'absolute max-w-none cursor-zoom-in'}
             style={displaySize.width > 0 ? {
@@ -294,7 +305,17 @@ const ScoreViewer = ({ songId, songTitle, songArtist, pages, onClose }: ScoreVie
           <button type="button" aria-label="恢复适应屏幕" disabled={!zoomed} onClick={resetZoom} className="flex h-10 min-w-20 items-center justify-center gap-1.5 rounded-full px-3 font-bold tabular-nums transition hover:bg-white/10 disabled:opacity-45"><RotateCcw className="h-3.5 w-3.5" />{Math.round(zoom * 100)}%</button>
           <button type="button" aria-label="放大谱子" disabled={zoom >= SCORE_ZOOM_MAX} onClick={() => applyZoom(stepScoreZoom(zoomRef.current, 1))} className="grid h-10 w-10 place-items-center rounded-full transition hover:bg-white/10 disabled:opacity-25"><Plus className="h-4 w-4" /></button>
         </div>
-        <span className="w-full sm:w-auto">{zoomed ? '双指缩放 · 单指拖动阅览 · 双击复原' : '左右滑动翻页 · 双击适合宽度 · 双指缩放'}</span>
+        {pageError ? (
+          <button
+            type="button"
+            onClick={() => onPagesStale?.(true)}
+            className="w-full rounded-full border border-amber-300/30 bg-amber-300/10 px-4 py-1.5 font-bold text-amber-100/90 transition hover:bg-amber-300/20 sm:w-auto"
+          >
+            谱子加载失败，点此重新加载
+          </button>
+        ) : (
+          <span className="w-full sm:w-auto">{zoomed ? '双指缩放 · 单指拖动阅览 · 双击复原' : '左右滑动翻页 · 双击适合宽度 · 双指缩放'}</span>
+        )}
       </footer>
     </div>,
     document.body,

@@ -8,6 +8,7 @@ import {
   appendSongScorePages, compressScoreImage, getSongScoreDisplayPages, moveSongScorePage,
   removeSongScorePage, SCORE_PAGE_LIMIT, SCORE_PAGES_TOTAL_LIMIT, type SongScore,
 } from './songScores';
+import { useResolvedScorePages } from './useResolvedScorePages';
 import {
   averageMatchScore,
   getMatchQuality,
@@ -102,6 +103,11 @@ const SongDetailPanel = ({
   const formRef = useRef<HTMLDivElement>(null);
   const matchQuality = getMatchQuality(Number(matchScore));
   const currentQuizLevel = QUIZ_LEVELS.find((level) => level.id === quizLevel);
+  // 云端签名地址会过期，这里负责在挂载 / 回到前台 / 加载失败时自动换新，避免谱子变裂图。
+  const { pages: scorePages, refresh: refreshScorePages } = useResolvedScorePages(
+    score?.pages ?? [],
+    score ? getSongScoreDisplayPages(score) : [],
+  );
 
   if (!session) {
     return (
@@ -205,7 +211,6 @@ const SongDetailPanel = ({
     finally { setBusy(''); }
   };
 
-  const scorePages = getSongScoreDisplayPages(score);
   const scorePending = Boolean(score?.pendingSync);
   const scoreWorking = scoreBusyLocal || (scoreBusy ? '正在同步谱子到云端…' : scoreSyncStatus);
 
@@ -369,7 +374,7 @@ const SongDetailPanel = ({
             <ol className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
               {scorePages.map((page, index) => (
                 <li key={`${index}-${page.slice(-24)}`} className="relative overflow-hidden rounded-2xl border border-white/10 bg-black/30">
-                  <img src={page} alt={`${song.title} 谱子第 ${index + 1} 页`} className="aspect-[3/4] w-full object-cover" loading="lazy" />
+                  <img src={page} alt={`${song.title} 谱子第 ${index + 1} 页`} className="aspect-[3/4] w-full object-cover" loading="lazy" onError={() => refreshScorePages()} />
                   <span className="absolute left-2 top-2 rounded-full bg-black/70 px-2 py-0.5 text-[10px] font-black tabular-nums text-white/85">{index + 1}</span>
                   <div className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-1 bg-gradient-to-t from-black/85 to-transparent p-1.5 pt-5">
                     <button type="button" aria-label={`第 ${index + 1} 页上移`} disabled={index === 0} onClick={() => moveScorePage(index, -1)} className="grid h-7 w-7 place-items-center rounded-full bg-white/10 text-white/75 transition hover:bg-white/25 hover:text-white disabled:opacity-25"><ChevronUp className="h-3.5 w-3.5" /></button>
@@ -398,6 +403,7 @@ const SongDetailPanel = ({
           songTitle={song.title}
           songArtist={song.artist}
           pages={scorePages}
+          onPagesStale={refreshScorePages}
           onClose={() => setScoreViewerOpen(false)}
         />
       )}

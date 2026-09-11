@@ -179,6 +179,18 @@ const getScorePageUrls = async (pages: string[]): Promise<string[]> => {
   return pages.map((page) => urlByFileId.get(page) ?? page);
 };
 
+/**
+ * 云端签名地址（getTempFileURL）带有效期，页面长时间挂着之后地址会失效，
+ * 谱子就变成裂图，只能靠刷新页面重新换取。这里把「重新换链接」的能力暴露出去，
+ * 让界面在图片加载失败或长时间停留后自行换新，不需要用户手动刷新。
+ */
+export const refreshSongScorePageUrls = async (pages: string[]): Promise<string[]> => {
+  if (!pages.some(isCloudScorePage)) return pages;
+  if (!tcbApp) throw new Error('CLOUD_UNAVAILABLE');
+  await ensureSignIn();
+  return getScorePageUrls(pages);
+};
+
 const resolveSongScores = async (scores: StoredSongScore[]): Promise<SongScore[]> => {
   const pages = scores.flatMap((score) => score.pages);
   const resolved = await getScorePageUrls(pages);
@@ -200,8 +212,9 @@ const deleteSongScoreFiles = async (fileIds: string[]): Promise<void> => {
 
 export const pullSongScores = async (credentials: Credentials): Promise<SongScore[]> => {
   const scores = parseSongScores((await callSync<{ scores: SongScore[] }>({ action: 'songScores:pull', ...credentials })).scores);
-  if (scores.every((score) => score.pageUrls?.length === score.pages.length)) return scores;
-  return resolveSongScores(scores.map(toStoredSongScore));
+  // 云端只保存 cloud:// fileID；签名地址本身有有效期，不能沿用上一次换来的旧链接。
+  const needsResolve = scores.some((score) => score.pages.some(isCloudScorePage));
+  return needsResolve ? resolveSongScores(scores.map(toStoredSongScore)) : scores;
 };
 
 export const syncSongScoreToCloud = async (

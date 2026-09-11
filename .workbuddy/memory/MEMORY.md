@@ -12,5 +12,11 @@
 - 点歌/投票系统：云函数 `songRequestSync`，votes 集合按 songId 为文档：`count`（总榜）+ `locationCounts.{medicalWuming|medicalMain|nanhu}`（分地点）；`votes:pull` 按 request.location 读对应桶，无地点读 count；`votes:finishAll`（唱完）把待唱累加到站主 workspace 的 `sungVoteCounts`/`sungVoteCountsByLocation`。归类决策**后端权威**：优先 request.location（validation 已放行），否则按 `latestRoadshowLocation(owner)` 取站主最近路演地点，无路演则只进总榜。`incrementCloudVote` 返回 `{ count, location }` 供前端提示去向。
 - 练习徽章：`songPracticeStats` memo 聚合 `{count, score}`；显示开关持久化在 `localStorage` `jieyou_show_practice_badges`。
 
+## 谱子（SongScore）图片加载（重要坑）
+- 云端只存 `cloud://.../song-request-scores/...jpg` fileID（`toStoredSongScore` 会剥离 pageUrls）；显示必须用 `getTempFileURL` 换签名地址，**签名地址有有效期**。
+- 因此：`pullSongScores` 只要含 cloud fileID 就一律重新换取，**不要**信任已存的 pageUrls；`saveSongScoreCache` 会把签名地址一起写进 localStorage，冷启动可能先渲染到过期地址。
+- `src/components/SongRequest/useResolvedScorePages.ts`：谱子地址自愈 Hook（挂载/切歌/回前台/网络恢复/定时换链 + `<img onError>` 换新重试，节流 2h/20min、重试上限 4 次、`#score-retry=N` 片段强制重发请求、`generationRef` 防切歌串数据）。`SongDetailPanel`（缩略图）与 `ScoreViewer`（翻谱器 `onPagesStale`）共用。
+- 同类问题排查思路：iPad/长驻页面上「先正常、放一阵子变裂图、刷新后恢复」= 临时签名地址过期，不是存储/权限/网络问题。
+
 ## 用户偏好
 - 中文输出，结构化（标题/视角/正文/引用/小结），精良 HTML 排版与考究动效，禁用 Inter 字体。
