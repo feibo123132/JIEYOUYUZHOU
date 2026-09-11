@@ -10,7 +10,7 @@ import {
 } from './songScores';
 import { useResolvedScorePages } from './useResolvedScorePages';
 import {
-  averageMatchScore,
+  bestMatchScore,
   getMatchQuality,
   getPracticeReflection,
   isValidSongRecord,
@@ -81,7 +81,7 @@ const SongDetailPanel = ({
   const practices = songRecords.filter((record): record is PracticeRecord => record.kind === 'practice');
   const roadshowNotes = songRecords.filter((record): record is SongRoadshowRecord => record.kind === 'roadshow');
   const roadshowHistory = useMemo(() => findSongRoadshowHistory(roadshows, song), [roadshows, song]);
-  const averageScore = averageMatchScore(practices);
+  const averageScore = bestMatchScore(practices);
   const [activeJournal, setActiveJournal] = useState<JournalKind>('practice');
   const [practiceAt, setPracticeAt] = useState(localDateTime);
   const [matchScore, setMatchScore] = useState<number | ''>(80);

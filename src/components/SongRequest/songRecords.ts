@@ -84,6 +84,12 @@ export const averageMatchScore = (records: Array<Pick<PracticeRecord, 'matchScor
   return Math.round(average * 10) / 10;
 };
 
+// 取多次练习中的最高匹配分（整数）。matchScore 本身是 70–100 整数，所以无需小数。
+export const bestMatchScore = (records: Array<Pick<PracticeRecord, 'matchScore'>>): number | null => {
+  if (!records.length) return null;
+  return records.reduce((top, record) => record.matchScore > top ? record.matchScore : top, records[0].matchScore);
+};
+
 export const parseMatchScoreInput = (value: string): number | '' => value === '' ? '' : Number(value);
 
 export type MatchQuality = {
@@ -144,7 +150,7 @@ export const groupPracticeRecordsByCalendar = (records: SongRecord[]): PracticeM
       key: weekKey,
       days: [...days.entries()].sort(([left], [right]) => right.localeCompare(left)).map(([dayKey, dayRecords]) => {
         const sorted = sortSongRecords(dayRecords) as PracticeRecord[];
-        return { key: dayKey, count: sorted.length, averageScore: averageMatchScore(sorted), records: sorted };
+        return { key: dayKey, count: sorted.length, averageScore: bestMatchScore(sorted), records: sorted };
       }),
     })),
   }));
@@ -158,7 +164,7 @@ export const rankSongsByPracticeMatch = (songs: Song[], records: SongRecord[]) =
   }
   return songs.map((song, catalogIndex) => {
     const practices = practicesBySong.get(song.id) ?? [];
-    return { song, score: averageMatchScore(practices), practiceCount: practices.length, catalogIndex };
+    return { song, score: bestMatchScore(practices), practiceCount: practices.length, catalogIndex };
   }).filter((item): item is typeof item & { score: number } => item.score !== null)
     .sort((left, right) => right.score - left.score || left.catalogIndex - right.catalogIndex)
     .map(({ song, score, practiceCount }) => ({ song, score, practiceCount }));

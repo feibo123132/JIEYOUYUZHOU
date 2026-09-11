@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CalendarDays, Check, ChevronRight, Cloud, Copy, Guitar, Lock, NotebookPen, Plus, Save, Search, Trash2, UsersRound, X } from 'lucide-react';
+import { CalendarDays, Check, ChevronRight, Cloud, Copy, Guitar, Key, Lock, NotebookPen, Plus, Save, Search, Trash2, UsersRound, X } from 'lucide-react';
 import { SONGS } from './songCatalog';
 import type { Song } from './songCatalog';
+import AccountInvitations from './AccountInvitations';
 import DailyPracticePanel from './DailyPracticePanel';
 import RoadshowFeelingsNotebook from './RoadshowFeelingsNotebook';
 import RoadshowCreateDialog from './RoadshowCreateDialog';
@@ -43,7 +44,7 @@ import {
   saveRoadshow,
 } from './songRequestCloud';
 import {
-  averageMatchScore,
+  bestMatchScore,
   clearSongRecordCache,
   getMatchQuality,
   readSongRecordSession,
@@ -77,7 +78,7 @@ interface RoadshowPanelProps {
   onOpenSongDetail?: (song: Song) => void;
 }
 
-type ArchiveView = 'practice' | 'roadshows';
+type ArchiveView = 'practice' | 'roadshows' | 'invitations';
 
 const readSession = (): Credentials | null => {
   return readSongRecordSession(sessionStorage);
@@ -362,9 +363,12 @@ const RoadshowPanel = ({
         <button type="button" onClick={lock} className="archive-lock"><Lock size={15} />锁定档案</button>
       </header>
 
-      <nav className="archive-tabs" aria-label="档案分类">
+      <nav className="archive-tabs" aria-label="档案与授权">
         <button type="button" className={archiveView === 'roadshows' ? 'active' : ''} onClick={() => setArchiveView('roadshows')}><CalendarDays size={16} />路演档案</button>
         <button type="button" className={archiveView === 'practice' ? 'active' : ''} onClick={() => setArchiveView('practice')}><Guitar size={16} />日常练习</button>
+        {canManageFeaturedSongs && (
+          <button type="button" className={archiveView === 'invitations' ? 'active' : ''} onClick={() => setArchiveView('invitations')}><Key size={16} />账号授权</button>
+        )}
       </nav>
 
       {archiveView === 'practice' ? (
@@ -375,6 +379,13 @@ const RoadshowPanel = ({
           syncStatus={syncStatus}
           onRecordsChange={onRecordsChange}
         />
+      ) : archiveView === 'invitations' ? (
+        <section className="roadshow-archive-section">
+          <div className="archive-section-heading">
+            <div><span className="eyebrow">STATION ACCESS · STATION OWNER</span><h2>账号授权</h2><p>为新成员签发一次性邀请码，7 天有效、用后失效。</p></div>
+          </div>
+          <AccountInvitations credentials={credentials} />
+        </section>
       ) : (
         <section className="roadshow-archive-section">
           <div className="archive-section-heading">
@@ -539,7 +550,7 @@ const SongListEditor = ({ onIncrementSingCount, pendingSingCounts, title, descri
     return (song: Pick<RoadshowSong, 'catalogId' | 'title' | 'artist'>): number | null => {
       if (song.catalogId) {
         const practices = practiceMap.get(song.catalogId);
-        if (practices?.length) return averageMatchScore(practices);
+        if (practices?.length) return bestMatchScore(practices);
       }
       const matched: PracticeRecord[] = [];
       for (const practices of practiceMap.values()) {
@@ -547,7 +558,7 @@ const SongListEditor = ({ onIncrementSingCount, pendingSingCounts, title, descri
           if (r.songTitle === song.title && r.songArtist === song.artist) matched.push(r);
         }
       }
-      if (matched.length) return averageMatchScore(matched);
+      if (matched.length) return bestMatchScore(matched);
       return null;
     };
   }, [songRecords]);

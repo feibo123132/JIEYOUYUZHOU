@@ -335,7 +335,7 @@ export default function DailyPracticePanel({
                             <details className="practice-day" key={day.key} open={day.key === today}>
                               <summary>
                                 <span>{dayLabel(day.key)}</span>
-                                <small>{day.count} 首{day.averageScore === null ? '' : ` · 均分 ${day.averageScore}`}</small>
+                                <small>{day.count} 首{day.averageScore === null ? '' : ` · 最高 ${day.averageScore}`}</small>
                                 <ChevronDown size={14} />
                               </summary>
                               <div className="practice-day-records">

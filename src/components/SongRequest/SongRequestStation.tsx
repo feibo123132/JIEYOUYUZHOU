@@ -24,7 +24,6 @@ import {
   saveCloudFeaturedSongIds, saveCloudQuizAssignments, saveRoadshow, syncSongScoreToCloud, deleteSongScore,
 } from './songRequestCloud';
 import RoadshowPanel, { type RoadshowEditorTab } from './RoadshowPanel';
-import AccountInvitations from './AccountInvitations';
 import SongDetailPanel from './SongDetailPanel';
 import PopularSongBarrage from './PopularSongBarrage';
 import { createInitialBarragePreferences, setBarragePreference } from '../StarrySky/barragePreferences';
@@ -34,7 +33,7 @@ import {
   type SongScore,
 } from './songScores';
 import {
-  averageMatchScore, getMatchQuality, loadSongRecordCache, parsePublicPracticeRanking, parseSongRecords, rankSongsByPracticeMatch, readSongRecordSession, recoverSongsFromRecords,
+  bestMatchScore, getMatchQuality, loadSongRecordCache, parsePublicPracticeRanking, parseSongRecords, rankSongsByPracticeMatch, readSongRecordSession, recoverSongsFromRecords,
   saveSongRecordCache, SONG_REQUEST_SESSION_EVENT,
   type PublicPracticeRankingItem, type SongRecord, type SongRecordSession,
 } from './songRecords';
@@ -801,7 +800,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     }
     const map = new Map<string, { count: number; score: number | null }>();
     for (const [songId, records] of bySong) {
-      map.set(songId, { count: records.length, score: averageMatchScore(records) });
+      map.set(songId, { count: records.length, score: bestMatchScore(records) });
     }
     return map;
   }, [songRecords]);
@@ -2198,7 +2197,6 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
 
             {activeSection === 'roadshows' && (
               <div>
-              {canManageFeaturedSongs && songRecordSession && <AccountInvitations credentials={songRecordSession} />}
               <RoadshowPanel
                 editorTab={roadshowEditorTab}
                 onEditorTabChange={setRoadshowEditorTab}
