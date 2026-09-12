@@ -1947,6 +1947,12 @@ test('歌曲详情页在路演右侧用谱子标签承载上传与翻谱功能',
   assert.match(panel, /aria-pressed=\{activeJournal === 'score'\}/)
   assert.match(panel, /activeJournal === 'score' && \(\s*<section data-song-score-panel/)
   assert.match(panel, /activeJournal !== 'score' && \(\s*<div className="grid items-start/)
+  assert.match(panel, /\/>打开谱子/)
+  assert.match(panel, /\? '添加' : '上传谱子'/)
+  assert.doesNotMatch(panel, /打开翻谱器/)
+  assert.doesNotMatch(panel, /添加页面/)
+  assert.match(panel, /<FileText className="h-4 w-4" \/>歌词/)
+  assert.match(panel, /保存歌词/)
 })
 
 test('谱子经已认证云函数上传并只把文件引用写入云端记录', () => {
@@ -1972,7 +1978,7 @@ test('谱子界面区分本机待同步与云端成功并自动迁移旧缓存',
   assert.match(station, /const \[scoreSyncStatus, setScoreSyncStatus\] = useState\(''\)/)
   assert.match(station, /cachedScores\.filter\(isPendingSongScore\)/)
   assert.match(station, /syncSongScoreToCloud\(songRecordSession, pendingScore\)/)
-  assert.match(station, /if \(!pendingScore && !hasCloudSongScore\(previous\)\)/)
+  assert.match(station, /\(!previous \|\| previous\.pendingSync\) && !hasCloudSongScore\(previous\)/)
   assert.match(station, /setScoreSyncStatus\('已同步到云端'\)/)
   assert.match(station, /setScoreSyncStatus\('云端暂时未连接，谱子仅保存在本机'\)/)
   assert.match(station, /scoreSyncStatus=\{scoreSyncStatus\}/)

@@ -873,7 +873,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
       return;
     }
     try { saveSongScoreCache(window.localStorage, songRecordSession.alias, updated); } catch {}
-    if (!pendingScore && !hasCloudSongScore(previous)) {
+    if (!pendingScore && (!previous || previous.pendingSync) && !hasCloudSongScore(previous)) {
       setScoreSyncStatus('已从本机删除');
       return;
     }

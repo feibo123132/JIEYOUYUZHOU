@@ -6,6 +6,7 @@ export interface SongScore {
   songTitle: string;
   songArtist: string;
   pages: string[];
+  lyrics?: string;
   pageUrls?: string[];
   pendingSync?: boolean;
   updatedAt: string;
@@ -49,9 +50,11 @@ export const isValidSongScore = (value: unknown): value is SongScore => {
     && typeof score.songId === 'string' && score.songId.length > 0 && score.songId.length <= 100
     && typeof score.songTitle === 'string' && score.songTitle.length <= 100
     && (score.songArtist === undefined || (typeof score.songArtist === 'string' && score.songArtist.length <= 100))
-    && Array.isArray(score.pages) && score.pages.length >= 1 && score.pages.length <= SCORE_PAGE_LIMIT
+    && Array.isArray(score.pages) && score.pages.length <= SCORE_PAGE_LIMIT
     && score.pages.every(isScorePage)
     && score.pages.join('').length <= SCORE_PAGES_TOTAL_LIMIT
+    && (score.lyrics === undefined || (typeof score.lyrics === 'string' && score.lyrics.length <= 12_000))
+    && (score.pages.length >= 1 || Boolean(score.lyrics?.trim()))
     && (score.pageUrls === undefined || (
       Array.isArray(score.pageUrls)
       && score.pageUrls.length === score.pages.length
@@ -73,6 +76,20 @@ export const buildSongScore = (song: Song, pages: string[]): SongScore => ({
   pendingSync: pages.some((page) => page.startsWith('data:image/')),
   updatedAt: new Date().toISOString(),
 });
+
+export const withSongLyrics = (song: Song, score: SongScore | null | undefined, lyrics: string): SongScore | null => {
+  const normalized = lyrics.trim();
+  if (!normalized && !(score?.pages.length)) return null;
+  return {
+    ...(score ?? buildSongScore(song, [])),
+    id: `score-${song.id}`,
+    songId: song.id,
+    songTitle: song.title,
+    songArtist: song.artist,
+    lyrics: normalized || undefined,
+    updatedAt: new Date().toISOString(),
+  };
+};
 
 export const getSongScoreDisplayPages = (score: SongScore | null | undefined): string[] => (
   score && score.pageUrls?.length === score.pages.length ? score.pageUrls : score?.pages ?? []
@@ -127,6 +144,7 @@ export const toStoredSongScore = (score: SongScore): StoredSongScore => ({
   songTitle: score.songTitle,
   songArtist: score.songArtist,
   pages: score.pages,
+  ...(score.lyrics?.trim() ? { lyrics: score.lyrics.trim() } : {}),
   updatedAt: score.updatedAt,
 });
 

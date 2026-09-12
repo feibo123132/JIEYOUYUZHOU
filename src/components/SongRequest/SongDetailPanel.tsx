@@ -1,12 +1,12 @@
 import { useMemo, useRef, useState } from 'react';
-import { CalendarDays, ChevronDown, ChevronUp, Cloud, Disc3, Guitar, Lock, MessageCircle, Music4, Save, Target, Trash2, Upload } from 'lucide-react';
+import { CalendarDays, ChevronDown, ChevronUp, Cloud, Disc3, FileText, Guitar, Lock, MessageCircle, Music4, Save, Target, Trash2, Upload } from 'lucide-react';
 import type { Song } from './songCatalog';
 import { findSongRoadshowHistory, type RoadshowRecord } from './roadshow';
 import { QUIZ_LEVELS, type QuizLevel } from './songQuizLibrary';
 import ScoreViewer from './ScoreViewer';
 import {
   appendSongScorePages, compressScoreImage, getSongScoreDisplayPages, moveSongScorePage,
-  removeSongScorePage, SCORE_PAGE_LIMIT, SCORE_PAGES_TOTAL_LIMIT, type SongScore,
+  removeSongScorePage, SCORE_PAGE_LIMIT, SCORE_PAGES_TOTAL_LIMIT, withSongLyrics, type SongScore,
 } from './songScores';
 import { useResolvedScorePages } from './useResolvedScorePages';
 import {
@@ -99,6 +99,8 @@ const SongDetailPanel = ({
   const [quizMenuOpen, setQuizMenuOpen] = useState(false);
   const [scoreViewerOpen, setScoreViewerOpen] = useState(false);
   const [scoreBusyLocal, setScoreBusyLocal] = useState('');
+  const [lyricsEditorOpen, setLyricsEditorOpen] = useState(false);
+  const [lyricsDraft, setLyricsDraft] = useState(score?.lyrics ?? '');
   const scoreFileRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLDivElement>(null);
   const matchQuality = getMatchQuality(Number(matchScore));
@@ -242,7 +244,7 @@ const SongDetailPanel = ({
   const removeScorePage = (index: number) => {
     if (!score) return;
     const next = removeSongScorePage(score, index);
-    if (next.pages.length) onScoreChange(song.id, next);
+    if (next.pages.length || next.lyrics?.trim()) onScoreChange(song.id, next);
     else onScoreChange(song.id, null);
   };
 
@@ -253,7 +255,19 @@ const SongDetailPanel = ({
 
   const removeAllScorePages = () => {
     if (!scorePages.length || !window.confirm('确定删除这首歌的全部谱子吗？')) return;
-    onScoreChange(song.id, null);
+    onScoreChange(song.id, score?.lyrics?.trim() ? { ...score, pages: [], pageUrls: [], pendingSync: true, updatedAt: new Date().toISOString() } : null);
+  };
+
+  const openLyrics = () => {
+    setLyricsDraft(score?.lyrics ?? '');
+    setLyricsEditorOpen(true);
+  };
+
+  const saveLyrics = () => {
+    const next = withSongLyrics(song, score, lyricsDraft);
+    onScoreChange(song.id, next);
+    setLyricsEditorOpen(false);
+    setMessage(next?.lyrics ? '歌词已保存，正在同步到云端' : '歌词已清空');
   };
 
   return (
@@ -340,7 +354,7 @@ const SongDetailPanel = ({
             <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-orange-200/15 bg-orange-300/10 text-orange-200"><Music4 className="h-5 w-5" /></span>
             <div>
               <h2 className="font-serif text-2xl font-black">专属谱子</h2>
-              <p className="mt-1 text-xs leading-5 text-white/35">把谱子拍下来传到这里（支持拼好的长图），演唱时打开翻谱器一键翻页。</p>
+              <p className="mt-1 text-xs leading-5 text-white/35">把谱子拍下来传到这里（支持拼好的长图）；歌词也可以和谱子一起保存。</p>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -350,13 +364,13 @@ const SongDetailPanel = ({
                 onClick={() => setScoreViewerOpen(true)}
                 className="inline-flex h-11 items-center gap-2 rounded-full bg-orange-400 px-5 text-sm font-black text-black transition hover:bg-orange-300"
               >
-                <Music4 className="h-4 w-4" />打开翻谱器
+                <Music4 className="h-4 w-4" />打开谱子
               </button>
             )}
             <label
               className={`inline-flex h-11 cursor-pointer items-center gap-2 rounded-full border px-5 text-sm font-black transition ${scorePages.length ? 'border-white/10 bg-black/25 text-white/70 hover:border-orange-200/30 hover:text-white' : 'border-orange-300/45 bg-orange-300 text-black hover:bg-orange-300/90'}`}
             >
-              <Upload className="h-4 w-4" />{scorePages.length ? '添加页面' : '上传谱子'}
+              <Upload className="h-4 w-4" />{scorePages.length ? '添加' : '上传谱子'}
               <input
                 ref={scoreFileRef}
                 type="file"
@@ -366,8 +380,18 @@ const SongDetailPanel = ({
                 onChange={(event) => void addScorePages(event.target.files)}
               />
             </label>
+            <button type="button" onClick={openLyrics} className={`inline-flex h-11 items-center gap-2 rounded-full border px-5 text-sm font-black transition ${score?.lyrics?.trim() ? 'border-orange-200/30 bg-orange-300/10 text-orange-100 hover:bg-orange-300/15' : 'border-white/10 bg-black/25 text-white/70 hover:border-orange-200/30 hover:text-white'}`}>
+              <FileText className="h-4 w-4" />歌词
+            </button>
           </div>
         </div>
+        {lyricsEditorOpen && (
+          <div className="mt-5 rounded-2xl border border-orange-200/15 bg-black/25 p-4">
+            <div className="flex items-center justify-between gap-3"><div><h3 className="font-serif text-lg font-black">《{song.title}》歌词</h3><p className="mt-1 text-xs text-white/35">仅自己可见，会随谱子资料同步到云端。</p></div><span className="text-[11px] tabular-nums text-white/35">{lyricsDraft.length}/12000</span></div>
+            <textarea aria-label={`${song.title}歌词`} maxLength={12000} value={lyricsDraft} onChange={(event) => setLyricsDraft(event.target.value)} placeholder="粘贴或写下歌词；保留换行即可。" className="mt-4 min-h-64 w-full resize-y rounded-xl border border-white/10 bg-black/30 p-3 font-serif text-sm leading-7 outline-none placeholder:text-white/20 focus:border-orange-300/45" />
+            <div className="mt-3 flex flex-wrap justify-end gap-2"><button type="button" onClick={() => setLyricsEditorOpen(false)} className="rounded-full px-4 py-2 text-xs font-bold text-white/55 hover:text-white">取消</button><button type="button" onClick={saveLyrics} className="rounded-full bg-orange-300 px-4 py-2 text-xs font-black text-black hover:bg-orange-200">保存歌词</button></div>
+          </div>
+        )}
         {(scoreWorking || scorePending) && <p aria-live="polite" className="mt-3 text-[11px] font-bold text-orange-100/55">{scoreWorking || '仅保存在本机，等待同步'}</p>}
         {scorePages.length ? (
           <>

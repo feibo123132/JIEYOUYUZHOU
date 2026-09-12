@@ -1,6 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, CalendarDays, MessageCircle, Search, Shuffle, Sparkles } from 'lucide-react';
 import { formatStarMessageTime } from './starMessageTime';
+import { readSongRecordSession } from '../SongRequest/songRecords';
+import { STAR_OWNER_ALIAS } from '../Welcome/starOwner';
 
 export interface StarMessage {
   id: string;
@@ -34,6 +36,15 @@ const StarMessagesPage = ({ stars, accentColor, onBack }: StarMessagesPageProps)
   const [sortMode, setSortMode] = useState<SortMode>('desc');
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [showTimeDetails, setShowTimeDetails] = useState(true);
+  const [isStationOwner, setIsStationOwner] = useState(false);
+
+  useEffect(() => {
+    const session = readSongRecordSession(sessionStorage);
+    setIsStationOwner(session?.alias.trim().toLowerCase() === STAR_OWNER_ALIAS);
+  }, []);
+
+  // 非站主永远只能看到「年-月」，开关也只对站主本人展示
+  const effectiveShowTimeDetails = isStationOwner && showTimeDetails;
 
   const messages = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -88,16 +99,18 @@ const StarMessagesPage = ({ stars, accentColor, onBack }: StarMessagesPageProps)
             <div className="flex items-center justify-between rounded-xl bg-white/5 px-3 py-2.5">
               <div>
                 <div className="text-sm font-semibold text-white">时间详情</div>
-                <div className="mt-1 text-xs text-white/45">隐藏后仅显示年份和月份</div>
+                <div className="mt-1 text-xs text-white/45">{isStationOwner ? '隐藏后仅显示年份和月份' : '仅站主本人可见完整日期时间'}</div>
               </div>
-              <button
-                type="button"
-                aria-pressed={!showTimeDetails}
-                onClick={() => setShowTimeDetails((visible) => !visible)}
-                className="rounded-lg border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white transition hover:border-white/25 hover:bg-white/15"
-              >
-                {showTimeDetails ? '隐藏' : '显示'}
-              </button>
+              {isStationOwner && (
+                <button
+                  type="button"
+                  aria-pressed={!showTimeDetails}
+                  onClick={() => setShowTimeDetails((visible) => !visible)}
+                  className="rounded-lg border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white transition hover:border-white/25 hover:bg-white/15"
+                >
+                  {showTimeDetails ? '隐藏' : '显示'}
+                </button>
+              )}
             </div>
           </div>
         </aside>
@@ -186,7 +199,7 @@ const StarMessagesPage = ({ stars, accentColor, onBack }: StarMessagesPageProps)
                 <div className="mt-auto flex items-center justify-between border-t border-white/10 pt-4">
                   <div className="flex min-w-0 items-center gap-2 text-xs leading-none text-white/40">
                     <CalendarDays className="h-3.5 w-3.5" />
-                    <time dateTime={star.createdAt}>{formatStarMessageTime(star.createdAt, showTimeDetails)}</time>
+                    <time dateTime={star.createdAt}>{formatStarMessageTime(star.createdAt, effectiveShowTimeDetails)}</time>
                   </div>
                   {star.nickname && (
                     <span className="max-w-[40%] truncate text-right text-xs font-semibold leading-none text-white/50">{star.nickname}</span>

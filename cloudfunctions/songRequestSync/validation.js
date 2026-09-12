@@ -241,13 +241,15 @@ const validateSongScore = (value) => {
     songTitle: cleanText(value.songTitle, 100, 'INVALID_SONG_SCORE'),
     songArtist: cleanOptionalText(value.songArtist, 100, 'INVALID_SONG_SCORE'),
     pages: value.pages,
+    lyrics: value.lyrics === undefined ? '' : cleanOptionalText(value.lyrics, 12000, 'INVALID_SONG_SCORE'),
   };
-  if (!Array.isArray(score.pages) || score.pages.length < 1 || score.pages.length > SONG_SCORE_PAGE_LIMIT) throw new Error('INVALID_SONG_SCORE');
+  if (!Array.isArray(score.pages) || score.pages.length > SONG_SCORE_PAGE_LIMIT || (!score.pages.length && !score.lyrics)) throw new Error('INVALID_SONG_SCORE');
   for (const page of score.pages) {
     if (typeof page !== 'string'
       || !/^cloud:\/\/[^/\s]{1,180}\/song-request-scores\/[a-f0-9]{64}\/[a-f0-9]{64}\/[a-f0-9-]{16,64}\.jpg$/i.test(page)) throw new Error('INVALID_SONG_SCORE');
   }
-  return score;
+  const { lyrics, ...base } = score;
+  return lyrics ? { ...base, lyrics } : base;
 };
 
 const validateSongScorePage = (value) => {

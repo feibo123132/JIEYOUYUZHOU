@@ -94,3 +94,22 @@ test('云端元数据会剥离临时地址和待同步标记', async () => {
     updatedAt: score.updatedAt,
   });
 });
+
+test('歌词可在没有谱页时单独保存，清空歌词不会误删已有谱页', async () => {
+  const { buildSongScore, parseSongScores, toStoredSongScore, withSongLyrics } = await import(moduleUrl.href);
+
+  const lyricsOnly = withSongLyrics(song, null, '第一句\n第二句');
+  assert.ok(lyricsOnly);
+  assert.deepEqual(lyricsOnly.pages, []);
+  assert.equal(parseSongScores([lyricsOnly])[0].lyrics, '第一句\n第二句');
+  assert.deepEqual(toStoredSongScore(lyricsOnly), {
+    id: 'score-qing-tian', songId: 'qing-tian', songTitle: '晴天', songArtist: '周杰伦',
+    pages: [], lyrics: '第一句\n第二句', updatedAt: lyricsOnly.updatedAt,
+  });
+
+  const scoreWithPage = buildSongScore(song, [cloudPage]);
+  const cleared = withSongLyrics(song, { ...scoreWithPage, lyrics: '暂存歌词' }, '');
+  assert.equal(cleared?.lyrics, undefined);
+  assert.deepEqual(cleared?.pages, [cloudPage]);
+  assert.equal(withSongLyrics(song, null, ''), null);
+});
