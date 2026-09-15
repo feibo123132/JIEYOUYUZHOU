@@ -86,6 +86,10 @@ const validateSong = (value) => {
     if (typeof value.fixedBonus !== 'boolean') throw new Error('INVALID_SONG');
     song.fixedBonus = value.fixedBonus;
   }
+  if (value.repeatSuggested !== undefined) {
+    if (typeof value.repeatSuggested !== 'boolean') throw new Error('INVALID_SONG');
+    song.repeatSuggested = value.repeatSuggested;
+  }
   return song;
 };
 

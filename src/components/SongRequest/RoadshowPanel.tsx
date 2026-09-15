@@ -595,6 +595,20 @@ const SongListEditor = ({ onIncrementSingCount, pendingSingCounts, title, descri
             {song.artist || '未填写歌手'}
           </small>
         </button>
+        {showSungCounts && <button
+          type="button"
+          aria-pressed={Boolean(song.repeatSuggested)}
+          title={song.repeatSuggested ? '取消“想再唱”标签' : '标记为“想再唱”'}
+          onClick={(event) => {
+            event.stopPropagation();
+            const updated = songs.map((item) => item.id === song.id ? { ...item, repeatSuggested: !item.repeatSuggested } : item);
+            onChange(updated);
+            onSave?.(updated);
+          }}
+          className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-black transition ${song.repeatSuggested ? 'border-amber-200/45 bg-amber-300/20 text-amber-100 hover:bg-amber-300/30' : 'border-white/10 bg-white/[.035] text-white/40 hover:border-amber-200/30 hover:text-amber-100'}`}
+        >
+          {song.repeatSuggested ? '想再唱' : '标记'}
+        </button>}
         {showSungCounts ? (
           <div className="flex shrink-0 items-center gap-1">
             <button type="button" aria-label={`${song.title}演唱次数减1`} title="撤回1次" disabled={(pendingSingCounts[resolveRoadshowSong(catalogSongs, song).id] ?? 0) <= 0} onClick={() => onIncrementSingCount(resolveRoadshowSong(catalogSongs, song).id, -1)} className="grid h-7 w-7 place-items-center rounded-full border border-orange-200/20 bg-orange-300/10 text-sm font-bold text-orange-200 transition enabled:hover:bg-orange-300/20 disabled:cursor-default disabled:opacity-25">−</button>
@@ -714,8 +728,8 @@ const SongAppearanceBadge = ({ appearances, activity = '收录' }: { appearances
   <span
     title={`其他 ${appearances.length} 场路演${activity}：${appearances.join('、')}`}
     aria-label={`其他 ${appearances.length} 场路演${activity}：${appearances.join('、')}`}
-    className="inline-flex h-6 min-w-6 shrink-0 items-center justify-center rounded-full border border-white/15 bg-white/[.06] px-1.5 text-[10px] font-bold tabular-nums text-white/55"
-  >{appearances.length}</span>
+    className="inline-flex shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/[.035] px-1.5 py-1 text-[10px] font-bold tabular-nums text-white/45"
+  >已演 {appearances.length} 场</span>
 ) : null;
 
 const RECOGNITION_LEVEL_STYLES: Record<QuizLevel, string> = {

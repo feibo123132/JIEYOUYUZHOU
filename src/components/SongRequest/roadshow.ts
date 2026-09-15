@@ -13,6 +13,7 @@ export interface RoadshowSong {
   artist: string;
   source: 'catalog' | 'manual';
   fixedBonus?: boolean;
+  repeatSuggested?: boolean;
 }
 
 export interface RecognitionAttempt {
@@ -188,6 +189,7 @@ const isSong = (value: unknown): value is RoadshowSong => {
   const song = value as Partial<RoadshowSong>;
   return typeof song.id === 'string'
     && (song.fixedBonus === undefined || typeof song.fixedBonus === 'boolean')
+    && (song.repeatSuggested === undefined || typeof song.repeatSuggested === 'boolean')
     && typeof song.title === 'string'
     && typeof song.artist === 'string'
     && (song.source === 'catalog' || song.source === 'manual');
