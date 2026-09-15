@@ -81,6 +81,15 @@ function memoryStore() {
       workspaces.set(ownerWorkspaceId, { ...workspace, sungVoteCounts: sungCounts, sungVoteCountsByLocation });
       return { counts: {}, sungCounts: structuredClone(sungCounts) };
     },
+    adjustSungVoteAtomically: async (ownerWorkspaceId, songId, delta) => {
+      const workspace = workspaces.get(ownerWorkspaceId);
+      const sungVoteCounts = { ...(workspace?.sungVoteCounts || {}) };
+      const next = Math.max(0, (sungVoteCounts[songId] || 0) + delta);
+      if (next) sungVoteCounts[songId] = next;
+      else delete sungVoteCounts[songId];
+      workspaces.set(ownerWorkspaceId, { ...workspace, sungVoteCounts });
+      return structuredClone(sungVoteCounts);
+    },
     getSongRecords: async (workspaceId) => [...songRecords.values()]
       .filter((record) => record.workspaceId === workspaceId && !record.deletedAt)
       .map((record) => structuredClone(record)),
@@ -139,12 +148,27 @@ test('validates public and private actions without rejecting platform metadata',
   assert.deepEqual(validateRequest({ action: 'votes:finishAll', alias: '2421415030@qq.com', password: 'guitar-2026' }), {
     action: 'votes:finishAll', alias: '2421415030@qq.com', password: 'guitar-2026',
   });
+  assert.deepEqual(validateRequest({ action: 'votes:adjustSung', alias: '2421415030@qq.com', password: 'guitar-2026', songId: 'qing-tian', delta: 1 }), {
+    action: 'votes:adjustSung', alias: '2421415030@qq.com', password: 'guitar-2026', songId: 'qing-tian', delta: 1,
+  });
   assert.deepEqual(validateRequest({ action: 'roadshows:publicQuizRanking', location: '医大（武鸣）' }), { action: 'roadshows:publicQuizRanking', location: '医大（武鸣）' });
   assert.deepEqual(validateRequest({ action: 'votes:pull', location: '南湖' }), { action: 'votes:pull', location: '南湖' });
   assert.throws(() => validateRequest({ action: 'votes:pull', location: '其他' }), /INVALID_LOCATION/);
   assert.throws(() => validateRequest({ action: 'roadshows:register', alias: '', password: '123456' }), /INVALID_ALIAS/);
   assert.throws(() => validateRequest({ action: 'roadshows:register', alias: 'JIEYOU', password: '123' }), /INVALID_PASSWORD/);
 })
+
+test('站主调整已唱次数会保存为全设备共用的云端累计值', async () => {
+  const { createHandler } = loadFunction();
+  const store = memoryStore();
+  const auth = { alias: '2421415030@qq.com', password: 'guitar-2026' };
+  await seedExistingAccount(store, auth);
+  const handler = createHandler(store);
+  assert.deepEqual(await handler({ action: 'votes:adjustSung', ...auth, songId: 'qing-tian', delta: 1 }), { ok: true, sungCounts: { 'qing-tian': 1 } });
+  assert.deepEqual(await handler({ action: 'votes:adjustSung', ...auth, songId: 'qing-tian', delta: -1 }), { ok: true, sungCounts: {} });
+  await seedExistingAccount(store, { alias: 'visitor', password: 'guitar-2026' });
+  assert.deepEqual(await handler({ action: 'votes:adjustSung', alias: 'visitor', password: 'guitar-2026', songId: 'qing-tian', delta: 1 }), { ok: false, error: 'AUTH_FAILED' });
+});
 
 test('谱子云函数逐页接收压缩图片，并只用云存储引用保存谱子', () => {
   const { validateRequest } = require(validationPath);

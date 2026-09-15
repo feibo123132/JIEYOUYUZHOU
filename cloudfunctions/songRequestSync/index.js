@@ -58,6 +58,27 @@ const clearVoteStateAtomically = (db, ownerWorkspaceId, kind, songIds) => db.run
   }
   return cleanVoteCounts(workspace.sungVoteCounts);
 });
+const adjustSungVoteAtomically = (db, ownerWorkspaceId, songId, delta, location) => db.runTransaction(async (transaction) => {
+  const workspaceRef = transaction.collection('song_request_workspaces').doc(ownerWorkspaceId);
+  const result = await workspaceRef.get();
+  const workspace = Array.isArray(result.data) ? result.data[0] : result.data;
+  if (!workspace) throw new Error('AUTH_FAILED');
+  const sungVoteCounts = cleanVoteCounts(workspace.sungVoteCounts);
+  const current = sungVoteCounts[songId] || 0;
+  const next = Math.max(0, current + delta);
+  if (next) sungVoteCounts[songId] = next;
+  else delete sungVoteCounts[songId];
+  const sungVoteCountsByLocation = cleanLocationVoteCounts(workspace.sungVoteCountsByLocation);
+  const locationKey = ROADSHOW_LOCATION_KEYS[location];
+  if (locationKey) {
+    const localCurrent = sungVoteCountsByLocation[locationKey][songId] || 0;
+    const localNext = Math.max(0, localCurrent + delta);
+    if (localNext) sungVoteCountsByLocation[locationKey][songId] = localNext;
+    else delete sungVoteCountsByLocation[locationKey][songId];
+  }
+  await workspaceRef.set(buildWritableWorkspace({ ...workspace, sungVoteCounts, sungVoteCountsByLocation, updatedAt: new Date().toISOString() }));
+  return sungVoteCounts;
+});
 const ROADSHOW_LOCATION_KEYS = Object.freeze({
   '医大（武鸣）': 'medicalWuming',
   '医大（本部）': 'medicalMain',
@@ -295,6 +316,11 @@ function createHandler(store) {
         if (id !== workspaceId(FEATURED_SONGS_OWNER_ALIAS)) throw new Error('AUTH_FAILED');
         return { ok: true, ...await store.finishVotesAtomically(id) };
       }
+      if (request.action === 'votes:adjustSung') {
+        if (id !== workspaceId(FEATURED_SONGS_OWNER_ALIAS)) throw new Error('AUTH_FAILED');
+        const location = ROADSHOW_LOCATION_KEYS[request.location] ? request.location : latestRoadshowLocation(workspace);
+        return { ok: true, sungCounts: await store.adjustSungVoteAtomically(id, request.songId, request.delta, location) };
+      }
       if (request.action === 'featuredSongs:set') {
         if (id !== workspaceId(FEATURED_SONGS_OWNER_ALIAS)) throw new Error('AUTH_FAILED');
         await store.setFeaturedSongIds(id, request.songIds, store.now());
@@ -475,6 +501,7 @@ exports.main = async (event) => {
         });
         return { counts: await readVoteCounts(), sungCounts };
       },
+      adjustSungVoteAtomically: (ownerWorkspaceId, songId, delta, location) => adjustSungVoteAtomically(db, ownerWorkspaceId, songId, delta, location),
       async getSongRecords(workspaceId) {
         const pageSize = 1000;
         const records = [];

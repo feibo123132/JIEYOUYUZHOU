@@ -13,6 +13,7 @@ const ACTIONS = new Set([
   'feelingsNotebook:save',
   'votes:pull',
   'votes:increment',
+  'votes:adjustSung',
   'votes:finishAll',
   'votes:clearPending',
   'votes:clearSung',
@@ -285,6 +286,11 @@ function validateRequest(event) {
   const alias = cleanText(event.alias, 30, 'INVALID_ALIAS');
   if (typeof event.password !== 'string' || event.password.length < 6 || event.password.length > 64) throw new Error('INVALID_PASSWORD');
   const base = { action: event.action, alias, password: event.password };
+  if (event.action === 'votes:adjustSung') {
+    const songId = cleanText(event.songId, 80, 'INVALID_SONG_ID');
+    if (!/^[a-z0-9-]+$/i.test(songId) || ![1, -1].includes(event.delta)) throw new Error('INVALID_SONG_ID');
+    return { ...base, songId, delta: event.delta, ...optionalRankingLocation(event.location) };
+  }
   if (event.action.startsWith('stars:owner')) return { ...base, themeId: event.themeId, id: event.id, star: event.star };
   if (event.action === 'enough:save') {
     if (!Number.isSafeInteger(event.expectedRevision) || event.expectedRevision < 0) throw new Error('INVALID_JOURNAL');

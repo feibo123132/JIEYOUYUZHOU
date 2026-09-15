@@ -68,6 +68,10 @@ export const finishCloudVotes = async (credentials: Credentials): Promise<CloudV
   return { counts: result.counts, sungCounts: result.sungCounts };
 };
 
+export const adjustCloudSungVote = async (credentials: Credentials, songId: string, delta: 1 | -1, location?: RoadshowLocation): Promise<VoteCounts> => (
+  await callSync<{ sungCounts: VoteCounts }>({ action: 'votes:adjustSung', ...credentials, songId, delta, ...(location ? { location } : {}) })
+).sungCounts;
+
 export const clearCloudVotes = async (credentials: Credentials, kind: 'pending' | 'sung'): Promise<CloudVoteState> => {
   const result = await callSync<CloudVoteState>({ action: kind === 'pending' ? 'votes:clearPending' : 'votes:clearSung', ...credentials });
   return { counts: result.counts, sungCounts: result.sungCounts };
