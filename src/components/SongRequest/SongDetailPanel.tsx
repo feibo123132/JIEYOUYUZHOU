@@ -167,7 +167,7 @@ const SongDetailPanel = ({
       commitSaved(saved);
       if (saved.kind !== 'practice' || Boolean(saved.needsMorePractice) !== needsMorePractice || Boolean(saved.needsImprovement) !== needsImprovement || JSON.stringify([...(saved.singingMoods ?? [])].sort()) !== JSON.stringify([...singingMoods].sort())) {
         setEditingRecord(record);
-        setMessage('练习内容已保存，但练习标识或演唱心情未同步。已保留当前选择，请更新云端服务后再次保存。');
+        setMessage('练习内容已保存，但练习标识或弹唱感受未同步。已保留当前选择，请更新云端服务后再次保存。');
         return;
       }
       const wasEditing = editingRecord?.kind === 'practice';
@@ -445,13 +445,13 @@ const SongDetailPanel = ({
             <div className="flex flex-wrap items-start gap-4">
               <PracticeMarkerOptions needsMorePractice={needsMorePractice} needsImprovement={needsImprovement} onToggleMorePractice={() => setNeedsMorePractice((value) => !value)} onToggleImprovement={() => setNeedsImprovement((value) => !value)} />
               <div>
-                <span className="mb-2 block text-xs font-bold text-white/45">演唱心情</span>
-                <details aria-label="演唱心情" className="group relative w-fit min-w-40">
+                <span className="mb-2 block text-xs font-bold text-white/45">弹唱感受</span>
+                <details aria-label="弹唱感受" className="group relative w-fit min-w-40">
                   <summary className="flex h-10 cursor-pointer list-none items-center justify-between gap-4 rounded-xl border border-orange-200/25 bg-black/20 px-3 text-sm font-bold text-orange-100 hover:border-orange-200/50 [&::-webkit-details-marker]:hidden">
                     <span>{singingMoods.join(' · ') || '未选择'}</span><ChevronDown className="h-4 w-4 transition group-open:rotate-180" />
                   </summary>
                   <div className="absolute right-0 top-full z-20 mt-1 w-full min-w-40 rounded-xl border border-orange-200/20 bg-[#17110d] p-1 shadow-xl">
-                    {(['快乐', '感动', '想哭'] as const).map((mood) => <label key={mood} className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-orange-100 hover:bg-white/10"><input type="checkbox" checked={singingMoods.includes(mood)} onChange={() => setSingingMoods((current) => current.includes(mood) ? current.filter((item) => item !== mood) : [...current, mood])} className="accent-orange-300" />{mood}</label>)}
+                    {(['快乐', '感动', '想哭', '爽歌', '舒服'] as const).map((mood) => <label key={mood} className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-orange-100 hover:bg-white/10"><input type="checkbox" checked={singingMoods.includes(mood)} onChange={() => setSingingMoods((current) => current.includes(mood) ? current.filter((item) => item !== mood) : [...current, mood])} className="accent-orange-300" />{mood}</label>)}
                   </div>
                 </details>
               </div>

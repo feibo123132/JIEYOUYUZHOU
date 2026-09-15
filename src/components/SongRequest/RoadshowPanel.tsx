@@ -307,18 +307,20 @@ const RoadshowPanel = ({
         <div className="grid h-14 w-14 place-items-center rounded-2xl border border-orange-200/20 bg-orange-300/10 text-orange-200"><Lock className="h-6 w-6" /></div>
         <h2 className="mt-5 font-serif text-3xl font-black">私人记录</h2>
         <p className="mt-2 text-sm leading-7 text-white/45">用别称和管理口令进入。日常练习和路演档案通过腾讯云在电脑、手机之间同步。</p>
-        <div className="mt-6 space-y-3">
-          <input value={alias} onChange={(event) => setAlias(event.target.value)} placeholder="你的别称" maxLength={30} className="h-12 w-full rounded-xl border border-white/10 bg-black/35 px-4 outline-none focus:border-orange-300/45" />
-          <input value={password} onChange={(event) => setPassword(event.target.value)} placeholder="管理口令（至少 6 位）" type="password" maxLength={64} className="h-12 w-full rounded-xl border border-white/10 bg-black/35 px-4 outline-none focus:border-orange-300/45" />
-        </div>
-        <div className="mt-3">
-          <input aria-label="首次启用邀请码" value={invitationCode} onChange={(event) => setInvitationCode(event.target.value)} placeholder="站主提供的邀请码（仅首次启用需要）" maxLength={32} autoComplete="off" className="h-12 w-full rounded-xl border border-white/10 bg-black/35 px-4 text-sm outline-none focus:border-orange-300/45" />
-          <p className="mt-2 text-xs text-white/45">新账号须先向站主申请邀请码；已有账号直接进入。</p>
-        </div>
-        <div className="mt-5 grid gap-3 sm:grid-cols-2">
-          <button type="button" disabled={busy} onClick={() => void authenticate('login')} className="h-12 rounded-xl bg-orange-400 font-black text-black transition hover:bg-orange-300 disabled:opacity-50">进入我的档案</button>
-          <button type="button" disabled={busy} onClick={() => void authenticate('register')} className="h-12 rounded-xl border border-white/15 bg-white/5 font-bold text-white/75 transition hover:bg-white/10 disabled:opacity-50">首次启用</button>
-        </div>
+        <form onSubmit={(event) => { event.preventDefault(); void authenticate('login'); }}>
+          <div className="mt-6 space-y-3">
+            <input name="username" autoComplete="username" inputMode="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} value={alias} onChange={(event) => setAlias(event.target.value)} placeholder="你的别称" maxLength={30} className="h-12 w-full rounded-xl border border-white/10 bg-black/35 px-4 outline-none focus:border-orange-300/45" />
+            <input name="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="管理口令（至少 6 位）" type="password" maxLength={64} className="h-12 w-full rounded-xl border border-white/10 bg-black/35 px-4 outline-none focus:border-orange-300/45" />
+          </div>
+          <div className="mt-3">
+            <input aria-label="首次启用邀请码" value={invitationCode} onChange={(event) => setInvitationCode(event.target.value)} placeholder="站主提供的邀请码（仅首次启用需要）" maxLength={32} autoComplete="off" className="h-12 w-full rounded-xl border border-white/10 bg-black/35 px-4 text-sm outline-none focus:border-orange-300/45" />
+            <p className="mt-2 text-xs text-white/45">新账号须先向站主申请邀请码；已有账号直接进入。</p>
+          </div>
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            <button type="submit" disabled={busy} className="h-12 rounded-xl bg-orange-400 font-black text-black transition hover:bg-orange-300 disabled:opacity-50">进入我的档案</button>
+            <button type="button" disabled={busy} onClick={() => void authenticate('register')} className="h-12 rounded-xl border border-white/15 bg-white/5 font-bold text-white/75 transition hover:bg-white/10 disabled:opacity-50">首次启用</button>
+          </div>
+        </form>
         {message && <p className="mt-4 text-sm text-amber-200/80" role="status">{message}</p>}
       </section>
     );

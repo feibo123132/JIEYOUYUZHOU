@@ -25,7 +25,7 @@ export interface PracticeRecord extends SongRecordBase {
   improvements: string;
   needsMorePractice: boolean;
   needsImprovement: boolean;
-  singingMoods?: Array<'快乐' | '感动' | '想哭'>;
+  singingMoods?: Array<'快乐' | '感动' | '想哭' | '爽歌' | '舒服'>;
 }
 
 export interface SongRoadshowRecord extends SongRecordBase {
@@ -68,7 +68,7 @@ export const isValidSongRecord = (value: unknown): value is SongRecord => {
       && isText(record.feelings, 2000, false) && isText(record.problems, 2000, false) && isText(record.improvements, 2000, false)
       && (record.needsMorePractice === undefined || typeof record.needsMorePractice === 'boolean')
       && (record.needsImprovement === undefined || typeof record.needsImprovement === 'boolean')
-      && (record.singingMoods === undefined || (Array.isArray(record.singingMoods) && record.singingMoods.length <= 3 && record.singingMoods.every((mood) => ['快乐', '感动', '想哭'].includes(mood))));
+      && (record.singingMoods === undefined || (Array.isArray(record.singingMoods) && record.singingMoods.length <= 5 && record.singingMoods.every((mood) => ['快乐', '感动', '想哭', '爽歌', '舒服'].includes(mood))));
   }
   return record.kind === 'roadshow'
     && isText(record.audienceName, 100, false)

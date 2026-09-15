@@ -157,7 +157,7 @@ const validateSongRecord = (value) => {
     const improvements = cleanOptionalText(value.improvements, 2000, 'INVALID_SONG_RECORD');
     if (value.needsMorePractice !== undefined && typeof value.needsMorePractice !== 'boolean') throw new Error('INVALID_SONG_RECORD');
     if (value.needsImprovement !== undefined && typeof value.needsImprovement !== 'boolean') throw new Error('INVALID_SONG_RECORD');
-    if (value.singingMoods !== undefined && (!Array.isArray(value.singingMoods) || value.singingMoods.length > 3 || !value.singingMoods.every((mood) => ['快乐', '感动', '想哭'].includes(mood)))) throw new Error('INVALID_SONG_RECORD');
+    if (value.singingMoods !== undefined && (!Array.isArray(value.singingMoods) || value.singingMoods.length > 5 || !value.singingMoods.every((mood) => ['快乐', '感动', '想哭', '爽歌', '舒服'].includes(mood)))) throw new Error('INVALID_SONG_RECORD');
     return {
       ...base,
       kind: 'practice',
