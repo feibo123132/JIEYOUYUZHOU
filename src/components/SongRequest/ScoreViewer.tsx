@@ -22,7 +22,7 @@ interface ScoreViewerProps {
   onClose: () => void;
 }
 
-const ScoreViewer = ({ songId, songTitle, songArtist, pages, onPagesStale, onClose }: ScoreViewerProps) => {
+const ScoreViewer = ({ songId, songTitle, pages, onPagesStale, onClose }: ScoreViewerProps) => {
   const total = pages.length;
   const [page, setPage] = useState(() => Math.min(readScorePage(window.localStorage, songId), Math.max(total - 1, 0)));
   const [pageError, setPageError] = useState(false);
@@ -217,25 +217,19 @@ const ScoreViewer = ({ songId, songTitle, songArtist, pages, onPagesStale, onClo
       aria-label={`${songTitle} 谱子翻页器`}
       style={{ overscrollBehavior: 'none' }}
     >
-      <header className="flex shrink-0 items-center justify-between gap-3 px-4 py-3 text-white/85 sm:px-6">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-black sm:text-base">{songTitle}</p>
-          <p className="mt-0.5 truncate text-[11px] text-white/40">{songArtist} · 专属谱子</p>
-        </div>
-        <div className="flex shrink-0 items-center gap-3">
-          <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-bold tabular-nums text-white/70">
-            {page + 1} / {total}
-          </span>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="关闭谱子"
-            className="grid h-9 w-9 place-items-center rounded-full border border-white/10 bg-white/5 text-white/70 transition hover:bg-white/15 hover:text-white"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      </header>
+      <div className="absolute right-3 top-3 z-20 flex shrink-0 items-center gap-2 text-white/85 sm:right-4 sm:top-4">
+        <span className="rounded-full border border-white/10 bg-black/50 px-3 py-1 text-xs font-bold tabular-nums text-white/75 backdrop-blur-md">
+          {page + 1} / {total}
+        </span>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="关闭谱子"
+          className="grid h-9 w-9 place-items-center rounded-full border border-white/10 bg-black/50 text-white/70 backdrop-blur-md transition hover:bg-white/15 hover:text-white"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
 
       <div
         ref={stageRef}
@@ -299,22 +293,22 @@ const ScoreViewer = ({ songId, songTitle, songArtist, pages, onPagesStale, onClo
         )}
       </div>
 
-      <footer className="flex shrink-0 flex-wrap items-center justify-center gap-2 px-4 pb-3 pt-2 text-center text-[11px] text-white/30">
-        <div className="flex items-center rounded-full border border-white/10 bg-white/[.06] p-1 text-white/75 shadow-2xl">
-          <button type="button" aria-label="缩小谱子" disabled={!zoomed} onClick={() => applyZoom(stepScoreZoom(zoomRef.current, -1))} className="grid h-10 w-10 place-items-center rounded-full transition hover:bg-white/10 disabled:opacity-25"><Minus className="h-4 w-4" /></button>
-          <button type="button" aria-label="恢复适应屏幕" disabled={!zoomed} onClick={resetZoom} className="flex h-10 min-w-20 items-center justify-center gap-1.5 rounded-full px-3 font-bold tabular-nums transition hover:bg-white/10 disabled:opacity-45"><RotateCcw className="h-3.5 w-3.5" />{Math.round(zoom * 100)}%</button>
-          <button type="button" aria-label="放大谱子" disabled={zoom >= SCORE_ZOOM_MAX} onClick={() => applyZoom(stepScoreZoom(zoomRef.current, 1))} className="grid h-10 w-10 place-items-center rounded-full transition hover:bg-white/10 disabled:opacity-25"><Plus className="h-4 w-4" /></button>
+      <footer className="flex shrink-0 items-center justify-center gap-3 px-3 py-1.5 text-center text-[10px] text-white/30">
+        <div className="flex shrink-0 items-center rounded-full border border-white/10 bg-white/[.06] p-0.5 text-white/75 shadow-2xl">
+          <button type="button" aria-label="缩小谱子" disabled={!zoomed} onClick={() => applyZoom(stepScoreZoom(zoomRef.current, -1))} className="grid h-8 w-8 place-items-center rounded-full transition hover:bg-white/10 disabled:opacity-25"><Minus className="h-4 w-4" /></button>
+          <button type="button" aria-label="恢复适应屏幕" disabled={!zoomed} onClick={resetZoom} className="flex h-8 min-w-16 items-center justify-center gap-1.5 rounded-full px-2 font-bold tabular-nums transition hover:bg-white/10 disabled:opacity-45"><RotateCcw className="h-3.5 w-3.5" />{Math.round(zoom * 100)}%</button>
+          <button type="button" aria-label="放大谱子" disabled={zoom >= SCORE_ZOOM_MAX} onClick={() => applyZoom(stepScoreZoom(zoomRef.current, 1))} className="grid h-8 w-8 place-items-center rounded-full transition hover:bg-white/10 disabled:opacity-25"><Plus className="h-4 w-4" /></button>
         </div>
         {pageError ? (
           <button
             type="button"
             onClick={() => onPagesStale?.(true)}
-            className="w-full rounded-full border border-amber-300/30 bg-amber-300/10 px-4 py-1.5 font-bold text-amber-100/90 transition hover:bg-amber-300/20 sm:w-auto"
+            className="rounded-full border border-amber-300/30 bg-amber-300/10 px-3 py-1 font-bold text-amber-100/90 transition hover:bg-amber-300/20"
           >
             谱子加载失败，点此重新加载
           </button>
         ) : (
-          <span className="w-full sm:w-auto">{zoomed ? '双指缩放 · 单指拖动阅览 · 双击复原' : '左右滑动翻页 · 双击适合宽度 · 双指缩放'}</span>
+          <span className="min-w-0 truncate">{zoomed ? '双指缩放 · 单指拖动阅览 · 双击复原' : '左右滑动翻页 · 双击适合宽度 · 双指缩放'}</span>
         )}
       </footer>
     </div>,

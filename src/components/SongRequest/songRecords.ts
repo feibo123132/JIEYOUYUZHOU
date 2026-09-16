@@ -237,6 +237,35 @@ export const readSongRecordSession = (storage: ReadableStorage): SongRecordSessi
   }
 };
 
+const serializeSongRecordSession = (session: SongRecordSession) => JSON.stringify({
+  alias: session.alias.trim(),
+  password: session.password,
+});
+
+export const saveBrowserSongRecordSession = (session: SongRecordSession) => {
+  if (typeof window === 'undefined') return;
+  const serialized = serializeSongRecordSession(session);
+  try { window.sessionStorage.setItem(ROADSHOW_SESSION_KEY, serialized); } catch {}
+  try { window.localStorage.setItem(ROADSHOW_SESSION_KEY, serialized); } catch {}
+};
+
+export const readBrowserSongRecordSession = (): SongRecordSession | null => {
+  if (typeof window === 'undefined') return null;
+  const current = readSongRecordSession(window.sessionStorage);
+  if (current) return current;
+  const remembered = readSongRecordSession(window.localStorage);
+  if (remembered) {
+    try { window.sessionStorage.setItem(ROADSHOW_SESSION_KEY, serializeSongRecordSession(remembered)); } catch {}
+  }
+  return remembered;
+};
+
+export const clearBrowserSongRecordSession = () => {
+  if (typeof window === 'undefined') return;
+  try { window.sessionStorage.removeItem(ROADSHOW_SESSION_KEY); } catch {}
+  try { window.localStorage.removeItem(ROADSHOW_SESSION_KEY); } catch {}
+};
+
 export const songRecordCacheKey = (alias: string) => `${CACHE_PREFIX}${encodeURIComponent(normalizeSongRecordAlias(alias))}`;
 
 export const loadSongRecordCache = (storage: ReadableStorage, session: SongRecordSession | null): SongRecord[] => {

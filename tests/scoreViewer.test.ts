@@ -55,3 +55,13 @@ test('score viewer offers buttons, double-click fit-width, pinch zoom, and nativ
   assert.match(source, /height: displaySize\.height/)
   assert.doesNotMatch(source, /items-stretch/)
 })
+
+test('score viewer keeps mobile chrome compact around the score image', () => {
+  const source = readFileSync(scoreViewerUrl, 'utf8')
+
+  assert.doesNotMatch(source, /<header/)
+  assert.doesNotMatch(source, /专属谱子/)
+  assert.match(source, /absolute right-3 top-3/)
+  assert.match(source, /<footer className="flex shrink-0 items-center justify-center gap-3 px-3 py-1\.5/)
+  assert.doesNotMatch(source, /w-full sm:w-auto/)
+})

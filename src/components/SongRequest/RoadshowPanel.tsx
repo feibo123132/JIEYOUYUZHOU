@@ -29,7 +29,6 @@ import {
   ROADSHOW_CACHE_KEY,
   ROADSHOW_EDITING_KEY,
   ROADSHOW_LOCATIONS,
-  ROADSHOW_SESSION_KEY,
   preserveRecognitionParticipantNames,
   removeQuizParticipant,
   upsertRecognitionAttempt,
@@ -46,9 +45,11 @@ import {
 } from './songRequestCloud';
 import {
   bestMatchScore,
+  clearBrowserSongRecordSession,
   clearSongRecordCache,
   getMatchQuality,
-  readSongRecordSession,
+  readBrowserSongRecordSession,
+  saveBrowserSongRecordSession,
   SONG_REQUEST_SESSION_EVENT,
   type MatchQuality,
   type PracticeRecord,
@@ -82,7 +83,7 @@ interface RoadshowPanelProps {
 type ArchiveView = 'practice' | 'roadshows' | 'invitations';
 
 const readSession = (): Credentials | null => {
-  return readSongRecordSession(sessionStorage);
+  return readBrowserSongRecordSession();
 };
 
 const cacheRecords = (records: RoadshowRecord[]) => {
@@ -216,7 +217,7 @@ const RoadshowPanel = ({
       const cloudRecords = mode === 'register'
         ? await registerRoadshowWorkspace(next, invitationCode)
         : await pullRoadshows(next);
-      sessionStorage.setItem(ROADSHOW_SESSION_KEY, JSON.stringify(next));
+      saveBrowserSongRecordSession(next);
       window.dispatchEvent(new Event(SONG_REQUEST_SESSION_EVENT));
       setCredentials(next);
       setInvitationCode('');
@@ -231,7 +232,7 @@ const RoadshowPanel = ({
 
   const lock = () => {
     if (credentials) clearSongRecordCache(localStorage, credentials.alias);
-    sessionStorage.removeItem(ROADSHOW_SESSION_KEY);
+    clearBrowserSongRecordSession();
     window.dispatchEvent(new Event(SONG_REQUEST_SESSION_EVENT));
     setCredentials(null);
     setPassword('');

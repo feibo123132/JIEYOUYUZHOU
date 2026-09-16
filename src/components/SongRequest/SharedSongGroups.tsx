@@ -3,7 +3,7 @@ import { Layers3, Pencil, Plus, Trash2, X } from 'lucide-react';
 import type { Song } from './songCatalog';
 import type { SongGroup, SongGroupsSnapshot } from './songGroups';
 import { pullSongGroups, saveSongGroups } from './songRequestCloud';
-import { readSongRecordSession } from './songRecords';
+import { readBrowserSongRecordSession } from './songRecords';
 
 const button = 'inline-flex items-center justify-center gap-1.5 rounded-full border border-teal-200/25 px-3 py-2 text-xs font-bold text-teal-100 transition hover:bg-teal-200/10 disabled:opacity-35';
 const input = 'w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2.5 text-sm text-white outline-none focus:border-teal-200/45';
@@ -30,7 +30,7 @@ export default function SharedSongGroups({ catalogSongs, managing, onOpenSong }:
 
   const persist = async (groups: SongGroup[]) => {
     if (!snapshot || saving.current) return;
-    const credentials = readSongRecordSession(sessionStorage);
+    const credentials = readBrowserSongRecordSession();
     if (!credentials) { setStatus('请先解锁管理员档案，再保存共享歌组。'); return; }
     saving.current = true;
     setBusy(true);

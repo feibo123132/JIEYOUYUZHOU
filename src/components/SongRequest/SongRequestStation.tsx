@@ -33,7 +33,7 @@ import {
   type SongScore,
 } from './songScores';
 import {
-  bestMatchScore, getMatchQuality, loadSongRecordCache, parsePublicPracticeRanking, parseSongRecords, rankSongsByPracticeMatch, readSongRecordSession, recoverSongsFromRecords,
+  bestMatchScore, getMatchQuality, loadSongRecordCache, parsePublicPracticeRanking, parseSongRecords, rankSongsByPracticeMatch, readBrowserSongRecordSession, recoverSongsFromRecords,
   saveSongRecordCache, SONG_REQUEST_SESSION_EVENT,
   type PublicPracticeRankingItem, type SongRecord, type SongRecordSession,
 } from './songRecords';
@@ -198,7 +198,7 @@ const resizeArtistAvatar = (file: File): Promise<string> => new Promise((resolve
 const PENDING_SING_COUNTS_KEY = 'jieyou-pending-sing-counts-v1';
 
 const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
-  const accountAlias = readSongRecordSession(window.sessionStorage)?.alias.trim().toLowerCase() || '';
+  const accountAlias = readBrowserSongRecordSession()?.alias.trim().toLowerCase() || '';
   const settingsStorage = useMemo(() => ({
     getItem: (key: string) => window.localStorage.getItem(accountAlias && !isFeaturedSongManager(accountAlias) ? key + ':account:' + accountAlias : key),
     setItem: (key: string, value: string) => window.localStorage.setItem(accountAlias && !isFeaturedSongManager(accountAlias) ? key + ':account:' + accountAlias : key, value),
@@ -271,7 +271,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     syncMessageTimerRef.current = setTimeout(() => setSyncMessage(''), 10000);
   }, []);
   const [songRecordSession] = useState<SongRecordSession | null>(() => (
-    typeof window === 'undefined' ? null : readSongRecordSession(window.sessionStorage)
+    typeof window === 'undefined' ? null : readBrowserSongRecordSession()
   ));
   const canManageCatalog = Boolean(songRecordSession && catalogReady);
   const requireCatalogManager = () => {
@@ -280,10 +280,10 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     return false;
   };
   const [songRecords, setSongRecords] = useState<SongRecord[]>(() => (
-    typeof window === 'undefined' ? [] : loadSongRecordCache(window.localStorage, readSongRecordSession(window.sessionStorage))
+    typeof window === 'undefined' ? [] : loadSongRecordCache(window.localStorage, readBrowserSongRecordSession())
   ));
   const [songScores, setSongScores] = useState<SongScore[]>(() => (
-    typeof window === 'undefined' ? [] : loadSongScoreCache(window.localStorage, readSongRecordSession(window.sessionStorage)?.alias ?? null)
+    typeof window === 'undefined' ? [] : loadSongScoreCache(window.localStorage, readBrowserSongRecordSession()?.alias ?? null)
   ));
   const [scoreBusy, setScoreBusy] = useState(false);
   const [scoreSyncStatus, setScoreSyncStatus] = useState('');
@@ -2435,9 +2435,9 @@ const SearchBox = ({ query, setQuery }: { query: string; setQuery: (value: strin
 );
 
 const AccountSongRequestStation = (props: SongRequestStationProps) => {
-  const [account, setAccount] = useState(() => readSongRecordSession(window.sessionStorage)?.alias.trim().toLowerCase() || '');
+  const [account, setAccount] = useState(() => readBrowserSongRecordSession()?.alias.trim().toLowerCase() || '');
   useEffect(() => {
-    const refresh = () => setAccount(readSongRecordSession(window.sessionStorage)?.alias.trim().toLowerCase() || '');
+    const refresh = () => setAccount(readBrowserSongRecordSession()?.alias.trim().toLowerCase() || '');
     window.addEventListener(SONG_REQUEST_SESSION_EVENT, refresh);
     return () => window.removeEventListener(SONG_REQUEST_SESSION_EVENT, refresh);
   }, []);
