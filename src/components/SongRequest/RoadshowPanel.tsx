@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { CalendarDays, Check, ChevronRight, Cloud, Copy, Guitar, Key, Lock, NotebookPen, Plus, Save, Search, Trash2, UsersRound, X } from 'lucide-react';
 import { SONGS } from './songCatalog';
+import { isFeaturedSongManager } from './songRequest';
 import type { Song } from './songCatalog';
 import AccountInvitations from './AccountInvitations';
 import DailyPracticePanel from './DailyPracticePanel';
@@ -133,6 +134,7 @@ const RoadshowPanel = ({
   onOpenSongDetail = () => undefined,
 }: RoadshowPanelProps) => {
   const [credentials, setCredentials] = useState<Credentials | null>(() => readSession());
+  const isStationOwner = isFeaturedSongManager(credentials?.alias);
   const [alias, setAlias] = useState(() => readSession()?.alias || defaultAlias);
   const [password, setPassword] = useState(() => readSession()?.password || '');
   const [invitationCode, setInvitationCode] = useState('');
@@ -157,7 +159,7 @@ const RoadshowPanel = ({
   useEffect(() => { editingRef.current = editing; }, [editing]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
-  const [archiveView, setArchiveView] = useState<ArchiveView>('roadshows');
+  const [archiveView, setArchiveView] = useState<ArchiveView>(isStationOwner ? 'roadshows' : 'practice');
   const [creating, setCreating] = useState<RoadshowRecord | null>(null);
   const switchingRef = useRef(false);
 
@@ -326,7 +328,7 @@ const RoadshowPanel = ({
     );
   }
 
-  if (editing) {
+  if (editing && isStationOwner) {
     return (
       <RoadshowEditor
         editorTab={editorTab}
@@ -341,7 +343,7 @@ const RoadshowPanel = ({
         busy={busy}
         message={message}
         quizAssignments={quizAssignments}
-        canManageFeaturedSongs={canManageFeaturedSongs}
+        canManageFeaturedSongs={isStationOwner}
         onChange={setEditing}
         onBack={() => { setEditing(null); setMessage(''); }}
         onSwitch={(targetId) => void switchRoadshow(targetId)}
@@ -366,14 +368,14 @@ const RoadshowPanel = ({
       </header>
 
       <nav className="archive-tabs" aria-label="档案与授权">
-        <button type="button" className={archiveView === 'roadshows' ? 'active' : ''} onClick={() => setArchiveView('roadshows')}><CalendarDays size={16} />路演档案</button>
+        {isStationOwner && <button type="button" className={archiveView === 'roadshows' ? 'active' : ''} onClick={() => setArchiveView('roadshows')}><CalendarDays size={16} />路演档案</button>}
         <button type="button" className={archiveView === 'practice' ? 'active' : ''} onClick={() => setArchiveView('practice')}><Guitar size={16} />日常练习</button>
-        {canManageFeaturedSongs && (
+        {isStationOwner && (
           <button type="button" className={archiveView === 'invitations' ? 'active' : ''} onClick={() => setArchiveView('invitations')}><Key size={16} />账号授权</button>
         )}
       </nav>
 
-      {archiveView === 'practice' ? (
+      {!isStationOwner || archiveView === 'practice' ? (
         <DailyPracticePanel
           songs={songs}
           records={songRecords}

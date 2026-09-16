@@ -5,7 +5,10 @@ export interface AvatarAdjustment {
   rotation: number;
 }
 
+import type { EditableCatalog } from './songRequest';
+
 export interface ArtistSettingsPayload {
+  catalog?: EditableCatalog;
   version: 1;
   artistOrder: string[];
   songOrder: string[];
@@ -53,7 +56,7 @@ const parseArtistSettingsPayload = (value: unknown): ArtistSettingsPayload | nul
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const item = value as Record<string, unknown>;
   if (item.version !== 1 || !Array.isArray(item.artistOrder)
-    || item.artistOrder.length < 1 || item.artistOrder.length > 200
+    || item.artistOrder.length > 200
     || !item.artistOrder.every(isArtist) || new Set(item.artistOrder).size !== item.artistOrder.length
     || !item.customAvatars || typeof item.customAvatars !== 'object' || Array.isArray(item.customAvatars)
     || !item.avatarAdjustments || typeof item.avatarAdjustments !== 'object' || Array.isArray(item.avatarAdjustments)) return null;
@@ -71,6 +74,7 @@ const parseArtistSettingsPayload = (value: unknown): ArtistSettingsPayload | nul
   ))) return null;
   if (Object.entries(avatarAdjustments).some(([artist, adjustment]) => !artistSet.has(artist) || !isAdjustment(adjustment))) return null;
   return {
+    ...(item.catalog ? { catalog: item.catalog as EditableCatalog } : {}),
     version: 1,
     artistOrder: [...artistOrder],
     songOrder: [...songOrder],
@@ -110,10 +114,12 @@ export const createArtistSettingsPayload = (
   customAvatars: Record<string, string>,
   avatarAdjustments: Record<string, AvatarAdjustment>,
   songOrder: string[] = [],
+  catalog?: EditableCatalog,
 ): ArtistSettingsPayload => {
   const order = [...new Set(artistOrder.filter(isArtist))].slice(0, 200);
   const artistSet = new Set(order);
   return {
+    ...(catalog ? { catalog } : {}),
     version: 1,
     artistOrder: order,
     songOrder: [...new Set(songOrder.filter(isSongId))].slice(0, 2000),
@@ -127,7 +133,7 @@ export const hasCustomArtistSettings = (
   defaultArtistOrder: string[],
   defaultSongOrder: string[] = [],
 ) => (
-  Object.keys(payload.customAvatars).length > 0
+  Boolean(payload.catalog) || Object.keys(payload.customAvatars).length > 0
   || Object.keys(payload.avatarAdjustments).length > 0
   || payload.artistOrder.length !== defaultArtistOrder.length
   || payload.artistOrder.some((artist, index) => artist !== defaultArtistOrder[index])

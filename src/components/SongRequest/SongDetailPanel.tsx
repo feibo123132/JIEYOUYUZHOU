@@ -1,12 +1,13 @@
 import { useMemo, useRef, useState } from 'react';
-import { CalendarDays, ChevronDown, ChevronUp, Cloud, Disc3, FileText, Guitar, Lock, MessageCircle, Music4, Save, Target, Trash2, Upload } from 'lucide-react';
+import { CalendarDays, ChevronDown, ChevronUp, Cloud, Disc3, Guitar, MessageCircle, Music4, Save, Target, Trash2, Upload } from 'lucide-react';
+import { isFeaturedSongManager } from './songRequest';
 import type { Song } from './songCatalog';
 import { findSongRoadshowHistory, type RoadshowRecord } from './roadshow';
 import { QUIZ_LEVELS, type QuizLevel } from './songQuizLibrary';
 import ScoreViewer from './ScoreViewer';
 import {
   appendSongScorePages, compressScoreImage, getSongScoreDisplayPages, moveSongScorePage,
-  removeSongScorePage, SCORE_PAGE_LIMIT, SCORE_PAGES_TOTAL_LIMIT, withSongLyrics, type SongScore,
+  removeSongScorePage, SCORE_PAGE_LIMIT, SCORE_PAGES_TOTAL_LIMIT, type SongScore,
 } from './songScores';
 import { useResolvedScorePages } from './useResolvedScorePages';
 import {
@@ -21,7 +22,7 @@ import {
   type SongRecordSession,
   type SongRoadshowRecord,
 } from './songRecords';
-import { deleteSongRecord, mapSongRecordSyncError, saveSongRecord } from './songRequestCloud';
+import { copyOwnerSongScore, deleteSongRecord, mapSongRecordSyncError, saveSongRecord } from './songRequestCloud';
 
 interface SongDetailPanelProps {
   song: Song;
@@ -38,7 +39,7 @@ interface SongDetailPanelProps {
   scoreSyncStatus?: string;
   onQuizLevelChange: (level: QuizLevel) => void;
   onRecordsChange: (records: SongRecord[]) => void;
-  onScoreChange: (songId: string, score: SongScore | null) => void;
+  onScoreChange: (songId: string, score: SongScore | null, alreadySynced?: boolean) => void;
   onOpenPrivateSpace: () => void;
 }
 
@@ -82,7 +83,9 @@ const SongDetailPanel = ({
   const roadshowNotes = songRecords.filter((record): record is SongRoadshowRecord => record.kind === 'roadshow');
   const roadshowHistory = useMemo(() => findSongRoadshowHistory(roadshows, song), [roadshows, song]);
   const averageScore = bestMatchScore(practices);
-  const [activeJournal, setActiveJournal] = useState<JournalKind>('practice');
+  const [journal, setActiveJournal] = useState<JournalKind>('practice');
+  const isOwner = isFeaturedSongManager(session?.alias);
+  const activeJournal = session ? (journal === 'roadshow' && !isOwner ? 'practice' : journal) : 'score';
   const [practiceAt, setPracticeAt] = useState(localDateTime);
   const [matchScore, setMatchScore] = useState<number | ''>(80);
   const [feelings, setFeelings] = useState('');
@@ -99,8 +102,6 @@ const SongDetailPanel = ({
   const [quizMenuOpen, setQuizMenuOpen] = useState(false);
   const [scoreViewerOpen, setScoreViewerOpen] = useState(false);
   const [scoreBusyLocal, setScoreBusyLocal] = useState('');
-  const [lyricsEditorOpen, setLyricsEditorOpen] = useState(false);
-  const [lyricsDraft, setLyricsDraft] = useState(score?.lyrics ?? '');
   const scoreFileRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLDivElement>(null);
   const matchQuality = getMatchQuality(Number(matchScore));
@@ -110,18 +111,6 @@ const SongDetailPanel = ({
     score?.pages ?? [],
     score ? getSongScoreDisplayPages(score) : [],
   );
-
-  if (!session) {
-    return (
-      <section className="mx-auto max-w-2xl rounded-[2rem] border border-orange-200/15 bg-[#120b08]/90 p-7 text-center shadow-[0_30px_100px_rgba(0,0,0,.45)] backdrop-blur-2xl sm:p-10">
-        <span className="mx-auto grid h-16 w-16 place-items-center rounded-2xl border border-orange-200/20 bg-orange-300/10 text-orange-200"><Lock className="h-7 w-7" /></span>
-        <p className="mt-6 text-[10px] font-black tracking-[.28em] text-orange-300/60">PRIVATE SONG JOURNAL</p>
-        <h2 className="mt-2 font-serif text-3xl font-black">请先进入路演档案解锁</h2>
-        <p className="mx-auto mt-3 max-w-md text-sm leading-7 text-white/45">练习与路演反馈只属于你。解锁后会通过腾讯云在电脑和手机之间同步。</p>
-        <button type="button" onClick={onOpenPrivateSpace} className="mt-7 h-11 rounded-full bg-orange-400 px-6 text-sm font-black text-black transition hover:bg-orange-300">前往私有空间</button>
-      </section>
-    );
-  }
 
   const commitSaved = (saved: SongRecord) => {
     const next = sortSongRecords([...records.filter((record) => record.id !== saved.id), saved]);
@@ -149,6 +138,7 @@ const SongDetailPanel = ({
   };
 
   const submitPractice = async () => {
+    if (!session) return;
     if (!Number.isFinite(Date.parse(practiceAt))) { setMessage('请选择有效的练习时间。'); return; }
     const now = new Date().toISOString();
     const record: PracticeRecord = {
@@ -181,6 +171,7 @@ const SongDetailPanel = ({
   };
 
   const submitRoadshow = async () => {
+    if (!session) return;
     if (!Number.isFinite(Date.parse(roadshowAt))) { setMessage('请选择有效的路演时间。'); return; }
     const now = new Date().toISOString();
     const record: SongRoadshowRecord = {
@@ -203,6 +194,7 @@ const SongDetailPanel = ({
   };
 
   const removeRecord = async (record: SongRecord) => {
+    if (!session) return;
     if (!window.confirm('确定删除这条记录吗？')) return;
     setBusy(record.id); setMessage('');
     try {
@@ -258,16 +250,17 @@ const SongDetailPanel = ({
     onScoreChange(song.id, score?.lyrics?.trim() ? { ...score, pages: [], pageUrls: [], pendingSync: true, updatedAt: new Date().toISOString() } : null);
   };
 
-  const openLyrics = () => {
-    setLyricsDraft(score?.lyrics ?? '');
-    setLyricsEditorOpen(true);
-  };
-
-  const saveLyrics = () => {
-    const next = withSongLyrics(song, score, lyricsDraft);
-    onScoreChange(song.id, next);
-    setLyricsEditorOpen(false);
-    setMessage(next?.lyrics ? '歌词已保存，正在同步到云端' : '歌词已清空');
+  const copyOwnerScore = async () => {
+    if (!session || isOwner || scoreBusy || scoreBusyLocal || scorePages.length || score?.lyrics?.trim()) return;
+    setScoreBusyLocal('正在复制站主谱子…');
+    try {
+      const copied = await copyOwnerSongScore(session, song.id);
+      onScoreChange(song.id, copied, true);
+      setMessage('已保存到你的账户，站主后续修改或删除不会影响这份谱子。');
+    } catch (error) {
+      const code = error instanceof Error ? error.message : '';
+      setMessage(code === 'SCORE_NOT_FOUND' ? '站主尚未上传这首歌的谱子。' : code === 'SCORE_ALREADY_EXISTS' ? '账户已有谱子，请先删除后再扒谱。' : '扒谱失败，请稍后重试。');
+    } finally { setScoreBusyLocal(''); }
   };
 
   return (
@@ -338,8 +331,8 @@ const SongDetailPanel = ({
             </div>
             <div data-journal-toolbar className="flex w-full flex-wrap items-center justify-end gap-3">
               <div role="group" aria-label="切换记录类型" className="inline-flex rounded-2xl border border-white/10 bg-black/25 p-1">
-                <button type="button" aria-pressed={activeJournal === 'practice'} onClick={() => setActiveJournal('practice')} className={`inline-flex h-9 items-center gap-2 rounded-xl px-3 text-xs font-bold transition ${activeJournal === 'practice' ? 'bg-orange-300 text-black shadow-[0_8px_25px_rgba(251,146,60,.2)]' : 'text-white/40 hover:text-white/75'}`}><Guitar className="h-4 w-4" />练习</button>
-                <button type="button" aria-pressed={activeJournal === 'roadshow'} onClick={() => setActiveJournal('roadshow')} className={`inline-flex h-9 items-center gap-2 rounded-xl px-3 text-xs font-bold transition ${activeJournal === 'roadshow' ? 'bg-orange-300 text-black shadow-[0_8px_25px_rgba(251,146,60,.2)]' : 'text-white/40 hover:text-white/75'}`}><MessageCircle className="h-4 w-4" />路演</button>
+                {session && <><button type="button" aria-pressed={activeJournal === 'practice'} onClick={() => setActiveJournal('practice')} className={`inline-flex h-9 items-center gap-2 rounded-xl px-3 text-xs font-bold transition ${activeJournal === 'practice' ? 'bg-orange-300 text-black shadow-[0_8px_25px_rgba(251,146,60,.2)]' : 'text-white/40 hover:text-white/75'}`}><Guitar className="h-4 w-4" />练习</button>
+                {isOwner && <button type="button" aria-pressed={activeJournal === 'roadshow'} onClick={() => setActiveJournal('roadshow')} className={`inline-flex h-9 items-center gap-2 rounded-xl px-3 text-xs font-bold transition ${activeJournal === 'roadshow' ? 'bg-orange-300 text-black shadow-[0_8px_25px_rgba(251,146,60,.2)]' : 'text-white/40 hover:text-white/75'}`}><MessageCircle className="h-4 w-4" />路演</button>}</>}
                 <button type="button" aria-pressed={activeJournal === 'score'} onClick={() => setActiveJournal('score')} className={`inline-flex h-9 items-center gap-2 rounded-xl px-3 text-xs font-bold transition ${activeJournal === 'score' ? 'bg-orange-300 text-black shadow-[0_8px_25px_rgba(251,146,60,.2)]' : 'text-white/40 hover:text-white/75'}`}><Music4 className="h-4 w-4" />谱子</button>
               </div>
             </div>
@@ -354,7 +347,7 @@ const SongDetailPanel = ({
             <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-orange-200/15 bg-orange-300/10 text-orange-200"><Music4 className="h-5 w-5" /></span>
             <div>
               <h2 className="font-serif text-2xl font-black">专属谱子</h2>
-              <p className="mt-1 text-xs leading-5 text-white/35">把谱子拍下来传到这里（支持拼好的长图）；歌词也可以和谱子一起保存。</p>
+              <p className="mt-1 text-xs leading-5 text-white/35">{session ? '把谱子拍下来传到这里（支持拼好的长图）。' : '无需登录，打开谱子即可查看。'}</p>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -367,7 +360,8 @@ const SongDetailPanel = ({
                 <Music4 className="h-4 w-4" />打开谱子
               </button>
             )}
-            <label
+            {session && !isOwner && <button type="button" disabled={Boolean(scoreBusy || scoreBusyLocal || scorePages.length || score?.lyrics?.trim())} onClick={() => void copyOwnerScore()} className="inline-flex h-11 items-center gap-2 rounded-full border border-orange-200/30 bg-orange-300/10 px-5 text-sm font-black text-orange-100 disabled:opacity-40">一键扒谱</button>}
+            {session && <><label
               className={`inline-flex h-11 cursor-pointer items-center gap-2 rounded-full border px-5 text-sm font-black transition ${scorePages.length ? 'border-white/10 bg-black/25 text-white/70 hover:border-orange-200/30 hover:text-white' : 'border-orange-300/45 bg-orange-300 text-black hover:bg-orange-300/90'}`}
             >
               <Upload className="h-4 w-4" />{scorePages.length ? '添加' : '上传谱子'}
@@ -379,19 +373,9 @@ const SongDetailPanel = ({
                 className="hidden"
                 onChange={(event) => void addScorePages(event.target.files)}
               />
-            </label>
-            <button type="button" onClick={openLyrics} className={`inline-flex h-11 items-center gap-2 rounded-full border px-5 text-sm font-black transition ${score?.lyrics?.trim() ? 'border-orange-200/30 bg-orange-300/10 text-orange-100 hover:bg-orange-300/15' : 'border-white/10 bg-black/25 text-white/70 hover:border-orange-200/30 hover:text-white'}`}>
-              <FileText className="h-4 w-4" />歌词
-            </button>
+            </label></>}
           </div>
         </div>
-        {lyricsEditorOpen && (
-          <div className="mt-5 rounded-2xl border border-orange-200/15 bg-black/25 p-4">
-            <div className="flex items-center justify-between gap-3"><div><h3 className="font-serif text-lg font-black">《{song.title}》歌词</h3><p className="mt-1 text-xs text-white/35">仅自己可见，会随谱子资料同步到云端。</p></div><span className="text-[11px] tabular-nums text-white/35">{lyricsDraft.length}/12000</span></div>
-            <textarea aria-label={`${song.title}歌词`} maxLength={12000} value={lyricsDraft} onChange={(event) => setLyricsDraft(event.target.value)} placeholder="粘贴或写下歌词；保留换行即可。" className="mt-4 min-h-64 w-full resize-y rounded-xl border border-white/10 bg-black/30 p-3 font-serif text-sm leading-7 outline-none placeholder:text-white/20 focus:border-orange-300/45" />
-            <div className="mt-3 flex flex-wrap justify-end gap-2"><button type="button" onClick={() => setLyricsEditorOpen(false)} className="rounded-full px-4 py-2 text-xs font-bold text-white/55 hover:text-white">取消</button><button type="button" onClick={saveLyrics} className="rounded-full bg-orange-300 px-4 py-2 text-xs font-black text-black hover:bg-orange-200">保存歌词</button></div>
-          </div>
-        )}
         {(scoreWorking || scorePending) && <p aria-live="polite" className="mt-3 text-[11px] font-bold text-orange-100/55">{scoreWorking || '仅保存在本机，等待同步'}</p>}
         {scorePages.length ? (
           <>
@@ -400,22 +384,22 @@ const SongDetailPanel = ({
                 <li key={`${index}-${page.slice(-24)}`} className="relative overflow-hidden rounded-2xl border border-white/10 bg-black/30">
                   <img src={page} alt={`${song.title} 谱子第 ${index + 1} 页`} className="aspect-[3/4] w-full object-cover" loading="lazy" onError={() => refreshScorePages()} />
                   <span className="absolute left-2 top-2 rounded-full bg-black/70 px-2 py-0.5 text-[10px] font-black tabular-nums text-white/85">{index + 1}</span>
-                  <div className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-1 bg-gradient-to-t from-black/85 to-transparent p-1.5 pt-5">
+                  {session && <div className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-1 bg-gradient-to-t from-black/85 to-transparent p-1.5 pt-5">
                     <button type="button" aria-label={`第 ${index + 1} 页上移`} disabled={index === 0} onClick={() => moveScorePage(index, -1)} className="grid h-7 w-7 place-items-center rounded-full bg-white/10 text-white/75 transition hover:bg-white/25 hover:text-white disabled:opacity-25"><ChevronUp className="h-3.5 w-3.5" /></button>
                     <button type="button" aria-label={`第 ${index + 1} 页下移`} disabled={index === scorePages.length - 1} onClick={() => moveScorePage(index, 1)} className="grid h-7 w-7 place-items-center rounded-full bg-white/10 text-white/75 transition hover:bg-white/25 hover:text-white disabled:opacity-25"><ChevronDown className="h-3.5 w-3.5" /></button>
                     <button type="button" aria-label={`删除第 ${index + 1} 页`} onClick={() => removeScorePage(index)} className="grid h-7 w-7 place-items-center rounded-full bg-white/10 text-rose-200/85 transition hover:bg-rose-400/30 hover:text-rose-100"><Trash2 className="h-3.5 w-3.5" /></button>
-                  </div>
+                  </div>}
                 </li>
               ))}
             </ol>
             <p className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-white/35">
               <span>共 {scorePages.length} 页 · 会自动压缩并同步到云端，iPad 上打开即可看谱</span>
-              <button type="button" onClick={removeAllScorePages} className="font-bold text-rose-200/60 transition hover:text-rose-200">删除全部</button>
+              {session && <button type="button" onClick={removeAllScorePages} className="font-bold text-rose-200/60 transition hover:text-rose-200">删除全部</button>}
             </p>
           </>
         ) : (
           <p className="mt-5 grid min-h-24 place-items-center rounded-2xl border border-dashed border-white/10 text-xs leading-6 text-white/25">
-            还没有上传谱子<br />支持多选图片，会按顺序排成一本「谱书」
+            还没有上传谱子{session && <><br />支持多选图片，会按顺序排成一本「谱书」</>}
           </p>
         )}
       </section>

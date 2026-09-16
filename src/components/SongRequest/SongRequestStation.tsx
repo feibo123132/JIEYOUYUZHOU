@@ -20,7 +20,7 @@ import {
 } from './roadshow';
 import {
   adjustCloudSungVote, clearCloudVotes, finishCloudVotes, incrementCloudVote, mapArtistSettingsSyncError, mapSongScoreSyncError, pullArtistSettings, pullCloudFeaturedSongIds, pullCloudVoteState,
-  pullCloudQuizAssignments, pullPublicPracticeRanking, pullPublicQuizRanking, pullRoadshows, pullSongRecords, pullSongScores, pushArtistSettings,
+  pullCloudQuizAssignments, pullPublicPracticeRanking, pullPublicQuizRanking, pullRoadshows, pullSongRecords, pullSongScores, pullPublicSongScores, pushArtistSettings,
   saveCloudFeaturedSongIds, saveCloudQuizAssignments, saveRoadshow, syncSongScoreToCloud, deleteSongScore,
 } from './songRequestCloud';
 import RoadshowPanel, { type RoadshowEditorTab } from './RoadshowPanel';
@@ -159,13 +159,13 @@ const ArtistAvatarImage = ({ avatar, adjustment, alt = '', loading }: {
   />;
 };
 
-const loadAvatarAdjustments = (): Record<string, AvatarAdjustment> => {
-  try { return JSON.parse(window.localStorage.getItem(ARTIST_AVATAR_ADJUSTMENTS_KEY) || '{}'); } catch { return {}; }
+const loadAvatarAdjustments = (storage: Pick<Storage, 'getItem'>): Record<string, AvatarAdjustment> => {
+  try { return JSON.parse(storage.getItem(ARTIST_AVATAR_ADJUSTMENTS_KEY) || '{}'); } catch { return {}; }
 };
 
-const loadCustomArtistAvatars = (): Record<string, string> => {
+const loadCustomArtistAvatars = (storage: Pick<Storage, 'getItem'>): Record<string, string> => {
   try {
-    const parsed = JSON.parse(window.localStorage.getItem(CUSTOM_ARTIST_AVATARS_KEY) || '{}') as Record<string, unknown>;
+    const parsed = JSON.parse(storage.getItem(CUSTOM_ARTIST_AVATARS_KEY) || '{}') as Record<string, unknown>;
     return Object.fromEntries(Object.entries(parsed).filter((entry): entry is [string, string] => (
       typeof entry[1] === 'string' && entry[1].startsWith('data:image/')
     )));
@@ -198,6 +198,13 @@ const resizeArtistAvatar = (file: File): Promise<string> => new Promise((resolve
 const PENDING_SING_COUNTS_KEY = 'jieyou-pending-sing-counts-v1';
 
 const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
+  const accountAlias = readSongRecordSession(window.sessionStorage)?.alias.trim().toLowerCase() || '';
+  const settingsStorage = useMemo(() => ({
+    getItem: (key: string) => window.localStorage.getItem(accountAlias && !isFeaturedSongManager(accountAlias) ? key + ':account:' + accountAlias : key),
+    setItem: (key: string, value: string) => window.localStorage.setItem(accountAlias && !isFeaturedSongManager(accountAlias) ? key + ':account:' + accountAlias : key, value),
+    removeItem: (key: string) => window.localStorage.removeItem(accountAlias && !isFeaturedSongManager(accountAlias) ? key + ':account:' + accountAlias : key),
+  }), [accountAlias]);
+  const [catalogReady, setCatalogReady] = useState(false);
   const nickname = useAppStore((state) => state.user?.nickname || '');
   const [activeSection, setActiveSection] = useState<SectionId | null>(null);
   const [rankingView, setRankingView] = useState<RankingView>('requests');
@@ -219,7 +226,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   const [showHotSongs, setShowHotSongs] = useState(false);
   const [hotSongsPage, setHotSongsPage] = useState(1);
   const [catalog, setCatalog] = useState<EditableCatalog>(() => (
-    typeof window === 'undefined' ? createEditableCatalog(SONGS) : loadEditableCatalog(window.localStorage, SONGS)
+    typeof window === 'undefined' ? createEditableCatalog(SONGS) : loadEditableCatalog(settingsStorage, SONGS)
   ));
   const [votes, setVotes] = useState<VoteCounts>(() => (
     typeof window === 'undefined' ? {} : loadVoteCounts(window.localStorage, catalog.songs.map((song) => song.id))
@@ -247,7 +254,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   const [roadshowBusyId, setRoadshowBusyId] = useState<string | null>(null);
   const [quizMenuSongId, setQuizMenuSongId] = useState<string | null>(null);
   const [roadshowArchives, setRoadshowArchives] = useState<RoadshowRecord[]>(() => {
-    if (typeof window === 'undefined') return [];
+    if (typeof window === 'undefined' || !isFeaturedSongManager(accountAlias)) return [];
     try { return parseRoadshowCache(window.localStorage.getItem(ROADSHOW_CACHE_KEY)); } catch { return []; }
   });
   const latestRoadshow = useMemo(() => getLatestRoadshow(roadshowArchives) ?? null, [roadshowArchives]);
@@ -263,13 +270,13 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     setSyncMessage(message);
     syncMessageTimerRef.current = setTimeout(() => setSyncMessage(''), 10000);
   }, []);
-  const [songRecordSession, setSongRecordSession] = useState<SongRecordSession | null>(() => (
+  const [songRecordSession] = useState<SongRecordSession | null>(() => (
     typeof window === 'undefined' ? null : readSongRecordSession(window.sessionStorage)
   ));
-  const canManageCatalog = Boolean(songRecordSession && isFeaturedSongManager(songRecordSession.alias));
+  const canManageCatalog = Boolean(songRecordSession && catalogReady);
   const requireCatalogManager = () => {
     if (canManageCatalog) return true;
-    showSyncMessage('仅站主登录后可以修改歌手、歌曲和头像设置。');
+    showSyncMessage('请先登录，并等待账户歌单读取完成。');
     return false;
   };
   const [songRecords, setSongRecords] = useState<SongRecord[]>(() => (
@@ -302,10 +309,10 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   const [songDropTarget, setSongDropTarget] = useState<{ songId: string; placement: ArtistDropPlacement } | null>(null);
   const [adjustingArtist, setAdjustingArtist] = useState<string | null>(null);
   const [customArtistAvatars, setCustomArtistAvatars] = useState<Record<string, string>>(() => (
-    typeof window === 'undefined' ? {} : loadCustomArtistAvatars()
+    typeof window === 'undefined' ? {} : loadCustomArtistAvatars(settingsStorage)
   ));
   const [avatarAdjustments, setAvatarAdjustments] = useState<Record<string, AvatarAdjustment>>(() => (
-    typeof window === 'undefined' ? {} : loadAvatarAdjustments()
+    typeof window === 'undefined' ? {} : loadAvatarAdjustments(settingsStorage)
   ));
   const [songAssistantOpen, setSongAssistantOpen] = useState(false);
   const [barragePreferences, setBarragePreferences] = useState(createInitialSongBarragePreferences);
@@ -315,7 +322,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   const [songDisplayMode, setSongDisplayMode] = useState<SongDisplayMode>('full');
   const artistSettingsInitializedRef = useRef(false);
   const artistSettingsRevisionRef = useRef<number | null>(
-    typeof window === 'undefined' ? null : loadArtistSettingsCache(window.localStorage)?.revision ?? null,
+    typeof window === 'undefined' ? null : loadArtistSettingsCache(settingsStorage)?.revision ?? null,
   );
   const artistSettingsSessionRef = useRef<SongRecordSession | null>(songRecordSession);
   const artistSettingsPushRef = useRef<Promise<void> | null>(null);
@@ -337,19 +344,19 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     artistSettingsRevisionRef.current = snapshot.revision;
     setCatalog((current) => {
       const next = {
-        ...current,
-        artists: mergeArtistOrder(snapshot.artistOrder, current.artists),
-        songs: mergeSongOrder(snapshot.songOrder, current.songs),
+        ...(snapshot.catalog ?? current),
+        artists: mergeArtistOrder(snapshot.artistOrder, (snapshot.catalog ?? current).artists),
+        songs: mergeSongOrder(snapshot.songOrder, (snapshot.catalog ?? current).songs),
       };
-      try { saveEditableCatalog(window.localStorage, next); } catch {}
+      try { saveEditableCatalog(settingsStorage, next); } catch {}
       return next;
     });
     setCustomArtistAvatars(snapshot.customAvatars);
     setAvatarAdjustments(snapshot.avatarAdjustments);
     try {
-      window.localStorage.setItem(CUSTOM_ARTIST_AVATARS_KEY, JSON.stringify(snapshot.customAvatars));
-      window.localStorage.setItem(ARTIST_AVATAR_ADJUSTMENTS_KEY, JSON.stringify(snapshot.avatarAdjustments));
-      saveArtistSettingsCache(window.localStorage, snapshot);
+      settingsStorage.setItem(CUSTOM_ARTIST_AVATARS_KEY, JSON.stringify(snapshot.customAvatars));
+      settingsStorage.setItem(ARTIST_AVATAR_ADJUSTMENTS_KEY, JSON.stringify(snapshot.avatarAdjustments));
+      saveArtistSettingsCache(settingsStorage, snapshot);
     } catch {}
   };
 
@@ -358,9 +365,9 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     const worker = (async () => {
       let conflictRetries = 0;
       while (true) {
-        const draft = loadArtistSettingsDraft(window.localStorage);
+        const draft = loadArtistSettingsDraft(settingsStorage);
         const session = artistSettingsSessionRef.current;
-        if (!draft || !session || !isFeaturedSongManager(session.alias)) {
+        if (!draft || !session) {
           return;
         }
         try {
@@ -368,25 +375,25 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
           if (!serverSnapshot) throw new Error('INVALID_ARTIST_SETTINGS');
           artistSettingsRevisionRef.current = serverSnapshot.revision;
           conflictRetries = 0;
-          saveArtistSettingsCache(window.localStorage, serverSnapshot);
-          const latestDraft = loadArtistSettingsDraft(window.localStorage);
+          saveArtistSettingsCache(settingsStorage, serverSnapshot);
+          const latestDraft = loadArtistSettingsDraft(settingsStorage);
           const nextDraft = resolveSuccessfulArtistSettingsPush(latestDraft, draft.changeId, serverSnapshot);
-          if (nextDraft) saveArtistSettingsDraft(window.localStorage, nextDraft);
-          else clearArtistSettingsDraft(window.localStorage);
+          if (nextDraft) saveArtistSettingsDraft(settingsStorage, nextDraft);
+          else clearArtistSettingsDraft(settingsStorage);
           showSyncMessage('');
           if (!nextDraft) return;
         } catch (error) {
           if (error instanceof Error && error.message === 'CONFLICT' && conflictRetries < 3) {
             conflictRetries += 1;
             try {
-              const pulled = await pullArtistSettings();
+              const pulled = await pullArtistSettings(isFeaturedSongManager(session.alias) ? null : session, draft.snapshot);
               const cloud = pulled === null ? null : parseArtistSettingsSnapshot(pulled);
               if (pulled !== null && !cloud) throw new Error('INVALID_ARTIST_SETTINGS');
               artistSettingsRevisionRef.current = cloud?.revision ?? null;
-              const latestDraft = loadArtistSettingsDraft(window.localStorage);
+              const latestDraft = loadArtistSettingsDraft(settingsStorage);
               if (!latestDraft) return;
               saveArtistSettingsDraft(
-                window.localStorage,
+                settingsStorage,
                 rebaseArtistSettingsDraft(latestDraft, artistSettingsRevisionRef.current),
               );
               continue;
@@ -406,29 +413,26 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
 
   const queueArtistSettings = (snapshot: ArtistSettingsPayload) => {
     const session = artistSettingsSessionRef.current;
-    if (!session || !isFeaturedSongManager(session.alias)) {
-      showSyncMessage('仅站主登录后可以修改全站歌手设置。');
+    if (!session) {
+      showSyncMessage('请登录后修改自己的歌单设置。');
       return;
     }
-    const previous = loadArtistSettingsDraft(window.localStorage);
+    const previous = loadArtistSettingsDraft(settingsStorage);
     const draft = createArtistSettingsDraft(previous, previous?.baseRevision ?? artistSettingsRevisionRef.current, snapshot);
-    saveArtistSettingsDraft(window.localStorage, draft);
+    saveArtistSettingsDraft(settingsStorage, draft);
     void runArtistSettingsPush();
   };
 
   useEffect(() => {
     artistSettingsSessionRef.current = songRecordSession;
-    if (!canManageCatalog) {
-      clearArtistSettingsDraft(window.localStorage);
-      return;
-    }
-    if (artistSettingsInitializedRef.current && loadArtistSettingsDraft(window.localStorage)) void runArtistSettingsPush();
+    if (!songRecordSession) return;
+    if (catalogReady && loadArtistSettingsDraft(settingsStorage)) void runArtistSettingsPush();
   }, [songRecordSession, canManageCatalog]);
 
   useEffect(() => {
     const retryArtistSettingsPush = () => {
-      if (!artistSettingsInitializedRef.current || !isFeaturedSongManager(artistSettingsSessionRef.current?.alias)
-        || !loadArtistSettingsDraft(window.localStorage)) return;
+      if (!artistSettingsInitializedRef.current || !artistSettingsSessionRef.current
+        || !loadArtistSettingsDraft(settingsStorage)) return;
       void runArtistSettingsPush();
     };
     window.addEventListener('online', retryArtistSettingsPush);
@@ -440,7 +444,6 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   }, []);
 
   useEffect(() => {
-    if (artistSettingsInitializedRef.current) return;
     artistSettingsInitializedRef.current = true;
     let active = true;
     const defaultCatalog = createEditableCatalog(SONGS);
@@ -449,14 +452,16 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
       customArtistAvatars,
       avatarAdjustments,
       catalog.songs.map((song) => song.id),
+      catalog,
     );
-    pullArtistSettings().then((value) => {
+    pullArtistSettings(isFeaturedSongManager(accountAlias) ? null : songRecordSession, local).then((value) => {
       if (!active) return;
       const cloud = value === null ? null : parseArtistSettingsSnapshot(value);
       if (value !== null && !cloud) throw new Error('INVALID_ARTIST_SETTINGS');
+      setCatalogReady(true);
       artistSettingsRevisionRef.current = cloud?.revision ?? null;
-      const draft = loadArtistSettingsDraft(window.localStorage);
-      const hasManagerSession = isFeaturedSongManager(artistSettingsSessionRef.current?.alias);
+      const draft = loadArtistSettingsDraft(settingsStorage);
+      const hasManagerSession = Boolean(artistSettingsSessionRef.current);
       const decision = resolveArtistSettingsPull({
         cloud, local, draft, hasSession: hasManagerSession,
         defaultArtistOrder: defaultCatalog.artists,
@@ -464,11 +469,14 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
       });
       if (decision.kind === 'apply-cloud') {
         applyCloudArtistSettings(decision.snapshot);
+        if (songRecordSession && !decision.snapshot.catalog) {
+          queueArtistSettings({ ...decision.snapshot, catalog });
+        }
         return;
       }
       if (decision.kind === 'conflict') {
         saveArtistSettingsDraft(
-          window.localStorage,
+          settingsStorage,
           rebaseArtistSettingsDraft(decision.draft, decision.cloud?.revision ?? null),
         );
         if (hasManagerSession) void runArtistSettingsPush();
@@ -479,27 +487,19 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
         return;
       }
       if (decision.kind === 'seed-cloud') {
-        saveArtistSettingsDraft(window.localStorage, createArtistSettingsDraft(null, null, decision.payload));
+        saveArtistSettingsDraft(settingsStorage, createArtistSettingsDraft(null, null, decision.payload));
         void runArtistSettingsPush();
         return;
       }
       if (cloud === null && hasCustomArtistSettings(local, defaultCatalog.artists, defaultCatalog.songs.map((song) => song.id))) {
         if (hasManagerSession) {
-          saveArtistSettingsDraft(window.localStorage, createArtistSettingsDraft(null, null, local));
+          saveArtistSettingsDraft(settingsStorage, createArtistSettingsDraft(null, null, local));
           void runArtistSettingsPush();
         }
       }
     }).catch(() => {
       if (!active) return;
-      const hasManagerSession = isFeaturedSongManager(artistSettingsSessionRef.current?.alias);
-      const retryDraft = hasManagerSession ? ensureArtistSettingsRetryDraft(
-        window.localStorage, local, defaultCatalog.artists, artistSettingsRevisionRef.current,
-        defaultCatalog.songs.map((song) => song.id),
-      ) : null;
-      if (retryDraft) void runArtistSettingsPush();
-      showSyncMessage(retryDraft
-        ? '全站歌手设置暂时未连接，本地修改已排队并将在恢复后自动同步。'
-        : '全站歌手设置暂时未连接，当前仍使用本地设置。');
+      showSyncMessage('账户歌单读取失败，请刷新重试；暂未开放编辑，以免覆盖云端数据。');
     });
     return () => { active = false; };
   }, []);
@@ -584,20 +584,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   }, []);
 
   useEffect(() => {
-    const refreshSession = () => {
-      const next = readSongRecordSession(window.sessionStorage);
-      setSongRecordSession(next);
-      if (!next) {
-        setSelectedSong(null);
-        setSelectedArtist(null);
-      }
-    };
-    window.addEventListener(SONG_REQUEST_SESSION_EVENT, refreshSession);
-    return () => window.removeEventListener(SONG_REQUEST_SESSION_EVENT, refreshSession);
-  }, []);
-
-  useEffect(() => {
-    if (!songRecordSession) {
+    if (!songRecordSession || !isFeaturedSongManager(songRecordSession.alias)) {
       setRoadshowArchives([]);
       return;
     }
@@ -637,9 +624,13 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
 
   useEffect(() => {
     if (!songRecordSession) {
+      let active = true;
       setSongScores([]);
-      setScoreSyncStatus('');
-      return;
+      setScoreSyncStatus('正在读取公开谱子');
+      void pullPublicSongScores().then((scores) => {
+        if (active) { setSongScores(scores); setScoreSyncStatus(''); }
+      }).catch(() => { if (active) setScoreSyncStatus('谱子读取失败，请稍后刷新重试'); });
+      return () => { active = false; };
     }
     let active = true;
     const cachedScores = loadSongScoreCache(window.localStorage, songRecordSession.alias);
@@ -677,9 +668,10 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   }, [songRecordSession]);
 
   const catalogSongs = useMemo(() => {
+    if (songRecordSession && !isFeaturedSongManager(songRecordSession.alias)) return catalog.songs;
     const ids = new Set(catalog.songs.map((song) => song.id));
     return [...catalog.songs, ...recoveredSongs.filter((song) => !ids.has(song.id))];
-  }, [catalog.songs, recoveredSongs]);
+  }, [catalog.songs, recoveredSongs, songRecordSession]);
   const providedSongs = useMemo(() => {
     const featured = new Set(featuredSongIds);
     return catalogSongs.filter((song) => featured.has(song.id));
@@ -761,10 +753,10 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   const artistGroups = useMemo(() => {
     const grouped = new Map(groupSongsByArtist(catalogSongs).map((group) => [group.artist, group.songs]));
     const needle = query.trim().toLowerCase();
-    const visibleArtists = [...new Set([...catalog.artists, ...recoveredSongs.map((song) => song.artist)])];
+    const visibleArtists = [...new Set([...catalog.artists, ...(songRecordSession && !isFeaturedSongManager(songRecordSession.alias) ? [] : recoveredSongs.map((song) => song.artist))])];
     return visibleArtists.map((artist) => ({ artist, songs: grouped.get(artist) ?? [] })).filter(({ artist, songs }) => {
-      const singleSongArtist = songs.length === 1;
-      const chineseArtist = !songs.some((song) => song.category === '欧美流行');
+      const singleSongArtist = songs.length <= 1;
+      const chineseArtist = songs.length === 0 || !songs.some((song) => song.category === '欧美流行');
       const matchesCatalogGroup = artistLanguageFilter === 'single' ? singleSongArtist : songs.length >= 2;
       const matchesLanguage = artistLanguageFilter === 'single'
         || (artistLanguageFilter === 'chinese' ? chineseArtist : !chineseArtist);
@@ -772,7 +764,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
         || songs.some((song) => song.title.toLowerCase().includes(needle));
       return matchesCatalogGroup && matchesLanguage && matchesQuery;
     });
-  }, [artistLanguageFilter, catalog.artists, catalogSongs, query, recoveredSongs]);
+  }, [artistLanguageFilter, catalog.artists, catalogSongs, query, recoveredSongs, songRecordSession]);
   const artistPageCount = Math.max(1, Math.ceil(artistGroups.length / ARTISTS_PER_PAGE));
   const paginatedArtistGroups = useMemo(() => (
     artistOrderMode
@@ -817,7 +809,8 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
 
   const commitCatalog = (next: EditableCatalog) => {
     setCatalog(next);
-    try { saveEditableCatalog(window.localStorage, next); } catch {}
+    try { saveEditableCatalog(settingsStorage, next); } catch {}
+    queueArtistSettings(createArtistSettingsPayload(next.artists, customArtistAvatars, avatarAdjustments, next.songs.map(song => song.id), next));
   };
 
   const syncCurrentArtistSettings = (
@@ -827,7 +820,8 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     songOrder = catalog.songs.map((song) => song.id),
   ) => {
     if (!requireCatalogManager()) return;
-    queueArtistSettings(createArtistSettingsPayload(artists, avatars, adjustments, songOrder));
+    const currentCatalog = loadEditableCatalog(settingsStorage, SONGS);
+    queueArtistSettings(createArtistSettingsPayload(artists, avatars, adjustments, songOrder, currentCatalog));
   };
 
   const commitSongOrder = (next: EditableCatalog) => {
@@ -862,9 +856,10 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     }
   };
 
-  const commitSongScore = (songId: string, next: SongScore | null) => {
+  const commitSongScore = (songId: string, next: SongScore | null, alreadySynced = false) => {
+    if (!songRecordSession) return;
     const previous = songScores.find((score) => score.songId === songId) ?? null;
-    const pendingScore = next ? { ...next, pendingSync: true } : null;
+    const pendingScore = next ? { ...next, pendingSync: !alreadySynced } : null;
     const updated = pendingScore
       ? [pendingScore, ...songScores.filter((score) => score.songId !== songId)]
       : songScores.filter((score) => score.songId !== songId);
@@ -874,6 +869,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
       return;
     }
     try { saveSongScoreCache(window.localStorage, songRecordSession.alias, updated); } catch {}
+    if (alreadySynced) { setScoreSyncStatus('已同步到云端'); return; }
     if (!pendingScore && (!previous || previous.pendingSync) && !hasCloudSongScore(previous)) {
       setScoreSyncStatus('已从本机删除');
       return;
@@ -908,7 +904,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   };
 
   const openSongDetail = (song: Song) => {
-    try { setRoadshowArchives(parseRoadshowCache(window.localStorage.getItem(ROADSHOW_CACHE_KEY))); } catch {}
+    if (isFeaturedSongManager(songRecordSession?.alias)) { try { setRoadshowArchives(parseRoadshowCache(window.localStorage.getItem(ROADSHOW_CACHE_KEY))); } catch {} }
     setSelectedSong(song);
   };
   const canOpenPracticeDetails = Boolean(songRecordSession);
@@ -920,8 +916,16 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     if (!requireCatalogManager()) return;
     const artist = window.prompt('请输入新歌手名：')?.trim();
     if (!artist) return;
-    if (catalog.artists.includes(artist)) return window.alert('该歌手已存在。');
+    if (catalog.artists.includes(artist)) {
+      setSelectedArtist(artist);
+      setArtistLanguageFilter('single');
+      setQuery('');
+      return window.alert('该歌手已存在，已为你选中，可直接添加歌曲。');
+    }
     commitCatalog(addCatalogArtist(catalog, artist));
+    setSelectedArtist(artist);
+    setArtistLanguageFilter('single');
+    setQuery('');
   };
 
   const handleRemoveArtist = () => {
@@ -1094,7 +1098,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     if (!avatar) return;
     setAvatarAdjustments((current) => {
       const next = { ...current, [artist]: { ...(current[artist] ?? getDefaultAvatarAdjustment(avatar)), ...patch } };
-      try { window.localStorage.setItem(ARTIST_AVATAR_ADJUSTMENTS_KEY, JSON.stringify(next)); } catch {}
+      try { settingsStorage.setItem(ARTIST_AVATAR_ADJUSTMENTS_KEY, JSON.stringify(next)); } catch {}
       return next;
     });
   };
@@ -1104,7 +1108,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     setAvatarAdjustments((current) => {
       const next = { ...current };
       delete next[artist];
-      try { window.localStorage.setItem(ARTIST_AVATAR_ADJUSTMENTS_KEY, JSON.stringify(next)); } catch {}
+      try { settingsStorage.setItem(ARTIST_AVATAR_ADJUSTMENTS_KEY, JSON.stringify(next)); } catch {}
       return next;
     });
   };
@@ -1116,8 +1120,8 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
       const nextAvatars = { ...customArtistAvatars, [artist]: src };
       const nextAdjustments = { ...avatarAdjustments };
       delete nextAdjustments[artist];
-      window.localStorage.setItem(CUSTOM_ARTIST_AVATARS_KEY, JSON.stringify(nextAvatars));
-      window.localStorage.setItem(ARTIST_AVATAR_ADJUSTMENTS_KEY, JSON.stringify(nextAdjustments));
+      settingsStorage.setItem(CUSTOM_ARTIST_AVATARS_KEY, JSON.stringify(nextAvatars));
+      settingsStorage.setItem(ARTIST_AVATAR_ADJUSTMENTS_KEY, JSON.stringify(nextAdjustments));
       setCustomArtistAvatars(nextAvatars);
       setAvatarAdjustments(nextAdjustments);
       syncCurrentArtistSettings(catalog.artists, nextAvatars, nextAdjustments);
@@ -1189,6 +1193,8 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   };
 
   const canManageFeaturedSongs = isFeaturedSongManager(songRecordSession?.alias);
+  const nonOwnerSession = Boolean(songRecordSession && !canManageFeaturedSongs);
+  const visibleRankingView: RankingView = nonOwnerSession ? 'personal' : rankingView;
 
   useEffect(() => {
     if (!canManageFeaturedSongs && rankingLocation !== '总榜') {
@@ -1590,10 +1596,10 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   );
 
   const sectionTitle = activeSection === 'quiz' ? '听歌识曲' : HUB_DIRECTIONS.find((item) => item.id === activeSection)?.label;
-  const rankingHeading = rankingView === 'requests'
+  const rankingHeading = visibleRankingView === 'requests'
     ? '点歌榜'
-    : rankingView === 'personal'
-      ? personalRankingArtist ? `${personalRankingArtist} · 吉他练习榜` : '吉他练习榜'
+    : visibleRankingView === 'personal'
+      ? personalRankingArtist ? `${personalRankingArtist} · 练习榜` : '练习榜'
       : '猜歌榜';
   const detailBackLabel = selectedSong
     ? activeSection === 'ranking'
@@ -1717,13 +1723,13 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
               <div><p className="text-[10px] font-black tracking-[0.28em] text-orange-300/65">SONG REQUEST</p>
                 <h1 className="mt-1 font-serif text-4xl font-black sm:text-5xl">{selectedArtist || (activeSection === 'ranking' ? rankingHeading : sectionTitle)}</h1>
               </div>
-              {activeSection === 'ranking' && (
+              {activeSection === 'ranking' && !nonOwnerSession && (
                 <div role="tablist" aria-label="排行榜切换" className="flex shrink-0 gap-1 rounded-full border border-white/10 bg-black/35 p-1">
                   <button type="button" aria-label="切换到点歌榜" aria-pressed={rankingView === 'requests'} onClick={() => setRankingView('requests')}
                     className={`grid h-10 w-10 place-items-center rounded-full transition ${rankingView === 'requests' ? 'bg-orange-300 text-black' : 'text-white/45 hover:text-white'}`}>
                     <Trophy className="h-4 w-4" />
                   </button>
-                  <button type="button" aria-label="切换到吉他练习榜" aria-pressed={rankingView === 'personal'} onClick={() => setRankingView('personal')}
+                  <button type="button" aria-label="切换到练习榜" aria-pressed={rankingView === 'personal'} onClick={() => setRankingView('personal')}
                     className={`grid h-10 w-10 place-items-center rounded-full transition ${rankingView === 'personal' ? 'bg-orange-300 text-black' : 'text-white/45 hover:text-white'}`}>
                     <Target className="h-4 w-4" />
                   </button>
@@ -1746,7 +1752,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
             {activeSection === 'ranking' && (
               <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
                 <div data-request-ranking-panel className="relative flex h-[calc(100svh-14rem)] min-h-[28rem] flex-col overflow-hidden rounded-[1.75rem] border border-white/10 bg-black/35 p-5 sm:p-7">
-                  {rankingView === 'requests' ? (
+                  {visibleRankingView === 'requests' ? (
                     <div className="flex min-h-0 flex-1 flex-col gap-4">
                       {requestVoteView === 'pending' ? (
                         displayRanking.length ? <>
@@ -1792,7 +1798,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                         ))}</ol></div> : <div className="grid min-h-64 place-items-center text-center text-white/40"><div><Trophy className="mx-auto h-9 w-9 opacity-40" /><p className="mt-3">还没有已唱歌曲记录</p></div></div>
                       )}
                     </div>
-                  ) : rankingView === 'personal' ? (
+                  ) : visibleRankingView === 'personal' ? (
                     visiblePersonalRanking.length ? <>
                       <ol
                         key={`practice-ranking-${personalRankingMode}-${paginatedPersonalRanking.page}`}
@@ -1843,7 +1849,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                     )
                   )}
                 </div>
-                {rankingView === 'requests' ? (
+                {visibleRankingView === 'requests' ? (
                   <aside data-request-ranking-controls className="h-fit rounded-[1.75rem] border border-orange-200/15 bg-orange-950/20 p-4 sm:p-5">
                     <div role="tablist" aria-label="点歌状态切换" className="grid grid-cols-2 gap-2">
                       <button type="button" role="tab" aria-selected={requestVoteView === 'pending'} onClick={() => setRequestVoteView('pending')} className={`rounded-xl border px-4 py-3 text-sm font-black transition ${requestVoteView === 'pending' ? 'border-orange-300/45 bg-orange-300 text-black' : 'border-white/10 bg-black/25 text-white/65 hover:text-white'}`}>已点</button>
@@ -1906,8 +1912,8 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                     )}
                     <p className="mt-4 text-sm leading-7 text-white/45">{requestVoteView === 'pending' ? '“已点”显示当前待唱歌曲；站主点击“唱完”后会一次性转入“已唱”。' : '“已唱”长期累计已完成的点歌次数，可分别查看歌手榜与歌曲榜。'}</p>
                   </aside>
-                ) : rankingView === 'personal' ? (
-                  <aside aria-label="吉他练习榜歌手筛选" className="h-fit overflow-hidden rounded-[1.75rem] border border-orange-200/15 bg-orange-950/20 p-4 sm:p-5">
+                ) : visibleRankingView === 'personal' ? (
+                  <aside aria-label="练习榜歌手筛选" className="h-fit overflow-hidden rounded-[1.75rem] border border-orange-200/15 bg-orange-950/20 p-4 sm:p-5">
                     <div className="grid grid-cols-2 gap-2">
                       <label className="flex h-11 min-w-0 items-center gap-2 rounded-xl border border-white/10 bg-black/35 px-3 focus-within:border-orange-300/45">
                         <Search className="h-4 w-4 shrink-0 text-orange-200/55" />
@@ -1990,7 +1996,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                                     <Check className="h-3 w-3" /><span>已用</span>
                                   </span>
                                 )}
-                                {songRecordSession && (
+                                {canManageFeaturedSongs && (
                                   <button type="button" aria-label={`将${song.title}加入最新路演听歌识曲`} title="加入最新路演 · 听歌识曲"
                                     disabled={Boolean(roadshowBusyId)} onClick={() => { void addSongToLatestRoadshow(song); }}
                                     className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-orange-200/20 bg-orange-300/10 text-orange-100 transition hover:bg-orange-300/20 disabled:opacity-40">
@@ -2428,4 +2434,13 @@ const SearchBox = ({ query, setQuery }: { query: string; setQuery: (value: strin
   </label>
 );
 
-export default SongRequestStation;
+const AccountSongRequestStation = (props: SongRequestStationProps) => {
+  const [account, setAccount] = useState(() => readSongRecordSession(window.sessionStorage)?.alias.trim().toLowerCase() || '');
+  useEffect(() => {
+    const refresh = () => setAccount(readSongRecordSession(window.sessionStorage)?.alias.trim().toLowerCase() || '');
+    window.addEventListener(SONG_REQUEST_SESSION_EVENT, refresh);
+    return () => window.removeEventListener(SONG_REQUEST_SESSION_EVENT, refresh);
+  }, []);
+  return <SongRequestStation key={account} {...props} />;
+};
+export default AccountSongRequestStation;

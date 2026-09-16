@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowUpRight, Leaf, Guitar, PawPrint, SunMedium } from 'lucide-react';
+import { ArrowUpRight, Guitar, PawPrint, SunMedium } from 'lucide-react';
 import services from '../../services/starService';
 import { getThemeConfig, type ThemeId } from '../../themes/themeConfig';
 import { getMeowGeneratorUrl } from '../../utils/meowGenerator';
@@ -15,7 +15,7 @@ interface ThemeHubProps {
   onOpenEnough: () => void;
 }
 
-const ThemeHub: React.FC<ThemeHubProps> = ({ onSelect, onOpenSongRequest, onOpenEnough }) => {
+const ThemeHub: React.FC<ThemeHubProps> = ({ onSelect, onOpenSongRequest }) => {
   const [count, setCount] = useState<number | null | undefined>(undefined);
   const theme = getThemeConfig('life');
 
@@ -135,31 +135,6 @@ const ThemeHub: React.FC<ThemeHubProps> = ({ onSelect, onOpenSongRequest, onOpen
             </span>
           </a>
 
-          <button
-            type="button"
-            aria-label="此刻已足"
-            onClick={() => { (window as any).playClickSound?.(); onOpenEnough(); }}
-            className={`group relative ${HUB_CARD_SIZE_CLASS} w-full overflow-hidden rounded-[2rem] border border-sky-200/20 bg-[#0a1018]/85 p-7 text-left backdrop-blur-xl motion-safe:transition motion-safe:duration-500 motion-safe:hover:-translate-y-2 focus:outline-none focus:ring-2 focus:ring-sky-200/70 md:p-9`}
-          >
-            <span className="pointer-events-none absolute -left-16 -top-24 h-52 w-52 rounded-full bg-sky-400/20 blur-3xl motion-safe:transition motion-safe:duration-700 motion-safe:group-hover:bg-sky-300/30" />
-            <span className="pointer-events-none absolute -bottom-24 right-10 h-48 w-48 rounded-full bg-amber-300/10 blur-3xl motion-safe:transition motion-safe:duration-700 motion-safe:group-hover:bg-amber-200/20" />
-            <span className="absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-sky-200/70 to-transparent" />
-
-            <span className={HUB_CARD_CONTENT_CLASS}>
-              <span className="grid h-14 w-14 place-items-center rounded-2xl border border-sky-200/20 bg-sky-300/10 text-sky-100">
-                <Leaf className="h-7 w-7" />
-              </span>
-              <span>
-                <span className="block text-[10px] font-bold tracking-[0.28em] text-sky-200/80">ENOUGH, HERE & NOW</span>
-                <span className="mt-3 block font-serif text-3xl font-black tracking-tight text-white md:text-4xl">此刻已足</span>
-                <span className="mt-3 block max-w-md text-sm leading-7 text-white/55">数一数身边的拥有，也听一听心里的渴望。</span>
-                <span className="mt-7 inline-flex items-center gap-2 text-sm font-bold text-sky-100">
-                  看见此刻的生活
-                  <ArrowUpRight className="h-4 w-4 motion-safe:transition-transform motion-safe:duration-300 motion-safe:group-hover:translate-x-1 motion-safe:group-hover:-translate-y-1" />
-                </span>
-              </span>
-            </span>
-          </button>
         </section>
 
         <p className="mt-7 text-center text-xs tracking-[0.12em] text-white/30">

@@ -27,10 +27,13 @@ const ACTIONS = new Set([
   'songRecords:save',
   'songRecords:saveBatch',
   'songRecords:delete',
+  'songScores:publicPull',
   'songScores:pull',
   'songScores:uploadPage',
   'songScores:save',
   'songScores:delete',
+  'artistSettings:privatePull',
+  'songScores:copyOwner',
   'artistSettings:pull',
   'artistSettings:push',
   'featuredSongs:pull',
@@ -210,11 +213,23 @@ const validateAdjustment = (value) => {
   return { x: value.x, y: value.y, scale: value.scale, rotation: value.rotation };
 };
 
+const validateCatalog = (value) => {
+  if (!value || value.version !== 8 || !Array.isArray(value.artists) || value.artists.length > 200 || !Array.isArray(value.songs) || value.songs.length > 2000) throw new Error('INVALID_ARTIST_SETTINGS');
+  const artists = value.artists.map(validateArtistName);
+  const songs = value.songs.map(song => ({
+    id: cleanText(song.id, 100, 'INVALID_ARTIST_SETTINGS'), title: cleanText(song.title, 100, 'INVALID_ARTIST_SETTINGS'),
+    artist: cleanText(song.artist, 100, 'INVALID_ARTIST_SETTINGS'), category: cleanText(song.category, 100, 'INVALID_ARTIST_SETTINGS'),
+    featured: Boolean(song.featured), ...(song.hotComment ? { hotComment: cleanText(song.hotComment, 2000, 'INVALID_ARTIST_SETTINGS') } : {}),
+  }));
+  if (new Set(artists).size !== artists.length || new Set(songs.map(s => s.id)).size !== songs.length || songs.some(s => !artists.includes(s.artist))) throw new Error('INVALID_ARTIST_SETTINGS');
+  return { version: 8, artists, songs };
+};
+
 const validateArtistSettings = (value) => {
   if (!value || typeof value !== 'object' || Array.isArray(value)
-    || Object.keys(value).some((key) => !['version', 'artistOrder', 'songOrder', 'customAvatars', 'avatarAdjustments', 'revision', 'updatedAt'].includes(key))
+    || Object.keys(value).some((key) => !['version', 'artistOrder', 'songOrder', 'customAvatars', 'avatarAdjustments', 'revision', 'updatedAt', 'catalog'].includes(key))
     || value.version !== 1 || !Array.isArray(value.artistOrder)
-    || value.artistOrder.length < 1 || value.artistOrder.length > 200) throw new Error('INVALID_ARTIST_SETTINGS');
+    || value.artistOrder.length > 200) throw new Error('INVALID_ARTIST_SETTINGS');
   const artistOrder = value.artistOrder.map(validateArtistName);
   const songOrder = value.songOrder === undefined ? [] : value.songOrder;
   if (new Set(artistOrder).size !== artistOrder.length
@@ -230,6 +245,7 @@ const validateArtistSettings = (value) => {
     || avatarEntries.some(([artist]) => !artistSet.has(artist))
     || adjustmentEntries.some(([artist]) => !artistSet.has(artist))) throw new Error('INVALID_ARTIST_SETTINGS');
   return {
+    ...(value.catalog === undefined ? {} : { catalog: validateCatalog(value.catalog) }),
     version: 1,
     artistOrder,
     songOrder: cleanSongOrder,
@@ -270,7 +286,7 @@ const validateSongScorePage = (value) => {
 
 function validateRequest(event) {
   if (!event || typeof event !== 'object' || !ACTIONS.has(event.action)) throw new Error('INVALID_ACTION');
-  const requestLimit = event.action === 'enough:save' ? 650000 : event.action === 'feelingsNotebook:save' ? 4 * 1024 * 1024 : event.action === 'artistSettings:push'
+  const requestLimit = event.action === 'enough:save' ? 650000 : event.action === 'feelingsNotebook:save' ? 4 * 1024 * 1024 : (event.action === 'artistSettings:push' || event.action === 'artistSettings:privatePull')
     ? ARTIST_SETTINGS_REQUEST_LIMIT
     : event.action === 'songScores:uploadPage' ? SONG_SCORE_UPLOAD_REQUEST_LIMIT : DEFAULT_REQUEST_LIMIT;
   if (Buffer.byteLength(JSON.stringify(event), 'utf8') > requestLimit) throw new Error('PAYLOAD_TOO_LARGE');
@@ -278,7 +294,7 @@ function validateRequest(event) {
   if (event.action === 'votes:pull' || event.action === 'roadshows:publicQuizRanking') {
     return { action: event.action, ...optionalRankingLocation(event.location) };
   }
-  if (event.action === 'songRecords:publicRanking'
+  if (event.action === 'songScores:publicPull' || event.action === 'songRecords:publicRanking'
     || event.action === 'artistSettings:pull' || event.action === 'featuredSongs:pull'
     || event.action === 'quizLibrary:pull' || event.action === 'songGroups:pull') return { action: event.action };
   if (event.action === 'votes:increment') {
@@ -332,6 +348,8 @@ function validateRequest(event) {
     }
     return { ...base, assignments };
   }
+  if (event.action === 'songScores:copyOwner') return { ...base, songId: cleanText(event.songId, 100, 'INVALID_SONG_SCORE') };
+  if (event.action === 'artistSettings:privatePull') return { ...base, seed: validateArtistSettings(event.seed) };
   if (event.action === 'artistSettings:push') {
     const expectedRevision = event.expectedRevision;
     if (!(expectedRevision === null || (Number.isInteger(expectedRevision) && expectedRevision >= 1))) throw new Error('INVALID_ARTIST_SETTINGS');

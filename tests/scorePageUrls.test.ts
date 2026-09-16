@@ -43,9 +43,9 @@ test('SongDetailPanel 用 Hook 取谱页地址并在缩略图加载失败时换�
   assert.match(source, /const \{ pages: scorePages, refresh: refreshScorePages \} = useResolvedScorePages\(/)
   assert.match(source, /onError=\{\(\) => refreshScorePages\(\)\}/)
   assert.match(source, /onPagesStale=\{refreshScorePages\}/)
-  // Hook 必须在 `if (!session)` 早返回之前调用，否则违反 Hooks 规则。
+  // 游客页面不再早返回；若恢复登录拦截，Hook 仍须在拦截之前调用。
   assert.ok(
-    source.indexOf('useResolvedScorePages(') < source.indexOf('if (!session) {'),
+    !source.includes('if (!session) {') || source.indexOf('useResolvedScorePages(') < source.indexOf('if (!session) {'),
     'useResolvedScorePages 必须在早返回之前调用',
   )
 })

@@ -39,6 +39,8 @@ function memoryStore() {
   const songRecords = new Map();
   const locationKeys = { '医大（武鸣）': 'medicalWuming', '医大（本部）': 'medicalMain', '南湖': 'nanhu' };
   let artistSettings = null;
+  const personalSettings = new Map();
+  const ownerId = crypto.createHash('sha256').update('2421415030@qq.com').digest('hex');
   return {
     workspaces,
     votes,
@@ -114,8 +116,14 @@ function memoryStore() {
       if (!current || current.workspaceId !== workspaceId || current.deletedAt) throw new Error('NOT_FOUND');
       songRecords.set(documentId, { ...current, deletedAt, updatedAt: deletedAt });
     },
-    getArtistSettings: async () => artistSettings ? structuredClone(artistSettings) : null,
+    getArtistSettings: async (id) => structuredClone(!id || id === ownerId ? artistSettings : personalSettings.get(id) ?? null),
     saveArtistSettingsAtomically: async (ownerWorkspaceId, expectedRevision, snapshot) => {
+      if (ownerWorkspaceId !== ownerId) {
+        const current = personalSettings.get(ownerWorkspaceId);
+        if ((current?.revision ?? null) !== expectedRevision) throw new Error('CONFLICT');
+        const saved = { ...structuredClone(snapshot), ownerWorkspaceId, revision: (current?.revision || 0) + 1, updatedAt: '2026-08-25T12:00:00.000Z' };
+        personalSettings.set(ownerWorkspaceId, saved); return structuredClone(saved);
+      }
       if (!artistSettings) {
         if (expectedRevision !== null) throw new Error('CONFLICT');
         artistSettings = { ...structuredClone(snapshot), ownerWorkspaceId, revision: 1, updatedAt: '2026-08-25T12:00:00.000Z' };
@@ -308,7 +316,7 @@ test('publishes and transactionally protects one global artist settings snapshot
   assert.deepEqual(await handler({ action: 'artistSettings:pull' }), { ok: true, snapshot: first.snapshot });
 
   assert.deepEqual(await handler({ action: 'artistSettings:push', ...owner, expectedRevision: null, snapshot: artistSettingsPayload() }), { ok: false, error: 'CONFLICT' });
-  assert.deepEqual(await handler({ action: 'artistSettings:push', ...other, expectedRevision: 1, snapshot: artistSettingsPayload() }), { ok: false, error: 'AUTH_FAILED' });
+  assert.deepEqual(await handler({ action: 'artistSettings:push', ...other, expectedRevision: 1, snapshot: artistSettingsPayload() }), { ok: false, error: 'CONFLICT' });
   const second = await handler({ action: 'artistSettings:push', ...owner, expectedRevision: 1, snapshot: { ...artistSettingsPayload(), artistOrder: ['林俊杰', '周杰伦'], revision: 888, updatedAt: 'client-time' } });
   assert.equal(second.snapshot.revision, 2);
   assert.deepEqual(second.snapshot.artistOrder, ['林俊杰', '周杰伦']);
@@ -316,19 +324,19 @@ test('publishes and transactionally protects one global artist settings snapshot
   assert.deepEqual(await handler({ action: 'artistSettings:push', ...owner, expectedRevision: 1, snapshot: artistSettingsPayload() }), { ok: false, error: 'CONFLICT' });
 })
 
-test('rejects a non-owner before the global artist settings document exists', async () => {
+test('stores non-owner settings without creating the global document', async () => {
   const store = memoryStore();
   const { createHandler } = loadFunction();
   const handler = createHandler(store);
   const visitor = { alias: 'VISITOR', password: 'guitar-2026' };
   await seedExistingAccount(store, visitor);
 
-  assert.deepEqual(await handler({
+  assert.equal((await handler({
     action: 'artistSettings:push',
     ...visitor,
     expectedRevision: null,
     snapshot: artistSettingsPayload(),
-  }), { ok: false, error: 'AUTH_FAILED' });
+  })).ok, true);
   assert.equal(store.artistSettings, null);
 })
 
@@ -349,7 +357,7 @@ test('production artist settings storage uses the fixed global document transact
   const source = readFileSync(functionPath, 'utf8');
 
   assert.match(source, /db\.collection\('song_request_artist_settings'\)/);
-  assert.match(source, /transaction\.collection\('song_request_artist_settings'\)\.doc\('global'\)/);
+  assert.ok(source.includes("doc(ownerWorkspaceId === workspaceId(FEATURED_SONGS_OWNER_ALIAS) ? 'global' : ownerWorkspaceId)"));
   assert.match(source, /saveArtistSettingsAtomically/);
 })
 
@@ -369,8 +377,8 @@ test('increments and pulls public song request votes', async () => {
   const { createHandler } = loadFunction();
   const handler = createHandler(memoryStore());
 
-  assert.deepEqual(await handler({ action: 'votes:increment', songId: 'qing-tian' }), { ok: true, count: 1 });
-  assert.deepEqual(await handler({ action: 'votes:increment', songId: 'qing-tian' }), { ok: true, count: 2 });
+  assert.deepEqual(await handler({ action: 'votes:increment', songId: 'qing-tian' }), { ok: true, count: 1, location: null });
+  assert.deepEqual(await handler({ action: 'votes:increment', songId: 'qing-tian' }), { ok: true, count: 2, location: null });
   assert.deepEqual(await handler({ action: 'votes:pull' }), { ok: true, counts: { 'qing-tian': 2 }, sungCounts: {} });
 })
 
@@ -527,7 +535,7 @@ test('saves roadshows and keeps soft-deleted records out of pulls', async () => 
   const store = memoryStore();
   const { createHandler } = loadFunction();
   const handler = createHandler(store);
-  const auth = { alias: 'JIEYOU', password: 'guitar-2026' };
+  const auth = { alias: '2421415030@qq.com', password: 'guitar-2026' };
   const record = {
     id: 'roadshow-1', title: '第一次路演', date: '2026-08-25', updatedAt: '2026-08-25T11:00:00.000Z',
     location: '解忧杂货铺', weather: '晴',
@@ -549,8 +557,8 @@ test('publishes a quiz ranking from roadshow answers without exposing private wo
   const store = memoryStore();
   const { createHandler } = loadFunction();
   const handler = createHandler(store);
-  const first = { alias: 'JIEYOU', password: 'guitar-2026' };
-  const second = { alias: 'PLAYER', password: 'guitar-2026' };
+  const first = { alias: '2421415030@qq.com', password: 'guitar-2026' };
+  const second = { alias: '2421415030@qq.com', password: 'guitar-2026' };
   const song = (id, title, artist, correct, attempt, participantName) => ({
     id: attempt, catalogId: id, title, artist, correct, answeredAt: `2026-09-01T12:00:0${attempt.slice(-1)}.000Z`,
     ...(participantName ? { participantName } : {}),
@@ -716,7 +724,7 @@ test('keeps private song records isolated, independent, and soft-deleted', async
   const store = memoryStore();
   const { createHandler } = loadFunction();
   const handler = createHandler(store);
-  const auth = { alias: 'JIEYOU', password: 'guitar-2026' };
+  const auth = { alias: '2421415030@qq.com', password: 'guitar-2026' };
   const otherAuth = { alias: 'OTHER', password: 'guitar-2026' };
   const practice = {
     id: 'practice-1', kind: 'practice', songId: 'qing-tian', songTitle: '晴天', songArtist: '周杰伦',

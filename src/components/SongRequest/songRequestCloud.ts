@@ -214,6 +214,12 @@ const deleteSongScoreFiles = async (fileIds: string[]): Promise<void> => {
   }
 };
 
+export const copyOwnerSongScore = async (credentials: Credentials, songId: string): Promise<SongScore> =>
+  (await callSync<{ score: SongScore }>({ action: 'songScores:copyOwner', ...credentials, songId })).score;
+
+export const pullPublicSongScores = async (): Promise<SongScore[]> =>
+  parseSongScores((await callSync<{ scores: SongScore[] }>({ action: 'songScores:publicPull' })).scores);
+
 export const pullSongScores = async (credentials: Credentials): Promise<SongScore[]> => {
   const scores = parseSongScores((await callSync<{ scores: SongScore[] }>({ action: 'songScores:pull', ...credentials })).scores);
   // 云端只保存 cloud:// fileID；签名地址本身有有效期，不能沿用上一次换来的旧链接。
@@ -279,8 +285,8 @@ export const mapSongScoreSyncError = (error: unknown) => {
   return '云端暂时没有回应，谱子尚未同步。';
 };
 
-export const pullArtistSettings = async (): Promise<ArtistSettingsSnapshot | null> => (
-  await callSync<{ snapshot: ArtistSettingsSnapshot | null }>({ action: 'artistSettings:pull' })
+export const pullArtistSettings = async (credentials?: Credentials | null, seed?: ArtistSettingsPayload): Promise<ArtistSettingsSnapshot | null> => (
+  await callSync<{ snapshot: ArtistSettingsSnapshot | null }>(credentials && seed ? { action: 'artistSettings:privatePull', ...credentials, seed } : { action: 'artistSettings:pull' })
 ).snapshot;
 
 export const pushArtistSettings = async (

@@ -16,7 +16,7 @@ const PUBLIC_ERRORS = new Set([
   'INVALID_FEATURED_SONGS',
   'INVALID_QUIZ_LIBRARY',
   'INVALID_SONG_SCORE',
-  'SCORE_UPLOAD_FAILED',
+  'SCORE_UPLOAD_FAILED', 'SCORE_NOT_FOUND', 'SCORE_ALREADY_EXISTS',
   'INVALID_LOCATION',
   'INVALID_NOTEBOOK',
   'INVALID_SONG_GROUPS',
@@ -262,6 +262,12 @@ function createHandler(store) {
         return { ok: true, records: [] };
       }
 
+      if (request.action === 'songScores:publicPull') {
+        const scores = await store.getSongScores(workspaceId(FEATURED_SONGS_OWNER_ALIAS));
+        const visible = scores.filter((score) => !score.deletedAt).map(({ id, songId, songTitle, songArtist, pages, updatedAt }) => ({ id, songId, songTitle, songArtist, pages, updatedAt }));
+        return { ok: true, scores: store.resolveSongScores ? await store.resolveSongScores(visible) : visible };
+      }
+
       let authenticated;
       try {
         authenticated = await authenticate(store, request.alias, request.password);
@@ -331,15 +337,26 @@ function createHandler(store) {
         await store.setQuizLibraryAssignments(id, request.assignments, store.now());
         return { ok: true, assignments: request.assignments };
       }
+      if (request.action === 'artistSettings:privatePull') {
+        let saved = await store.getArtistSettings(id);
+        if (!saved) {
+          const owner = await store.getArtistSettings();
+          const seed = owner ? { ...publicArtistSettings(owner), catalog: owner.catalog || request.seed.catalog } : request.seed;
+          try { saved = await store.saveArtistSettingsAtomically(id, null, seed); }
+          catch (error) { if (error.message !== 'CONFLICT') throw error; saved = await store.getArtistSettings(id); }
+        }
+        return { ok: true, snapshot: publicArtistSettings(saved) };
+      }
       if (request.action === 'artistSettings:push') {
-        if (id !== workspaceId(FEATURED_SONGS_OWNER_ALIAS)) throw new Error('AUTH_FAILED');
         const saved = await store.saveArtistSettingsAtomically(id, request.expectedRevision, request.snapshot);
         return { ok: true, snapshot: publicArtistSettings(saved) };
       }
       if (request.action === 'songRecords:pull') {
         const records = await store.getSongRecords(id);
-        return { ok: true, records: records.filter((record) => !record.deletedAt).map(publicSongRecord) };
+        return { ok: true, records: records.filter((record) => !record.deletedAt && (id === workspaceId(FEATURED_SONGS_OWNER_ALIAS) || record.kind === 'practice')).map(publicSongRecord) };
       }
+
+      if (id !== workspaceId(FEATURED_SONGS_OWNER_ALIAS) && ((request.action === 'songRecords:save' && request.record.kind === 'roadshow') || (request.action === 'songRecords:saveBatch' && request.records.some(record => record.kind === 'roadshow')) || request.action === 'roadshows:save' || request.action === 'roadshows:delete')) throw new Error('AUTH_FAILED');
 
       if (request.action === 'songRecords:save') {
         const saved = { ...request.record, workspaceId: id, updatedAt: store.now() };
@@ -359,6 +376,23 @@ function createHandler(store) {
         return { ok: true };
       }
 
+      if (request.action === 'songScores:copyOwner') {
+        const existing = (await store.getSongScores(id)).find(score => score.songId === request.songId && !score.deletedAt);
+        if (existing && (existing.pages?.length || existing.lyrics)) throw new Error('SCORE_ALREADY_EXISTS');
+        const source = (await store.getSongScores(workspaceId(FEATURED_SONGS_OWNER_ALIAS))).find(score => score.songId === request.songId && !score.deletedAt && score.pages?.length);
+        if (!source) throw new Error('SCORE_NOT_FOUND');
+        const pages = [];
+        const saved = { id: 'score-' + source.songId, songId: source.songId, songTitle: source.songTitle, songArtist: source.songArtist || '', pages, workspaceId: id, updatedAt: store.now() };
+        try {
+          for (const page of source.pages) pages.push(await store.copySongScorePage(id, source.songId, page));
+          await store.saveCopiedSongScoreAtomically(songScoreDocumentId(id, saved.songId), saved);
+        } catch (error) {
+          if (pages.length && store.deleteCopiedScoreFiles) { try { await store.deleteCopiedScoreFiles(pages); } catch {} }
+          throw error;
+        }
+        const scores = await store.resolveSongScores([publicSongScore(saved)]);
+        return { ok: true, score: scores[0] };
+      }
       if (request.action === 'songScores:pull') {
         const scores = await store.getSongScores(id);
         const visibleScores = scores.filter((score) => !score.deletedAt).map(publicSongScore);
@@ -384,7 +418,7 @@ function createHandler(store) {
       }
 
       if (request.action === 'roadshows:pull') {
-        const records = (workspace.roadshows || []).filter((record) => !record.deletedAt);
+        const records = id === workspaceId(FEATURED_SONGS_OWNER_ALIAS) ? (workspace.roadshows || []).filter((record) => !record.deletedAt) : [];
         return { ok: true, records };
       }
 
@@ -558,6 +592,23 @@ exports.main = async (event) => {
         }
         return scores.map((score) => ({ ...score, pageUrls: score.pages.map((page) => urlByFileId.get(page) || page) }));
       },
+      deleteCopiedScoreFiles: fileList => app.deleteFile({ fileList }),
+      async copySongScorePage(accountId, songId, fileID) {
+        const downloaded = await app.downloadFile({ fileID });
+        if (!downloaded.fileContent?.length) throw new Error('SCORE_DOWNLOAD_FAILED');
+        const songHash = crypto.createHash('sha256').update(songId.trim().toLocaleLowerCase()).digest('hex');
+        const uploaded = await app.uploadFile({ cloudPath: 'song-request-scores/' + accountId + '/' + songHash + '/' + crypto.randomUUID() + '.jpg', fileContent: downloaded.fileContent });
+        if (!uploaded?.fileID) throw new Error('SCORE_UPLOAD_FAILED');
+        return uploaded.fileID;
+      },
+      saveCopiedSongScoreAtomically: (documentId, value) => db.runTransaction(async transaction => {
+        const ref = transaction.collection('song_request_song_scores').doc(documentId);
+        let current;
+        try { const result = await ref.get(); current = Array.isArray(result.data) ? result.data[0] : result.data; }
+        catch (error) { if (!/not found|does not exist/i.test(String(error?.message))) throw error; }
+        if (current && !current.deletedAt && (current.pages?.length || current.lyrics)) throw new Error('SCORE_ALREADY_EXISTS');
+        await ref.set(value);
+      }),
       async uploadSongScorePage(workspaceId, songId, pageContent) {
         const songHash = crypto.createHash('sha256').update(songId.trim().toLocaleLowerCase()).digest('hex');
         const cloudPath = `song-request-scores/${workspaceId}/${songHash}/${crypto.randomUUID()}.jpg`;
@@ -573,9 +624,9 @@ exports.main = async (event) => {
         const ref = transaction.collection('song_request_song_scores').doc(documentId);
         await ref.set({ workspaceId, songId, deletedAt, updatedAt: deletedAt });
       }),
-      async getArtistSettings() {
+      async getArtistSettings(accountId) {
         try {
-          const result = await artistSettings.doc('global').get();
+          const result = await artistSettings.doc(!accountId || accountId === workspaceId(FEATURED_SONGS_OWNER_ALIAS) ? 'global' : accountId).get();
           return Array.isArray(result.data) ? (result.data[0] ?? null) : (result.data ?? null);
         } catch (error) {
           if (/not found|does not exist/i.test(String(error?.message))) return null;
@@ -583,7 +634,7 @@ exports.main = async (event) => {
         }
       },
       saveArtistSettingsAtomically: (ownerWorkspaceId, expectedRevision, snapshot) => db.runTransaction(async (transaction) => {
-        const ref = transaction.collection('song_request_artist_settings').doc('global');
+        const ref = transaction.collection('song_request_artist_settings').doc(ownerWorkspaceId === workspaceId(FEATURED_SONGS_OWNER_ALIAS) ? 'global' : ownerWorkspaceId);
         let current = null;
         try {
           const result = await ref.get();
