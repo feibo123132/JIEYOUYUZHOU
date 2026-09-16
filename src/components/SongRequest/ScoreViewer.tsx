@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronLeft, ChevronRight, Minus, Plus, RotateCcw, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Minus, Plus, X } from 'lucide-react';
 import { readScorePage, saveScorePage } from './songScores';
 import {
   getFittedScoreSize,
@@ -135,7 +135,6 @@ const ScoreViewer = ({ songId, songTitle, pages, onPagesStale, onClose }: ScoreV
     });
   }, [fittedSize, viewportSize]);
 
-  const resetZoom = useCallback(() => applyZoom(SCORE_ZOOM_MIN), [applyZoom]);
   const toggleReadingZoom = useCallback(() => {
     applyZoom(zoomRef.current > SCORE_ZOOM_MIN + 0.01
       ? SCORE_ZOOM_MIN
@@ -296,7 +295,7 @@ const ScoreViewer = ({ songId, songTitle, pages, onPagesStale, onClose }: ScoreV
       <footer className="flex shrink-0 items-center justify-center gap-3 px-3 py-1.5 text-center text-[10px] text-white/30">
         <div className="flex shrink-0 items-center rounded-full border border-white/10 bg-white/[.06] p-0.5 text-white/75 shadow-2xl">
           <button type="button" aria-label="缩小谱子" disabled={!zoomed} onClick={() => applyZoom(stepScoreZoom(zoomRef.current, -1))} className="grid h-8 w-8 place-items-center rounded-full transition hover:bg-white/10 disabled:opacity-25"><Minus className="h-4 w-4" /></button>
-          <button type="button" aria-label="恢复适应屏幕" disabled={!zoomed} onClick={resetZoom} className="flex h-8 min-w-16 items-center justify-center gap-1.5 rounded-full px-2 font-bold tabular-nums transition hover:bg-white/10 disabled:opacity-45"><RotateCcw className="h-3.5 w-3.5" />{Math.round(zoom * 100)}%</button>
+          <span className="flex h-8 min-w-14 items-center justify-center px-2 text-xs font-bold tabular-nums">{Math.round(zoom * 100)}%</span>
           <button type="button" aria-label="放大谱子" disabled={zoom >= SCORE_ZOOM_MAX} onClick={() => applyZoom(stepScoreZoom(zoomRef.current, 1))} className="grid h-8 w-8 place-items-center rounded-full transition hover:bg-white/10 disabled:opacity-25"><Plus className="h-4 w-4" /></button>
         </div>
         {pageError ? (

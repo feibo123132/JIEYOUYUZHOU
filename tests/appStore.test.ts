@@ -61,17 +61,20 @@ test('enough journal navigation changes only the current view', () => {
   assert.equal(useAppStore.getState().currentView, 'theme-hub')
 })
 
-test('enough journal replaces keepsake and old deep links enter the replacement', () => {
+test('keepsake deep links enter the keepsake studio and enough stays separate', () => {
   const hubSource = readFileSync(new URL('../src/components/Theme/ThemeHub.tsx', import.meta.url), 'utf8')
   const appSource = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
 
-  assert.doesNotMatch(hubSource, /onOpenKeepsake/)
-  assert.doesNotMatch(hubSource, /MEMORY STUDIO/)
-  assert.doesNotMatch(hubSource, /进入留影工坊/)
+  assert.match(hubSource, /onOpenKeepsake/)
+  assert.match(hubSource, /MEMORY STUDIO/)
+  assert.match(hubSource, /JIEYOU留影/)
+  assert.match(hubSource, /进入留影工坊/)
   assert.match(hubSource, /onOpenEnough/)
-  assert.match(hubSource, /此刻已足/)
   assert.match(appSource, /\['keepsake', 'enough'\]/)
+  assert.match(appSource, /view === 'keepsake'/)
+  assert.match(appSource, /enterKeepsakeStudio\(\)/)
   assert.match(appSource, /enterEnoughJournal\(\)/)
+  assert.match(appSource, /currentView === 'keepsake-studio'/)
   assert.match(appSource, /currentView === 'enough-journal'/)
 })
 

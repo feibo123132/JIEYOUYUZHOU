@@ -15,6 +15,7 @@ const popularSongBarrageUrl = new URL('../src/components/SongRequest/PopularSong
 const messageBarrageUrl = new URL('../src/components/StarrySky/MessageBarrage.tsx', import.meta.url)
 const artistSettingsUrl = new URL('../src/components/SongRequest/artistSettings.ts', import.meta.url)
 const songQuizLibraryUrl = new URL('../src/components/SongRequest/songQuizLibrary.ts', import.meta.url)
+const songRequestEntryDialogUrl = new URL('../src/components/SongRequest/SongRequestEntryDialog.tsx', import.meta.url)
 const indexCssUrl = new URL('../src/index.css', import.meta.url)
 const appUrl = new URL('../src/App.tsx', import.meta.url)
 const avatarCropUrl = new URL('../src/components/SongRequest/avatarCrop.ts', import.meta.url)
@@ -159,6 +160,23 @@ test('入口和登录卡片统一使用私人记录文案', () => {
   assert.match(stationSource, /id: 'roadshows', label: '私人记录'/)
   assert.match(roadshowSource, />私人记录<\/h2>/)
   assert.doesNotMatch(roadshowSource, /仅属于你的私人档案/)
+})
+
+test('点歌台首页入口在未登录时先提供用户登录和游客浏览', () => {
+  const appSource = readFileSync(appUrl, 'utf8')
+  const entrySource = readFileSync(songRequestEntryDialogUrl, 'utf8')
+
+  assert.match(appSource, /readBrowserSongRecordSession\(\)/)
+  assert.match(appSource, /setSongRequestEntryOpen\(true\)/)
+  assert.match(appSource, /<SongRequestEntryDialog/)
+  assert.match(entrySource, /用户登录/)
+  assert.match(entrySource, /游客浏览/)
+  assert.match(entrySource, /onClick=\{onGuest\}/)
+  assert.doesNotMatch(entrySource, /进入游客浏览/)
+  assert.match(entrySource, /saveBrowserSongRecordSession\(next\)/)
+  assert.match(entrySource, /window\.dispatchEvent\(new Event\(SONG_REQUEST_SESSION_EVENT\)\)/)
+  assert.match(entrySource, /pullRoadshows\(next\)/)
+  assert.match(entrySource, /registerRoadshowWorkspace\(next, invitationCode\)/)
 })
 
 test('游客能读取脱敏个人练习榜但不能进入私人歌曲档案', async () => {

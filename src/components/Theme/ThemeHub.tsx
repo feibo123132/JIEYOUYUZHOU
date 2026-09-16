@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowUpRight, Guitar, PawPrint, SunMedium } from 'lucide-react';
+import { ArrowUpRight, Camera, Guitar, PawPrint, SunMedium } from 'lucide-react';
 import services from '../../services/starService';
 import { getThemeConfig, type ThemeId } from '../../themes/themeConfig';
 import { getMeowGeneratorUrl } from '../../utils/meowGenerator';
@@ -12,10 +12,11 @@ const HUB_CARD_CONTENT_CLASS = 'relative flex h-full flex-col gap-5';
 interface ThemeHubProps {
   onSelect: (themeId: ThemeId) => void;
   onOpenSongRequest: () => void;
+  onOpenKeepsake: () => void;
   onOpenEnough: () => void;
 }
 
-const ThemeHub: React.FC<ThemeHubProps> = ({ onSelect, onOpenSongRequest }) => {
+const ThemeHub: React.FC<ThemeHubProps> = ({ onSelect, onOpenSongRequest, onOpenKeepsake }) => {
   const [count, setCount] = useState<number | null | undefined>(undefined);
   const theme = getThemeConfig('life');
 
@@ -134,6 +135,32 @@ const ThemeHub: React.FC<ThemeHubProps> = ({ onSelect, onOpenSongRequest }) => {
               </span>
             </span>
           </a>
+
+          <button
+            type="button"
+            onClick={() => { (window as any).playClickSound?.(); onOpenKeepsake(); }}
+            aria-label="进入JIEYOU留影"
+            className={`group relative ${HUB_CARD_SIZE_CLASS} w-full overflow-hidden rounded-[2rem] border border-rose-200/20 bg-[#1b0f14]/85 p-7 text-left backdrop-blur-xl motion-safe:transition motion-safe:duration-500 motion-safe:hover:-translate-y-2 focus:outline-none focus:ring-2 focus:ring-rose-200/70 md:p-9`}
+          >
+            <span className="pointer-events-none absolute -right-16 -top-24 h-52 w-52 rounded-full bg-rose-300/18 blur-3xl motion-safe:transition motion-safe:duration-700 motion-safe:group-hover:bg-rose-200/28" />
+            <span className="pointer-events-none absolute -bottom-24 left-10 h-48 w-48 rounded-full bg-amber-200/10 blur-3xl motion-safe:transition motion-safe:duration-700 motion-safe:group-hover:bg-amber-200/18" />
+            <span className="absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-rose-200/70 to-transparent" />
+
+            <span className={HUB_CARD_CONTENT_CLASS}>
+              <span className="grid h-14 w-14 place-items-center rounded-2xl border border-rose-200/20 bg-rose-300/10 text-rose-100">
+                <Camera className="h-7 w-7" />
+              </span>
+              <span>
+                <span className="block text-[10px] font-bold tracking-[0.28em] text-rose-100/80">MEMORY STUDIO</span>
+                <span className="mt-3 block font-serif text-3xl font-black tracking-tight text-white md:text-4xl">JIEYOU留影</span>
+                <span className="mt-3 block max-w-md text-sm leading-7 text-white/55">套上照相机外框，拍下或上传这一刻，做成一张收藏卡。</span>
+                <span className="mt-7 inline-flex items-center gap-2 text-sm font-bold text-rose-100">
+                  进入留影工坊
+                  <ArrowUpRight className="h-4 w-4 motion-safe:transition-transform motion-safe:duration-300 motion-safe:group-hover:translate-x-1 motion-safe:group-hover:-translate-y-1" />
+                </span>
+              </span>
+            </span>
+          </button>
 
         </section>
 

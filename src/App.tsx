@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Toaster, toast } from 'sonner';
 import ThemeHub from './components/Theme/ThemeHub';
 import EnoughJournal from './components/Enough/EnoughJournalPage';
+import KeepsakeStudio from './components/Keepsake/KeepsakeStudio';
+import SongRequestEntryDialog from './components/SongRequest/SongRequestEntryDialog';
 import SongRequestStation from './components/SongRequest/SongRequestStation';
 import WelcomeScreen from './components/Welcome/WelcomeScreen';
 import NicknameInput from './components/Welcome/NicknameInput';
@@ -10,7 +12,7 @@ import StarryCanvas from './components/StarrySky/StarryCanvas';
 import services from './services/starService';
 import useAppStore from './store/appStore';
 import { isReservedStarName, STAR_OWNER_ALIAS, STAR_OWNER_ID } from './components/Welcome/starOwner';
-import { readSongRecordSession } from './components/SongRequest/songRecords';
+import { readBrowserSongRecordSession, readSongRecordSession } from './components/SongRequest/songRecords';
 import { verifyStarOwner } from './components/SongRequest/songRequestCloud';
 import { ROADSHOW_SESSION_KEY } from './components/SongRequest/roadshow';
 import { tryGetThemeConfig, type ThemeId } from './themes/themeConfig';
@@ -27,10 +29,12 @@ function App() {
   const isPlayingRef = useRef(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [songRequestEntryOpen, setSongRequestEntryOpen] = useState(false);
   const [starrySkyInitialView, setStarrySkyInitialView] = useState<'stars' | 'my-messages' | 'star-messages'>('stars');
   const {
     activeTheme,
     currentView,
+    enterKeepsakeStudio,
     enterEnoughJournal,
     enterSongRequestStation,
     enterStarrySky,
@@ -49,12 +53,14 @@ function App() {
 
   useEffect(() => {
     const url = new URL(window.location.href);
-    if (!['keepsake', 'enough'].includes(url.searchParams.get('view') ?? '')) return;
+    const view = url.searchParams.get('view') ?? '';
+    if (!['keepsake', 'enough'].includes(view)) return;
 
-    enterEnoughJournal();
+    if (view === 'keepsake') enterKeepsakeStudio();
+    else enterEnoughJournal();
     url.searchParams.delete('view');
     window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
-  }, [enterEnoughJournal]);
+  }, [enterEnoughJournal, enterKeepsakeStudio]);
 
   useEffect(() => {
     const audio = new Audio();
@@ -148,6 +154,14 @@ function App() {
     enterTheme(themeId);
   };
 
+  const handleOpenSongRequest = () => {
+    if (readBrowserSongRecordSession()) {
+      enterSongRequestStation();
+      return;
+    }
+    setSongRequestEntryOpen(true);
+  };
+
   const handleNicknameSubmit = async (nickname: string, destination: 'stars' | 'my-messages' | 'star-messages', ownerPassword?: string) => {
     setIsLoading(true);
     try {
@@ -189,10 +203,20 @@ function App() {
       />
 
       {currentView === 'theme-hub' && (
-        <ThemeHub onSelect={handleSelectTheme} onOpenSongRequest={enterSongRequestStation} onOpenEnough={enterEnoughJournal} />
+        <ThemeHub onSelect={handleSelectTheme} onOpenSongRequest={handleOpenSongRequest} onOpenKeepsake={enterKeepsakeStudio} onOpenEnough={enterEnoughJournal} />
+      )}
+
+      {currentView === 'theme-hub' && songRequestEntryOpen && (
+        <SongRequestEntryDialog
+          onClose={() => setSongRequestEntryOpen(false)}
+          onGuest={() => { setSongRequestEntryOpen(false); enterSongRequestStation(); }}
+          onAuthenticated={() => { setSongRequestEntryOpen(false); enterSongRequestStation(); }}
+        />
       )}
 
       {currentView === 'enough-journal' && <EnoughJournal onBack={returnToThemeHub} />}
+
+      {currentView === 'keepsake-studio' && <KeepsakeStudio onBack={returnToThemeHub} />}
 
       {currentView === 'song-request' && <SongRequestStation onBack={returnToThemeHub} />}
 
