@@ -66,3 +66,16 @@ test('score viewer keeps mobile chrome compact around the score image', () => {
   assert.match(source, /<footer className="flex shrink-0 items-center justify-center gap-3 px-3 py-1\.5/)
   assert.doesNotMatch(source, /w-full sm:w-auto/)
 })
+
+test('score viewer auto-scroll uses visible speed tiers with a timer fallback', () => {
+  const source = readFileSync(scoreViewerUrl, 'utf8')
+
+  assert.match(source, /AUTO_SCROLL_PIXELS_PER_SECOND/)
+  assert.match(source, /1:\s*12/)
+  assert.match(source, /2:\s*20/)
+  assert.match(source, /3:\s*28/)
+  assert.match(source, /autoScrollRemainderRef/)
+  assert.match(source, /AUTO_SCROLL_PIXELS_PER_SECOND\[speed\] \* zoomRef\.current \* elapsed/)
+  assert.match(source, /window\.setInterval\(\(\) => \{ advance\(performance\.now\(\)\); \}, 180\)/)
+  assert.match(source, /requestAnimationFrame\(tick\)/)
+})

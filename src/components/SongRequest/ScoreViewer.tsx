@@ -31,9 +31,9 @@ const AUTO_SCROLL_SPEED_LABELS: Record<AutoScrollSpeed, string> = {
   3: '快',
 };
 const AUTO_SCROLL_PIXELS_PER_SECOND: Record<Exclude<AutoScrollSpeed, 0>, number> = {
-  1: 18,
-  2: 34,
-  3: 56,
+  1: 12,
+  2: 20,
+  3: 28,
 };
 
 const ScoreViewer = ({ songId, songTitle, pages, onPagesStale, onClose }: ScoreViewerProps) => {
@@ -52,7 +52,9 @@ const ScoreViewer = ({ songId, songTitle, pages, onPagesStale, onClose }: ScoreV
   const wasPinchingRef = useRef(false);
   const scrollFrameRef = useRef<number | null>(null);
   const autoScrollFrameRef = useRef<number | null>(null);
+  const autoScrollIntervalRef = useRef<number | null>(null);
   const autoScrollLastTimeRef = useRef<number | null>(null);
+  const autoScrollRemainderRef = useRef(0);
 
   const fittedSize = useMemo(
     () => getFittedScoreSize(viewportSize, imageSize),
@@ -105,40 +107,59 @@ const ScoreViewer = ({ songId, songTitle, pages, onPagesStale, onClose }: ScoreV
   useEffect(() => () => {
     if (scrollFrameRef.current !== null) cancelAnimationFrame(scrollFrameRef.current);
     if (autoScrollFrameRef.current !== null) cancelAnimationFrame(autoScrollFrameRef.current);
+    if (autoScrollIntervalRef.current !== null) window.clearInterval(autoScrollIntervalRef.current);
   }, []);
 
   useEffect(() => {
     autoScrollSpeedRef.current = autoScrollSpeed;
     autoScrollLastTimeRef.current = null;
+    autoScrollRemainderRef.current = 0;
     if (autoScrollFrameRef.current !== null) {
       cancelAnimationFrame(autoScrollFrameRef.current);
       autoScrollFrameRef.current = null;
     }
+    if (autoScrollIntervalRef.current !== null) {
+      window.clearInterval(autoScrollIntervalRef.current);
+      autoScrollIntervalRef.current = null;
+    }
     if (autoScrollSpeed === 0) return;
 
-    const tick = (time: number) => {
+    const advance = (time: number) => {
       const stage = stageRef.current;
       const speed = autoScrollSpeedRef.current;
       if (!stage || speed === 0) {
-        autoScrollFrameRef.current = null;
-        return;
+        return false;
       }
       const lastTime = autoScrollLastTimeRef.current ?? time;
       autoScrollLastTimeRef.current = time;
       const maxTop = Math.max(0, stage.scrollHeight - stage.clientHeight);
       if (stage.scrollTop >= maxTop - 1) {
         setAutoScrollSpeed(0);
+        return false;
+      }
+      const elapsed = Math.min(250, Math.max(0, time - lastTime));
+      const distance = autoScrollRemainderRef.current + (AUTO_SCROLL_PIXELS_PER_SECOND[speed] * zoomRef.current * elapsed) / 1000;
+      const wholePixels = Math.trunc(distance);
+      autoScrollRemainderRef.current = distance - wholePixels;
+      if (wholePixels > 0) stage.scrollTop = Math.min(maxTop, stage.scrollTop + wholePixels);
+      return true;
+    };
+
+    const tick = (time: number) => {
+      if (!advance(time)) {
         autoScrollFrameRef.current = null;
         return;
       }
-      stage.scrollTop = Math.min(maxTop, stage.scrollTop + (AUTO_SCROLL_PIXELS_PER_SECOND[speed] * (time - lastTime)) / 1000);
       autoScrollFrameRef.current = requestAnimationFrame(tick);
     };
 
     autoScrollFrameRef.current = requestAnimationFrame(tick);
+    autoScrollIntervalRef.current = window.setInterval(() => { advance(performance.now()); }, 180);
     return () => {
       if (autoScrollFrameRef.current !== null) cancelAnimationFrame(autoScrollFrameRef.current);
+      if (autoScrollIntervalRef.current !== null) window.clearInterval(autoScrollIntervalRef.current);
       autoScrollFrameRef.current = null;
+      autoScrollIntervalRef.current = null;
     };
   }, [autoScrollSpeed]);
 
