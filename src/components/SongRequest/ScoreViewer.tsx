@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronLeft, ChevronRight, Minus, Plus, X } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, Minus, Plus, X } from 'lucide-react';
 import { readScorePage, saveScorePage } from './songScores';
 import {
   getFittedScoreSize,
@@ -22,6 +22,20 @@ interface ScoreViewerProps {
   onClose: () => void;
 }
 
+type AutoScrollSpeed = 0 | 1 | 2 | 3;
+
+const AUTO_SCROLL_SPEED_LABELS: Record<AutoScrollSpeed, string> = {
+  0: '自动',
+  1: '慢',
+  2: '中',
+  3: '快',
+};
+const AUTO_SCROLL_PIXELS_PER_SECOND: Record<Exclude<AutoScrollSpeed, 0>, number> = {
+  1: 18,
+  2: 34,
+  3: 56,
+};
+
 const ScoreViewer = ({ songId, songTitle, pages, onPagesStale, onClose }: ScoreViewerProps) => {
   const total = pages.length;
   const [page, setPage] = useState(() => Math.min(readScorePage(window.localStorage, songId), Math.max(total - 1, 0)));
@@ -29,12 +43,16 @@ const ScoreViewer = ({ songId, songTitle, pages, onPagesStale, onClose }: ScoreV
   const [zoom, setZoom] = useState(SCORE_ZOOM_MIN);
   const [viewportSize, setViewportSize] = useState<ScoreSize>({ width: 0, height: 0 });
   const [imageSize, setImageSize] = useState<ScoreSize>({ width: 0, height: 0 });
+  const [autoScrollSpeed, setAutoScrollSpeed] = useState<AutoScrollSpeed>(0);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const zoomRef = useRef(SCORE_ZOOM_MIN);
+  const autoScrollSpeedRef = useRef<AutoScrollSpeed>(0);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
   const pinchRef = useRef<{ distance: number; zoom: number } | null>(null);
   const wasPinchingRef = useRef(false);
   const scrollFrameRef = useRef<number | null>(null);
+  const autoScrollFrameRef = useRef<number | null>(null);
+  const autoScrollLastTimeRef = useRef<number | null>(null);
 
   const fittedSize = useMemo(
     () => getFittedScoreSize(viewportSize, imageSize),
@@ -78,6 +96,7 @@ const ScoreViewer = ({ songId, songTitle, pages, onPagesStale, onClose }: ScoreV
   useEffect(() => {
     zoomRef.current = SCORE_ZOOM_MIN;
     setZoom(SCORE_ZOOM_MIN);
+    setAutoScrollSpeed(0);
     setImageSize({ width: 0, height: 0 });
     setPageError(false);
     stageRef.current?.scrollTo({ left: 0, top: 0 });
@@ -85,7 +104,43 @@ const ScoreViewer = ({ songId, songTitle, pages, onPagesStale, onClose }: ScoreV
 
   useEffect(() => () => {
     if (scrollFrameRef.current !== null) cancelAnimationFrame(scrollFrameRef.current);
+    if (autoScrollFrameRef.current !== null) cancelAnimationFrame(autoScrollFrameRef.current);
   }, []);
+
+  useEffect(() => {
+    autoScrollSpeedRef.current = autoScrollSpeed;
+    autoScrollLastTimeRef.current = null;
+    if (autoScrollFrameRef.current !== null) {
+      cancelAnimationFrame(autoScrollFrameRef.current);
+      autoScrollFrameRef.current = null;
+    }
+    if (autoScrollSpeed === 0) return;
+
+    const tick = (time: number) => {
+      const stage = stageRef.current;
+      const speed = autoScrollSpeedRef.current;
+      if (!stage || speed === 0) {
+        autoScrollFrameRef.current = null;
+        return;
+      }
+      const lastTime = autoScrollLastTimeRef.current ?? time;
+      autoScrollLastTimeRef.current = time;
+      const maxTop = Math.max(0, stage.scrollHeight - stage.clientHeight);
+      if (stage.scrollTop >= maxTop - 1) {
+        setAutoScrollSpeed(0);
+        autoScrollFrameRef.current = null;
+        return;
+      }
+      stage.scrollTop = Math.min(maxTop, stage.scrollTop + (AUTO_SCROLL_PIXELS_PER_SECOND[speed] * (time - lastTime)) / 1000);
+      autoScrollFrameRef.current = requestAnimationFrame(tick);
+    };
+
+    autoScrollFrameRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (autoScrollFrameRef.current !== null) cancelAnimationFrame(autoScrollFrameRef.current);
+      autoScrollFrameRef.current = null;
+    };
+  }, [autoScrollSpeed]);
 
   const applyZoom = useCallback((requestedZoom: number, focalPoint?: { x: number; y: number }) => {
     const stage = stageRef.current;
@@ -140,6 +195,10 @@ const ScoreViewer = ({ songId, songTitle, pages, onPagesStale, onClose }: ScoreV
       ? SCORE_ZOOM_MIN
       : getReadingScoreZoom(viewportSize, imageSize));
   }, [applyZoom, viewportSize, imageSize]);
+
+  const cycleAutoScrollSpeed = () => {
+    setAutoScrollSpeed((current) => ((current + 1) % 4) as AutoScrollSpeed);
+  };
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -216,6 +275,19 @@ const ScoreViewer = ({ songId, songTitle, pages, onPagesStale, onClose }: ScoreV
       aria-label={`${songTitle} 谱子翻页器`}
       style={{ overscrollBehavior: 'none' }}
     >
+      <div className="absolute left-3 top-3 z-20 flex shrink-0 items-center text-white/85 sm:left-4 sm:top-4">
+        <button
+          type="button"
+          onClick={cycleAutoScrollSpeed}
+          aria-label={autoScrollSpeed === 0 ? '开启自动下滑' : `自动下滑速度：${AUTO_SCROLL_SPEED_LABELS[autoScrollSpeed]}，点击切换`}
+          aria-pressed={autoScrollSpeed > 0}
+          className={`inline-flex h-9 items-center gap-1.5 rounded-full border px-3 text-xs font-bold backdrop-blur-md transition ${autoScrollSpeed > 0 ? 'border-orange-200/35 bg-orange-300 text-black shadow-[0_8px_30px_rgba(251,146,60,.22)]' : 'border-white/10 bg-black/50 text-white/75 hover:bg-white/15 hover:text-white'}`}
+        >
+          <ChevronDown className="h-4 w-4" />
+          {AUTO_SCROLL_SPEED_LABELS[autoScrollSpeed]}
+        </button>
+      </div>
+
       <div className="absolute right-3 top-3 z-20 flex shrink-0 items-center gap-2 text-white/85 sm:right-4 sm:top-4">
         <span className="rounded-full border border-white/10 bg-black/50 px-3 py-1 text-xs font-bold tabular-nums text-white/75 backdrop-blur-md">
           {page + 1} / {total}
