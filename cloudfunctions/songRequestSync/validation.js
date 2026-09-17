@@ -17,6 +17,9 @@ const ACTIONS = new Set([
   'votes:finishAll',
   'votes:clearPending',
   'votes:clearSung',
+  'roadshowSings:pull',
+  'roadshowSings:adjust',
+  'roadshowSings:migrateLegacy',
   'roadshows:register',
   'roadshows:pull',
   'roadshows:save',
@@ -315,6 +318,12 @@ function validateRequest(event) {
     const songId = cleanText(event.songId, 80, 'INVALID_SONG_ID');
     if (!/^[a-z0-9-]+$/i.test(songId) || ![1, -1].includes(event.delta)) throw new Error('INVALID_SONG_ID');
     return { ...base, songId, delta: event.delta, ...optionalRankingLocation(event.location) };
+  }
+  if (event.action === 'roadshowSings:pull' || event.action === 'roadshowSings:migrateLegacy') return base;
+  if (event.action === 'roadshowSings:adjust') {
+    const songId = cleanText(event.songId, 80, 'INVALID_SONG_ID');
+    if (!/^[a-z0-9-]+$/i.test(songId) || ![1, -1].includes(event.delta)) throw new Error('INVALID_SONG_ID');
+    return { ...base, songId, delta: event.delta };
   }
   if (event.action.startsWith('stars:owner')) return { ...base, themeId: event.themeId, id: event.id, star: event.star };
   if (event.action === 'enough:save') {

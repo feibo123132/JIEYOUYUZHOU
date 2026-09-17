@@ -8,8 +8,8 @@ import { SONGS, type Song } from './songCatalog';
 import {
   addCatalogArtist, addCatalogSong, addSongVoteRequester, cleanVoteRequesterName, createEditableCatalog, getFeaturedSongs,
   getPersonalRankingPodiumSize, getRankingMedalTone, getSongSubtitle, incrementSongVote, isFeaturedSongManager,
-  insertCatalogArtist, insertCatalogSong, loadEditableCatalog, loadSungVoteCounts, loadVoteCounts, rankArtistsByVotes, rankSongsByVotes,
-  moveCatalogArtist, moveCatalogSong, removeCatalogArtist, removeCatalogSong, saveEditableCatalog, saveSungVoteCounts, saveVoteCounts,
+  insertCatalogArtist, insertCatalogSong, loadEditableCatalog, loadRoadshowSingCounts, loadSungVoteCounts, loadVoteCounts, rankArtistsByVotes, rankSongsByVotes,
+  moveCatalogArtist, moveCatalogSong, removeCatalogArtist, removeCatalogSong, saveEditableCatalog, saveRoadshowSingCounts, saveSungVoteCounts, saveVoteCounts,
   orderPersonalRankingItems, paginateRankingItems, sortCatalogByMatchScore, togglePersonalRankingRandom, togglePersonalRankingReverse,
   upgradeEditableCatalog,
   type EditableCatalog, type RankingDisplayMode, type VoteCounts, type VoteRequesters,
@@ -20,7 +20,7 @@ import {
   type PublicQuizParticipantRankingItem, type PublicQuizRankingItem, type RoadshowRankingLocation, type RoadshowRecord, type RoadshowSong,
 } from './roadshow';
 import {
-  adjustCloudSungVote, clearCloudVotes, finishCloudVotes, incrementCloudVote, mapArtistSettingsSyncError, mapSongScoreSyncError, pullArtistSettings, pullCloudFeaturedSongIds, pullCloudVoteState,
+  adjustCloudRoadshowSingCount, adjustCloudSungVote, clearCloudVotes, finishCloudVotes, incrementCloudVote, mapArtistSettingsSyncError, mapSongScoreSyncError, migrateLegacyCloudRoadshowSingCounts, pullArtistSettings, pullCloudFeaturedSongIds, pullCloudRoadshowSingCounts, pullCloudVoteState,
   pullCloudQuizAssignments, pullPublicPracticeRanking, pullPublicQuizRanking, pullRoadshows, pullSongRecords, pullSongScores, pullPublicSongScores, pushArtistSettings,
   saveCloudFeaturedSongIds, saveCloudQuizAssignments, saveRoadshow, syncSongScoreToCloud, deleteSongScore,
 } from './songRequestCloud';
@@ -54,6 +54,7 @@ interface SongRequestStationProps { onBack: () => void; }
 type SectionId = 'ranking' | 'artists' | 'roadshows' | 'playlists' | 'quiz';
 type RankingView = 'requests' | 'personal' | 'quiz';
 type RequestVoteView = 'pending' | 'sung';
+type SungStatsSource = 'requests' | 'roadshow';
 type SungRankingMode = 'artists' | 'songs';
 type ArtistLanguageFilter = 'chinese' | 'foreign' | 'single';
 type SongDisplayMode = 'random' | 'full';
@@ -96,6 +97,10 @@ const HUB_DIRECTIONS = [
 ] as const;
 
 const artistAvatarUrl = (fileName: string) => `${import.meta.env.BASE_URL}images/song-request/artists/${fileName}`;
+const maskSongRecordAccount = (alias: string) => {
+  const trimmed = alias.trim();
+  return trimmed.length > 6 ? `${trimmed.slice(0, 6)}...` : trimmed;
+};
 
 const ARTIST_AVATARS: Record<string, { src: string; position: string; scale: number }> = {
   周杰伦: { src: artistAvatarUrl('jay-chou.webp'), position: '50% 24%', scale: 1.35 },
@@ -211,6 +216,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   const [activeSection, setActiveSection] = useState<SectionId | null>(null);
   const [rankingView, setRankingView] = useState<RankingView>('requests');
   const [requestVoteView, setRequestVoteView] = useState<RequestVoteView>('pending');
+  const [sungStatsSource, setSungStatsSource] = useState<SungStatsSource>('requests');
   const [sungRankingMode, setSungRankingMode] = useState<SungRankingMode>('songs');
   const [rankingLocation, setRankingLocation] = useState<RoadshowRankingLocation>('总榜');
   const [personalRankingArtist, setPersonalRankingArtist] = useState<string | null>(null);
@@ -236,7 +242,11 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   const [sungVotes, setSungVotes] = useState<VoteCounts>(() => (
     typeof window === 'undefined' ? {} : loadSungVoteCounts(window.localStorage, catalog.songs.map((song) => song.id))
   ));
+  const [roadshowSingCounts, setRoadshowSingCounts] = useState<VoteCounts>(() => (
+    typeof window === 'undefined' ? {} : loadRoadshowSingCounts(window.localStorage, catalog.songs.map((song) => song.id))
+  ));
   const [locationVotes, setLocationVotes] = useState<VoteCounts>({});
+  const [locationSungVotes, setLocationSungVotes] = useState<VoteCounts>({});
   const [voteRequesters, setVoteRequesters] = useState<VoteRequesters>({});
   const [locationVoteRequesters, setLocationVoteRequesters] = useState<VoteRequesters>({});
   const [requesterDialogOpen, setRequesterDialogOpen] = useState(false);
@@ -545,17 +555,51 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     }).catch(() => { if (active && version === voteSyncVersionRef.current) showSyncMessage('云端暂时未连接，本次点歌稍后再试'); });
     // 若选了具体地点，额外拉取地点分榜到 locationVotes
     if (location) {
-      pullCloudVoteState(location).then(({ counts, requesterNames }) => {
+      pullCloudVoteState(location).then(({ counts, sungCounts, requesterNames }) => {
         if (!active || version !== voteSyncVersionRef.current) return;
         setLocationVotes(counts);
+        setLocationSungVotes(sungCounts);
         setLocationVoteRequesters(requesterNames);
       }).catch(() => {});
     } else {
       setLocationVotes({});
+      setLocationSungVotes({});
       setLocationVoteRequesters({});
     }
     return () => { active = false; };
   }, [rankingLocation, showSyncMessage, clearingVotes]);
+
+  useEffect(() => {
+    if (!songRecordSession || !isFeaturedSongManager(songRecordSession.alias)) {
+      setRoadshowSingCounts({});
+      return;
+    }
+    let active = true;
+    const cached = loadRoadshowSingCounts(window.localStorage, catalog.songs.map((song) => song.id));
+    setRoadshowSingCounts(cached);
+    pullCloudRoadshowSingCounts(songRecordSession).then(async (counts) => {
+      if (!active) return;
+      let nextCounts = counts;
+      if (!Object.keys(counts).length) {
+        try {
+          const migrated = await migrateLegacyCloudRoadshowSingCounts(songRecordSession);
+          if (!active) return;
+          nextCounts = migrated.roadshowSingCounts;
+          if (migrated.migrated) {
+            ++voteSyncVersionRef.current;
+            setSungVotes(migrated.sungCounts);
+            setLocationSungVotes({});
+            saveSungVoteCounts(window.localStorage, migrated.sungCounts);
+          }
+        } catch {}
+      }
+      setRoadshowSingCounts(nextCounts);
+      saveRoadshowSingCounts(window.localStorage, nextCounts);
+    }).catch(() => {
+      if (active) showSyncMessage('路演演唱次数暂未同步，请稍后刷新。');
+    });
+    return () => { active = false; };
+  }, [songRecordSession, catalog.songs, showSyncMessage]);
 
   useEffect(() => {
     let active = true;
@@ -736,8 +780,10 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     }
     return arr;
   }, [ranking, requestVoteView, pendingRandomActive, shuffleTick]);
-  const sungSongRanking = useMemo(() => rankSongsByVotes(catalogSongs, sungVotes), [catalogSongs, sungVotes]);
-  const sungArtistRanking = useMemo(() => rankArtistsByVotes(catalogSongs, sungVotes), [catalogSongs, sungVotes]);
+  const requestSungCounts = rankingLocation === '总榜' ? sungVotes : locationSungVotes;
+  const activeSungCounts = sungStatsSource === 'roadshow' ? roadshowSingCounts : requestSungCounts;
+  const sungSongRanking = useMemo(() => rankSongsByVotes(catalogSongs, activeSungCounts), [catalogSongs, activeSungCounts]);
+  const sungArtistRanking = useMemo(() => rankArtistsByVotes(catalogSongs, activeSungCounts), [catalogSongs, activeSungCounts]);
   const privatePersonalRanking = useMemo(() => rankSongsByPracticeMatch(catalogSongs, songRecords), [catalogSongs, songRecords]);
   const publicPersonalRanking = useMemo(() => publicPracticeRanking.map((entry) => ({
     song: catalogSongs.find((song) => song.id === entry.songId) ?? {
@@ -1217,9 +1263,10 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
       saveVoteCounts(window.localStorage, totalSynced.counts);
       // 若当前查看了具体地点，同步刷新地点分榜
       if (rankingLocation !== '总榜') {
-        pullCloudVoteState(rankingLocation).then(({ counts, requesterNames }) => {
+        pullCloudVoteState(rankingLocation).then(({ counts, sungCounts, requesterNames }) => {
           if (version !== voteSyncVersionRef.current) return;
           setLocationVotes(counts);
+          setLocationSungVotes(sungCounts);
           setLocationVoteRequesters(requesterNames);
         }).catch(() => {});
       }
@@ -1267,18 +1314,45 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     }
   }, [canManageFeaturedSongs, rankingLocation]);
 
-  const adjustSungCount = async (songId: string, delta: 1 | -1 = 1) => {
+  const adjustRequestSungCount = async (songId: string, delta: 1 | -1 = 1) => {
     if (!songRecordSession || !canManageFeaturedSongs || sungCountMutationBusyRef.current) {
       if (!songRecordSession || !canManageFeaturedSongs) showSyncMessage('请先以站主账号进入我的档案后再记录已唱次数。');
       return;
     }
     sungCountMutationBusyRef.current = true;
     try {
-      const synced = await adjustCloudSungVote(songRecordSession, songId, delta);
+      const location = rankingLocation === '总榜' ? undefined : rankingLocation;
+      const synced = await adjustCloudSungVote(songRecordSession, songId, delta, location);
       setSungVotes(synced);
+      if (location) {
+        setLocationSungVotes((current) => {
+          const nextCount = Math.max(0, (current[songId] ?? 0) + delta);
+          const next = { ...current };
+          if (nextCount) next[songId] = nextCount;
+          else delete next[songId];
+          return next;
+        });
+      }
       saveSungVoteCounts(window.localStorage, synced);
     } catch {
       showSyncMessage('已唱次数未同步，请检查网络后重试。');
+    } finally {
+      sungCountMutationBusyRef.current = false;
+    }
+  };
+
+  const adjustRoadshowSingCount = async (songId: string, delta: 1 | -1 = 1) => {
+    if (!songRecordSession || !canManageFeaturedSongs || sungCountMutationBusyRef.current) {
+      if (!songRecordSession || !canManageFeaturedSongs) showSyncMessage('请先以站主账号进入我的档案后再记录路演次数。');
+      return;
+    }
+    sungCountMutationBusyRef.current = true;
+    try {
+      const synced = await adjustCloudRoadshowSingCount(songRecordSession, songId, delta);
+      setRoadshowSingCounts(synced);
+      saveRoadshowSingCounts(window.localStorage, synced);
+    } catch {
+      showSyncMessage('路演演唱次数未同步，请检查网络后重试。');
     } finally {
       sungCountMutationBusyRef.current = false;
     }
@@ -1292,24 +1366,24 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     sungCountMutationBusyRef.current = true;
     void (async () => {
       try {
-        let latest = sungVotes;
+        let latest = roadshowSingCounts;
         for (const [songId, count] of legacyCounts) {
-          for (let index = 0; index < count; index += 1) latest = await adjustCloudSungVote(songRecordSession, songId, 1);
+          for (let index = 0; index < count; index += 1) latest = await adjustCloudRoadshowSingCount(songRecordSession, songId, 1);
         }
         if (!active) return;
-        setSungVotes(latest);
-        saveSungVoteCounts(window.localStorage, latest);
+        setRoadshowSingCounts(latest);
+        saveRoadshowSingCounts(window.localStorage, latest);
         setPendingSingCounts({});
         window.localStorage.removeItem(PENDING_SING_COUNTS_KEY);
-        showSyncMessage('本设备原有的已唱次数已迁移到云端。');
+        showSyncMessage('本设备原有的路演演唱次数已迁移到云端。');
       } catch {
-        if (active) showSyncMessage('本设备原有的已唱次数暂未迁移，请检查网络后重试。');
+        if (active) showSyncMessage('本设备原有的路演演唱次数暂未迁移，请检查网络后重试。');
       } finally {
         sungCountMutationBusyRef.current = false;
       }
     })();
     return () => { active = false; };
-  }, [songRecordSession, canManageFeaturedSongs, pendingSingCounts, sungVotes, showSyncMessage]);
+  }, [songRecordSession, canManageFeaturedSongs, pendingSingCounts, roadshowSingCounts, showSyncMessage]);
 
   const finishAllRequestedSongs = async () => {
     if (!songRecordSession || !canManageFeaturedSongs || voteMutationBusyRef.current || ranking.length === 0) return;
@@ -1327,12 +1401,14 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
       saveSungVoteCounts(window.localStorage, totalSynced.sungCounts);
       // 若当前查看了具体地点，同步刷新地点分榜
       if (rankingLocation !== '总榜') {
-        pullCloudVoteState(rankingLocation).then(({ counts }) => {
+        pullCloudVoteState(rankingLocation).then(({ counts, sungCounts }) => {
           if (version !== voteSyncVersionRef.current) return;
           setLocationVotes(counts);
+          setLocationSungVotes(sungCounts);
         }).catch(() => {});
       } else {
         setLocationVotes({});
+        setLocationSungVotes({});
       }
       setRequestVoteView('sung');
       setSungRankingMode('songs');
@@ -1357,6 +1433,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
       setVotes(synced.counts);
       setSungVotes(synced.sungCounts);
       if (kind === 'pending') setLocationVotes({});
+      if (kind === 'sung') setLocationSungVotes({});
       saveVoteCounts(window.localStorage, synced.counts);
       saveSungVoteCounts(window.localStorage, synced.sungCounts);
       setPendingSingCounts({});
@@ -1721,13 +1798,13 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
         </section>
       ) : (
       <div className="relative mx-auto w-full max-w-6xl">
-        <header className="mb-8 flex items-center justify-between gap-4 pr-14 sm:pr-16">
+        <header className="mb-8 flex items-center justify-between gap-4">
           <button type="button" onClick={goBack} className="inline-flex h-11 items-center gap-2 rounded-full border border-white/10 bg-black/35 px-4 text-sm font-semibold text-white/70 backdrop-blur-xl transition hover:text-white">
             <ArrowLeft className="h-4 w-4" /> {selectedSong ? detailBackLabel : activeSection === null ? '宇宙' : selectedArtist ? sectionTitle : '点歌台'}
           </button>
           {songRecordSession ? (
             <div className="flex min-w-0 items-center gap-2 rounded-full border border-white/10 bg-black/30 px-3 py-2 text-xs text-white/55 backdrop-blur-xl">
-              <span className="min-w-0 max-w-[42vw] truncate sm:max-w-64">当前：<b className="font-bold text-orange-100/85">{songRecordSession.alias}</b></span>
+              <span className="min-w-0 max-w-[42vw] truncate sm:max-w-64">当前：<b className="font-bold text-orange-100/85">{maskSongRecordAccount(songRecordSession.alias)}</b></span>
               <button type="button" onClick={() => { clearSongRecordCache(window.localStorage, songRecordSession.alias); clearBrowserSongRecordSession(); window.dispatchEvent(new Event(SONG_REQUEST_SESSION_EVENT)); }} className="inline-flex shrink-0 items-center gap-1 rounded-full border border-orange-200/20 bg-orange-300/10 px-2.5 py-1 font-black text-orange-100 transition hover:bg-orange-300/20">
                 <LogOut className="h-3.5 w-3.5" />退出
               </button>
@@ -1846,7 +1923,13 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                                     {!included && <button type="button" disabled={!songRecordSession || !latestRoadshow || Boolean(roadshowBusyId)} onClick={() => void addSongToLatestRoadshowPerformance(song)} aria-label={`将${song.title}加入最新路演`} className="inline-flex items-center gap-1 rounded-full border border-orange-200/25 bg-orange-300/10 px-2.5 py-1 text-[10px] font-black text-orange-100 transition hover:bg-orange-300/20 disabled:cursor-not-allowed disabled:opacity-30"><Plus className="h-3 w-3" />{roadshowBusyId === song.id ? '加入中…' : '加入'}</button>}
                                   </div>;
                                 })()}
-                                <button type="button" disabled={!canManageFeaturedSongs} onClick={() => void adjustSungCount(song.id)} className="shrink-0 rounded-xl border border-orange-200/20 bg-orange-300/10 px-3 py-1.5 text-xs font-black text-orange-200 transition hover:bg-orange-300/20 hover:text-orange-100 disabled:cursor-not-allowed disabled:opacity-35">已唱{sungVotes[song.id] ?? 0}次</button>
+                                {(() => {
+                                  const sungCount = requestSungCounts[song.id] ?? 0;
+                                  return <div className="flex shrink-0 items-center gap-1.5">
+                                    <button type="button" aria-label={`${song.title}点歌已唱次数减1`} title="撤回1次点歌已唱" disabled={!canManageFeaturedSongs || sungCount <= 0} onClick={() => void adjustRequestSungCount(song.id, -1)} className="grid h-7 w-7 place-items-center rounded-full border border-orange-200/20 bg-orange-300/10 text-sm font-bold text-orange-200 transition enabled:hover:bg-orange-300/20 disabled:cursor-default disabled:opacity-25">−</button>
+                                    <button type="button" aria-label={`${song.title}点歌已唱次数加1`} disabled={!canManageFeaturedSongs} onClick={() => void adjustRequestSungCount(song.id)} title="把这首游客已点歌曲记入点歌已唱" className="shrink-0 rounded-xl border border-orange-200/20 bg-orange-300/10 px-3 py-1.5 text-xs font-black text-orange-200 transition hover:bg-orange-300/20 hover:text-orange-100 disabled:cursor-not-allowed disabled:opacity-35">已唱{sungCount}次</button>
+                                  </div>;
+                                })()}
                               </li>
                             ))}</ol>
                           </div>
@@ -1862,10 +1945,10 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                         sungArtistRanking.length ? <div className={sungArtistRanking.length > REQUEST_RANKING_SCROLL_THRESHOLD ? 'max-h-[42rem] overflow-y-auto overscroll-contain pr-2' : ''}><ol className="space-y-3">{sungArtistRanking.map(({ artist, count, songCount }, index) => (
                           <li key={artist} className="flex items-center gap-4 rounded-2xl border border-white/10 bg-white/[.035] p-4">
                             <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-full font-serif font-black ${RANKING_MEDAL_CLASSES[getRankingMedalTone(index, 3)]}`}>{index + 1}</span>
-                            <span className="min-w-0 flex-1"><strong className="block truncate font-bold">{artist}</strong><small className="block truncate text-xs text-white/40">{songCount} 首歌进入已唱</small></span>
+                            <span className="min-w-0 flex-1"><strong className="block truncate font-bold">{artist}</strong><small className="block truncate text-xs text-white/40">{songCount} 首歌进入{sungStatsSource === 'roadshow' ? '路演演唱' : '点歌已唱'}</small></span>
                             <strong className="font-serif text-xl text-orange-200">{count}<small className="ml-1 font-sans text-[10px] font-normal text-white/30">次</small></strong>
                           </li>
-                        ))}</ol></div> : <div className="grid min-h-64 place-items-center text-center text-white/40"><div><Mic2 className="mx-auto h-9 w-9 opacity-40" /><p className="mt-3">还没有已唱歌手记录</p></div></div>
+                        ))}</ol></div> : <div className="grid min-h-64 place-items-center text-center text-white/40"><div><Mic2 className="mx-auto h-9 w-9 opacity-40" /><p className="mt-3">{sungStatsSource === 'roadshow' ? '还没有路演演唱歌手记录' : '还没有点歌已唱歌手记录'}</p></div></div>
                       ) : (
                         sungSongRanking.length ? <div className={sungSongRanking.length > REQUEST_RANKING_SCROLL_THRESHOLD ? 'max-h-[42rem] overflow-y-auto overscroll-contain pr-2' : ''}><ol className="space-y-3">{sungSongRanking.map(({ song, count }, index) => (
                           <li key={song.id} className="flex items-center gap-4 rounded-2xl border border-white/10 bg-white/[.035] p-4">
@@ -1873,7 +1956,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                             <button type="button" onClick={() => openSongDetail(song)} className="min-w-0 flex-1 text-left"><p className="truncate font-bold hover:text-orange-100">{song.title}</p><p className="truncate text-xs text-white/40">{song.artist}</p></button>
                             <strong className="font-serif text-xl text-orange-200">{count}<small className="ml-1 font-sans text-[10px] font-normal text-white/30">次</small></strong>
                           </li>
-                        ))}</ol></div> : <div className="grid min-h-64 place-items-center text-center text-white/40"><div><Trophy className="mx-auto h-9 w-9 opacity-40" /><p className="mt-3">还没有已唱歌曲记录</p></div></div>
+                        ))}</ol></div> : <div className="grid min-h-64 place-items-center text-center text-white/40"><div><Trophy className="mx-auto h-9 w-9 opacity-40" /><p className="mt-3">{sungStatsSource === 'roadshow' ? '还没有路演演唱歌曲记录' : '还没有点歌已唱歌曲记录'}</p></div></div>
                       )}
                     </div>
                   ) : visibleRankingView === 'personal' ? (
@@ -1933,13 +2016,19 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                       <button type="button" role="tab" aria-selected={requestVoteView === 'pending'} onClick={() => setRequestVoteView('pending')} className={`rounded-xl border px-4 py-3 text-sm font-black transition ${requestVoteView === 'pending' ? 'border-orange-300/45 bg-orange-300 text-black' : 'border-white/10 bg-black/25 text-white/65 hover:text-white'}`}>已点</button>
                       <button type="button" role="tab" aria-selected={requestVoteView === 'sung'} onClick={() => { setRequestVoteView('sung'); setSungRankingMode('songs'); }} className={`rounded-xl border px-4 py-3 text-sm font-black transition ${requestVoteView === 'sung' ? 'border-orange-300/45 bg-orange-300 text-black' : 'border-white/10 bg-black/25 text-white/65 hover:text-white'}`}>已唱</button>
                     </div>
+                    {requestVoteView === 'sung' && (
+                      <div role="tablist" aria-label="已唱数据来源切换" className="mt-2 grid grid-cols-2 gap-2">
+                        <button type="button" role="tab" aria-selected={sungStatsSource === 'requests'} onClick={() => setSungStatsSource('requests')} className={`rounded-xl border px-3 py-2.5 text-xs font-black transition ${sungStatsSource === 'requests' ? 'border-orange-300/45 bg-orange-300 text-black' : 'border-white/10 bg-black/25 text-white/65 hover:text-white'}`}>点歌已唱</button>
+                        <button type="button" role="tab" aria-selected={sungStatsSource === 'roadshow'} onClick={() => setSungStatsSource('roadshow')} className={`rounded-xl border px-3 py-2.5 text-xs font-black transition ${sungStatsSource === 'roadshow' ? 'border-orange-300/45 bg-orange-300 text-black' : 'border-white/10 bg-black/25 text-white/65 hover:text-white'}`}>路演演唱</button>
+                      </div>
+                    )}
                     <div role="tablist" aria-label="已唱排行类型切换" className={`mt-2 grid grid-cols-2 gap-2 transition ${requestVoteView === 'pending' ? 'pointer-events-none opacity-35' : ''}`}>
                       <button type="button" role="tab" aria-selected={sungRankingMode === 'songs'} onClick={() => setSungRankingMode('songs')} className={`rounded-xl border px-4 py-3 text-sm font-black transition ${sungRankingMode === 'songs' ? 'border-orange-300/45 bg-orange-300 text-black' : 'border-white/10 bg-black/25 text-white/65 hover:text-white'}`}>歌曲</button>
                       <button type="button" role="tab" aria-selected={sungRankingMode === 'artists'} onClick={() => setSungRankingMode('artists')} className={`rounded-xl border px-4 py-3 text-sm font-black transition ${sungRankingMode === 'artists' ? 'border-orange-300/45 bg-orange-300 text-black' : 'border-white/10 bg-black/25 text-white/65 hover:text-white'}`}>歌手</button>
                     </div>
                     <div className="mt-2 grid grid-cols-2 gap-2">
-                      <button type="button" disabled={!canManageFeaturedSongs || clearingVotes || finishingVotes} onClick={() => void clearRequestedVotes(requestVoteView)} className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-300/25 bg-red-300/10 px-3 py-2.5 text-xs font-black text-red-200 transition hover:bg-red-300/20 hover:text-red-100 disabled:cursor-not-allowed disabled:opacity-40">
-                        <Trash2 className="h-3.5 w-3.5" />{requestVoteView === 'pending' ? '清空已点' : '清空已唱'}
+                      <button type="button" disabled={!canManageFeaturedSongs || clearingVotes || finishingVotes || (requestVoteView === 'sung' && sungStatsSource === 'roadshow')} onClick={() => void clearRequestedVotes(requestVoteView)} className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-300/25 bg-red-300/10 px-3 py-2.5 text-xs font-black text-red-200 transition hover:bg-red-300/20 hover:text-red-100 disabled:cursor-not-allowed disabled:opacity-40">
+                        <Trash2 className="h-3.5 w-3.5" />{requestVoteView === 'pending' ? '清空已点' : sungStatsSource === 'requests' ? '清空点歌已唱' : '路演统计'}
                       </button>
                       <button type="button" disabled={requestVoteView !== 'pending'} onClick={() => { setPendingRandomActive(true); setShuffleTick((t) => t + 1); }} className={`inline-flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-black transition disabled:cursor-not-allowed disabled:opacity-30 ${pendingRandomActive && requestVoteView === 'pending' ? 'border-orange-300/45 bg-orange-300 text-black' : 'border-white/10 bg-black/25 text-white/65 hover:text-white'}`}>
                         <Sparkles className="h-3.5 w-3.5" />随机
@@ -1981,14 +2070,14 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                         </button>
                       </div>
                     )}
-                    {canManageFeaturedSongs && (
+                    {canManageFeaturedSongs && (requestVoteView === 'pending' || sungStatsSource === 'requests') && (
                       <div role="group" aria-label="点歌榜地点筛选" className="mt-4 grid grid-cols-2 gap-2 border-t border-white/10 pt-4">
                         {ROADSHOW_RANKING_LOCATIONS.map((location) => (
                           <button key={location} type="button" aria-pressed={rankingLocation === location} onClick={() => setRankingLocation(location)} className={`min-h-11 rounded-xl border px-2 text-xs font-black transition ${rankingLocation === location ? 'border-orange-300/45 bg-orange-300 text-black' : 'border-white/10 bg-black/25 text-white/60 hover:text-white'}`}>{location}</button>
                         ))}
                       </div>
                     )}
-                    <p className="mt-4 text-sm leading-7 text-white/45">{requestVoteView === 'pending' ? '“已点”显示当前待唱歌曲；站主点击“唱完”后会一次性转入“已唱”。' : '“已唱”长期累计已完成的点歌次数，可分别查看歌手榜与歌曲榜。'}</p>
+                    <p className="mt-4 text-sm leading-7 text-white/45">{requestVoteView === 'pending' ? '“已点”显示当前待唱歌曲；站主点击“唱完”后会一次性转入“点歌已唱”。' : sungStatsSource === 'roadshow' ? '“路演演唱”统计站主自己在路演里实际唱过的次数，和游客点歌数据分开。' : '“点歌已唱”长期累计游客点歌后完成演唱的次数，可按地点查看。'}</p>
                   </aside>
                 ) : visibleRankingView === 'personal' ? (
                   <aside aria-label="练习榜歌手筛选" className="h-fit overflow-hidden rounded-[1.75rem] border border-orange-200/15 bg-orange-950/20 p-4 sm:p-5">
@@ -2325,8 +2414,8 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
               <RoadshowPanel
                 editorTab={roadshowEditorTab}
                 onEditorTabChange={setRoadshowEditorTab}
-                onIncrementSingCount={(songId, delta = 1) => { void adjustSungCount(songId, delta); }}
-                pendingSingCounts={sungVotes}
+                onIncrementSingCount={(songId, delta = 1) => { void adjustRoadshowSingCount(songId, delta); }}
+                pendingSingCounts={roadshowSingCounts}
                 defaultAlias={nickname}
                 songs={catalogSongs}
                 records={songRecords}

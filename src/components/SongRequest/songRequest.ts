@@ -15,6 +15,7 @@ interface WritableStorage {
 
 export const VOTE_STORAGE_KEY = 'jieyou-song-request-votes-v1';
 export const SUNG_VOTE_STORAGE_KEY = 'jieyou-song-request-sung-votes-v1';
+export const ROADSHOW_SING_STORAGE_KEY = 'jieyou-roadshow-sing-counts-v1';
 export const CATALOG_STORAGE_KEY = 'jieyou-song-catalog-v1';
 
 const V9_DEFAULT_SONG_ADDITION_IDS = [
@@ -373,10 +374,18 @@ export const loadSungVoteCounts = (storage: ReadableStorage, validSongIds: strin
   loadStoredVoteCounts(storage, SUNG_VOTE_STORAGE_KEY, validSongIds)
 );
 
+export const loadRoadshowSingCounts = (storage: ReadableStorage, validSongIds: string[]) => (
+  loadStoredVoteCounts(storage, ROADSHOW_SING_STORAGE_KEY, validSongIds)
+);
+
 export const saveVoteCounts = (storage: WritableStorage, counts: VoteCounts) => {
   storage.setItem(VOTE_STORAGE_KEY, JSON.stringify({ version: 1, counts }));
 };
 
 export const saveSungVoteCounts = (storage: WritableStorage, counts: VoteCounts) => {
   storage.setItem(SUNG_VOTE_STORAGE_KEY, JSON.stringify({ version: 1, counts }));
+};
+
+export const saveRoadshowSingCounts = (storage: WritableStorage, counts: VoteCounts) => {
+  storage.setItem(ROADSHOW_SING_STORAGE_KEY, JSON.stringify({ version: 1, counts }));
 };

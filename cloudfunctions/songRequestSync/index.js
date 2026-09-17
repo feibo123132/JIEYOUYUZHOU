@@ -86,6 +86,38 @@ const adjustSungVoteAtomically = (db, ownerWorkspaceId, songId, delta, location)
   await workspaceRef.set(buildWritableWorkspace({ ...workspace, sungVoteCounts, sungVoteCountsByLocation, updatedAt: new Date().toISOString() }));
   return sungVoteCounts;
 });
+const adjustRoadshowSingCountAtomically = (db, ownerWorkspaceId, songId, delta) => db.runTransaction(async (transaction) => {
+  const workspaceRef = transaction.collection('song_request_workspaces').doc(ownerWorkspaceId);
+  const result = await workspaceRef.get();
+  const workspace = Array.isArray(result.data) ? result.data[0] : result.data;
+  if (!workspace) throw new Error('AUTH_FAILED');
+  const roadshowSingCounts = cleanVoteCounts(workspace.roadshowSingCounts);
+  const current = roadshowSingCounts[songId] || 0;
+  const next = Math.max(0, current + delta);
+  if (next) roadshowSingCounts[songId] = next;
+  else delete roadshowSingCounts[songId];
+  await workspaceRef.set(buildWritableWorkspace({ ...workspace, roadshowSingCounts, updatedAt: new Date().toISOString() }));
+  return roadshowSingCounts;
+});
+const migrateLegacyRoadshowSingCountsAtomically = (db, ownerWorkspaceId) => db.runTransaction(async (transaction) => {
+  const workspaceRef = transaction.collection('song_request_workspaces').doc(ownerWorkspaceId);
+  const result = await workspaceRef.get();
+  const workspace = Array.isArray(result.data) ? result.data[0] : result.data;
+  if (!workspace) throw new Error('AUTH_FAILED');
+  const roadshowSingCounts = cleanVoteCounts(workspace.roadshowSingCounts);
+  const legacySungCounts = cleanVoteCounts(workspace.sungVoteCounts);
+  if (Object.keys(roadshowSingCounts).length || !Object.keys(legacySungCounts).length) {
+    return { roadshowSingCounts, sungCounts: legacySungCounts, migrated: false };
+  }
+  await workspaceRef.set(buildWritableWorkspace({
+    ...workspace,
+    roadshowSingCounts: legacySungCounts,
+    sungVoteCounts: {},
+    sungVoteCountsByLocation: {},
+    updatedAt: new Date().toISOString(),
+  }));
+  return { roadshowSingCounts: legacySungCounts, sungCounts: {}, migrated: true };
+});
 const ROADSHOW_LOCATION_KEYS = Object.freeze({
   '医大（武鸣）': 'medicalWuming',
   '医大（本部）': 'medicalMain',
@@ -377,6 +409,18 @@ function createHandler(store) {
         const location = ROADSHOW_LOCATION_KEYS[request.location] ? request.location : latestRoadshowLocation(workspace);
         return { ok: true, sungCounts: await store.adjustSungVoteAtomically(id, request.songId, request.delta, location) };
       }
+      if (request.action === 'roadshowSings:pull') {
+        if (id !== workspaceId(FEATURED_SONGS_OWNER_ALIAS)) throw new Error('AUTH_FAILED');
+        return { ok: true, roadshowSingCounts: cleanVoteCounts(workspace.roadshowSingCounts) };
+      }
+      if (request.action === 'roadshowSings:adjust') {
+        if (id !== workspaceId(FEATURED_SONGS_OWNER_ALIAS)) throw new Error('AUTH_FAILED');
+        return { ok: true, roadshowSingCounts: await store.adjustRoadshowSingCountAtomically(id, request.songId, request.delta) };
+      }
+      if (request.action === 'roadshowSings:migrateLegacy') {
+        if (id !== workspaceId(FEATURED_SONGS_OWNER_ALIAS)) throw new Error('AUTH_FAILED');
+        return { ok: true, ...await store.migrateLegacyRoadshowSingCountsAtomically(id) };
+      }
       if (request.action === 'featuredSongs:set') {
         if (id !== workspaceId(FEATURED_SONGS_OWNER_ALIAS)) throw new Error('AUTH_FAILED');
         await store.setFeaturedSongIds(id, request.songIds, store.now());
@@ -612,6 +656,8 @@ exports.main = async (event) => {
         return { counts: await readVoteCounts(), sungCounts };
       },
       adjustSungVoteAtomically: (ownerWorkspaceId, songId, delta, location) => adjustSungVoteAtomically(db, ownerWorkspaceId, songId, delta, location),
+      adjustRoadshowSingCountAtomically: (ownerWorkspaceId, songId, delta) => adjustRoadshowSingCountAtomically(db, ownerWorkspaceId, songId, delta),
+      migrateLegacyRoadshowSingCountsAtomically: (ownerWorkspaceId) => migrateLegacyRoadshowSingCountsAtomically(db, ownerWorkspaceId),
       async getSongRecords(workspaceId) {
         const pageSize = 1000;
         const records = [];

@@ -123,6 +123,30 @@ function memoryStore() {
       workspaces.set(ownerWorkspaceId, { ...workspace, sungVoteCounts });
       return structuredClone(sungVoteCounts);
     },
+    adjustRoadshowSingCountAtomically: async (ownerWorkspaceId, songId, delta) => {
+      const workspace = workspaces.get(ownerWorkspaceId);
+      const roadshowSingCounts = { ...(workspace?.roadshowSingCounts || {}) };
+      const next = Math.max(0, (roadshowSingCounts[songId] || 0) + delta);
+      if (next) roadshowSingCounts[songId] = next;
+      else delete roadshowSingCounts[songId];
+      workspaces.set(ownerWorkspaceId, { ...workspace, roadshowSingCounts });
+      return structuredClone(roadshowSingCounts);
+    },
+    migrateLegacyRoadshowSingCountsAtomically: async (ownerWorkspaceId) => {
+      const workspace = workspaces.get(ownerWorkspaceId);
+      const roadshowSingCounts = { ...(workspace?.roadshowSingCounts || {}) };
+      const sungCounts = { ...(workspace?.sungVoteCounts || {}) };
+      if (Object.keys(roadshowSingCounts).length || !Object.keys(sungCounts).length) {
+        return { roadshowSingCounts: structuredClone(roadshowSingCounts), sungCounts: structuredClone(sungCounts), migrated: false };
+      }
+      workspaces.set(ownerWorkspaceId, {
+        ...workspace,
+        roadshowSingCounts: sungCounts,
+        sungVoteCounts: {},
+        sungVoteCountsByLocation: {},
+      });
+      return { roadshowSingCounts: structuredClone(sungCounts), sungCounts: {}, migrated: true };
+    },
     getSongRecords: async (workspaceId) => [...songRecords.values()]
       .filter((record) => record.workspaceId === workspaceId && !record.deletedAt)
       .map((record) => structuredClone(record)),
@@ -226,6 +250,15 @@ test('validates public and private actions without rejecting platform metadata',
   assert.deepEqual(validateRequest({ action: 'votes:adjustSung', alias: '2421415030@qq.com', password: 'guitar-2026', songId: 'qing-tian', delta: 1 }), {
     action: 'votes:adjustSung', alias: '2421415030@qq.com', password: 'guitar-2026', songId: 'qing-tian', delta: 1,
   });
+  assert.deepEqual(validateRequest({ action: 'roadshowSings:pull', alias: '2421415030@qq.com', password: 'guitar-2026' }), {
+    action: 'roadshowSings:pull', alias: '2421415030@qq.com', password: 'guitar-2026',
+  });
+  assert.deepEqual(validateRequest({ action: 'roadshowSings:migrateLegacy', alias: '2421415030@qq.com', password: 'guitar-2026' }), {
+    action: 'roadshowSings:migrateLegacy', alias: '2421415030@qq.com', password: 'guitar-2026',
+  });
+  assert.deepEqual(validateRequest({ action: 'roadshowSings:adjust', alias: '2421415030@qq.com', password: 'guitar-2026', songId: 'qing-tian', delta: 1 }), {
+    action: 'roadshowSings:adjust', alias: '2421415030@qq.com', password: 'guitar-2026', songId: 'qing-tian', delta: 1,
+  });
   assert.deepEqual(validateRequest({ action: 'roadshows:publicQuizRanking', location: '医大（武鸣）' }), { action: 'roadshows:publicQuizRanking', location: '医大（武鸣）' });
   assert.deepEqual(validateRequest({ action: 'votes:pull', location: '南湖' }), { action: 'votes:pull', location: '南湖' });
   assert.throws(() => validateRequest({ action: 'votes:pull', location: '其他' }), /INVALID_LOCATION/);
@@ -233,7 +266,7 @@ test('validates public and private actions without rejecting platform metadata',
   assert.throws(() => validateRequest({ action: 'roadshows:register', alias: 'JIEYOU', password: '123' }), /INVALID_PASSWORD/);
 })
 
-test('站主调整已唱次数会保存为全设备共用的云端累计值', async () => {
+test('站主调整游客点歌已唱次数会保存为全设备共用的云端累计值', async () => {
   const { createHandler } = loadFunction();
   const store = memoryStore();
   const auth = { alias: '2421415030@qq.com', password: 'guitar-2026' };
@@ -243,6 +276,45 @@ test('站主调整已唱次数会保存为全设备共用的云端累计值', as
   assert.deepEqual(await handler({ action: 'votes:adjustSung', ...auth, songId: 'qing-tian', delta: -1 }), { ok: true, sungCounts: {} });
   await seedExistingAccount(store, { alias: 'visitor', password: 'guitar-2026' });
   assert.deepEqual(await handler({ action: 'votes:adjustSung', alias: 'visitor', password: 'guitar-2026', songId: 'qing-tian', delta: 1 }), { ok: false, error: 'AUTH_FAILED' });
+});
+
+test('站主路演演唱次数和游客点歌已唱次数分开保存', async () => {
+  const { createHandler } = loadFunction();
+  const store = memoryStore();
+  const auth = { alias: '2421415030@qq.com', password: 'guitar-2026' };
+  await seedExistingAccount(store, auth);
+  const handler = createHandler(store);
+
+  assert.deepEqual(await handler({ action: 'votes:adjustSung', ...auth, songId: 'qing-tian', delta: 1 }), { ok: true, sungCounts: { 'qing-tian': 1 } });
+  assert.deepEqual(await handler({ action: 'roadshowSings:adjust', ...auth, songId: 'qing-tian', delta: 1 }), { ok: true, roadshowSingCounts: { 'qing-tian': 1 } });
+  assert.deepEqual(await handler({ action: 'roadshowSings:adjust', ...auth, songId: 'qing-tian', delta: 1 }), { ok: true, roadshowSingCounts: { 'qing-tian': 2 } });
+  assert.deepEqual(await handler({ action: 'votes:pull' }), { ok: true, counts: {}, sungCounts: { 'qing-tian': 1 } });
+  assert.deepEqual(await handler({ action: 'roadshowSings:pull', ...auth }), { ok: true, roadshowSingCounts: { 'qing-tian': 2 } });
+});
+
+test('旧的已唱累计可一次性迁入路演演唱并清空游客点歌已唱', async () => {
+  const { createHandler } = loadFunction();
+  const store = memoryStore();
+  const auth = { alias: '2421415030@qq.com', password: 'guitar-2026' };
+  await seedExistingAccount(store, auth);
+  const handler = createHandler(store);
+
+  assert.deepEqual(await handler({ action: 'votes:adjustSung', ...auth, songId: 'qing-tian', delta: 1 }), { ok: true, sungCounts: { 'qing-tian': 1 } });
+  assert.deepEqual(await handler({ action: 'votes:adjustSung', ...auth, songId: 'xin-qiang', delta: 1 }), { ok: true, sungCounts: { 'qing-tian': 1, 'xin-qiang': 1 } });
+  assert.deepEqual(await handler({ action: 'roadshowSings:migrateLegacy', ...auth }), {
+    ok: true,
+    roadshowSingCounts: { 'qing-tian': 1, 'xin-qiang': 1 },
+    sungCounts: {},
+    migrated: true,
+  });
+  assert.deepEqual(await handler({ action: 'votes:pull' }), { ok: true, counts: {}, sungCounts: {} });
+  assert.deepEqual(await handler({ action: 'roadshowSings:pull', ...auth }), { ok: true, roadshowSingCounts: { 'qing-tian': 1, 'xin-qiang': 1 } });
+  assert.deepEqual(await handler({ action: 'roadshowSings:migrateLegacy', ...auth }), {
+    ok: true,
+    roadshowSingCounts: { 'qing-tian': 1, 'xin-qiang': 1 },
+    sungCounts: {},
+    migrated: false,
+  });
 });
 
 test('谱子云函数逐页接收压缩图片，并只用云存储引用保存谱子', () => {

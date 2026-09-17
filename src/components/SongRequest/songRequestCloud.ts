@@ -73,6 +73,19 @@ export const adjustCloudSungVote = async (credentials: Credentials, songId: stri
   await callSync<{ sungCounts: VoteCounts }>({ action: 'votes:adjustSung', ...credentials, songId, delta, ...(location ? { location } : {}) })
 ).sungCounts;
 
+export const pullCloudRoadshowSingCounts = async (credentials: Credentials): Promise<VoteCounts> => (
+  await callSync<{ roadshowSingCounts: VoteCounts }>({ action: 'roadshowSings:pull', ...credentials })
+).roadshowSingCounts;
+
+export const adjustCloudRoadshowSingCount = async (credentials: Credentials, songId: string, delta: 1 | -1): Promise<VoteCounts> => (
+  await callSync<{ roadshowSingCounts: VoteCounts }>({ action: 'roadshowSings:adjust', ...credentials, songId, delta })
+).roadshowSingCounts;
+
+export const migrateLegacyCloudRoadshowSingCounts = async (credentials: Credentials): Promise<{ roadshowSingCounts: VoteCounts; sungCounts: VoteCounts; migrated: boolean }> => {
+  const result = await callSync<{ roadshowSingCounts: VoteCounts; sungCounts: VoteCounts; migrated: boolean }>({ action: 'roadshowSings:migrateLegacy', ...credentials });
+  return { roadshowSingCounts: result.roadshowSingCounts, sungCounts: result.sungCounts, migrated: result.migrated };
+};
+
 export const clearCloudVotes = async (credentials: Credentials, kind: 'pending' | 'sung'): Promise<CloudVoteState> => {
   const result = await callSync<CloudVoteState>({ action: kind === 'pending' ? 'votes:clearPending' : 'votes:clearSung', ...credentials });
   return { counts: result.counts, sungCounts: result.sungCounts, requesterNames: result.requesterNames ?? {} };

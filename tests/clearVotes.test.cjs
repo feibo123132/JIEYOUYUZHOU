@@ -1,8 +1,23 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
+const crypto = require('node:crypto');
 const { validateRequest } = require('../cloudfunctions/songRequestSync/validation.js');
 const sync = require('../cloudfunctions/songRequestSync/index.js');
 const owner = { alias: '2421415030@qq.com', password: 'test-secret' };
+
+function workspaceId(alias) {
+  return crypto.createHash('sha256').update(alias.trim().toLowerCase()).digest('hex');
+}
+
+async function seedExistingAccount(store, { alias, password }) {
+  const passwordSalt = crypto.randomBytes(16).toString('hex');
+  await store.setWorkspace(workspaceId(alias), {
+    alias,
+    passwordSalt,
+    passwordHash: crypto.scryptSync(password, passwordSalt, 32).toString('hex'),
+    roadshows: [],
+  });
+}
 
 function database(failWrite = false) {
   let data = {
@@ -78,8 +93,8 @@ test('仅站主可清空两种榜单，失败不得伪报成功', async () => {
     clearVotesAtomically: async (id, kind) => { calls.push(kind); return { counts: {}, sungCounts: {} }; },
   });
   const visitor = { alias: 'visitor', password: 'test-secret' };
-  await handler({ action: 'roadshows:register', ...owner });
-  await handler({ action: 'roadshows:register', ...visitor });
+  await seedExistingAccount({ setWorkspace: async (id, value) => workspaces.set(id, value) }, owner);
+  await seedExistingAccount({ setWorkspace: async (id, value) => workspaces.set(id, value) }, visitor);
   for (const action of ['votes:clearPending', 'votes:clearSung']) {
     assert.deepEqual(await handler({ action, ...visitor }), { ok: false, error: 'AUTH_FAILED' });
     assert.deepEqual(await handler({ action, ...owner, password: 'wrong-password' }), { ok: false, error: 'AUTH_FAILED' });
