@@ -26,6 +26,7 @@ export interface PracticeRecord extends SongRecordBase {
   needsMorePractice: boolean;
   needsImprovement: boolean;
   singingMoods?: Array<'快乐' | '感动' | '想哭' | '爽歌' | '舒服'>;
+  femaleKey?: string;
 }
 
 export interface SongRoadshowRecord extends SongRecordBase {
@@ -68,6 +69,7 @@ export const isValidSongRecord = (value: unknown): value is SongRecord => {
       && isText(record.feelings, 2000, false) && isText(record.problems, 2000, false) && isText(record.improvements, 2000, false)
       && (record.needsMorePractice === undefined || typeof record.needsMorePractice === 'boolean')
       && (record.needsImprovement === undefined || typeof record.needsImprovement === 'boolean')
+      && (record.femaleKey === undefined || isText(record.femaleKey, 80, false))
       && (record.singingMoods === undefined || (Array.isArray(record.singingMoods) && record.singingMoods.length <= 5 && record.singingMoods.every((mood) => ['快乐', '感动', '想哭', '爽歌', '舒服'].includes(mood))));
   }
   return record.kind === 'roadshow'
@@ -211,6 +213,7 @@ const cleanSongRecord = (record: SongRecord): SongRecord => {
         needsMorePractice: Boolean(record.needsMorePractice),
         needsImprovement: Boolean(record.needsImprovement),
         singingMoods: [...new Set(record.singingMoods ?? [])],
+        ...(record.femaleKey?.trim() ? { femaleKey: record.femaleKey.trim() } : {}),
       }
     : {
         ...base,

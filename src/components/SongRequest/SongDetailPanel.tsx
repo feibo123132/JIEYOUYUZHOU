@@ -90,6 +90,7 @@ const SongDetailPanel = ({
   const [matchScore, setMatchScore] = useState<number | ''>(80);
   const [feelings, setFeelings] = useState('');
   const [singingReflection, setSingingReflection] = useState('');
+  const [femaleKey, setFemaleKey] = useState('');
   const [needsMorePractice, setNeedsMorePractice] = useState(false);
   const [needsImprovement, setNeedsImprovement] = useState(false);
   const [singingMoods, setSingingMoods] = useState<NonNullable<PracticeRecord['singingMoods']>>([]);
@@ -126,6 +127,7 @@ const SongDetailPanel = ({
       setMatchScore(record.matchScore);
       setFeelings(record.feelings);
       setSingingReflection(getPracticeReflection(record));
+      setFemaleKey(record.femaleKey ?? '');
       setNeedsMorePractice(record.needsMorePractice);
       setNeedsImprovement(record.needsImprovement);
       setSingingMoods(record.singingMoods ?? []);
@@ -145,7 +147,7 @@ const SongDetailPanel = ({
       id: editingRecord?.kind === 'practice' ? editingRecord.id : recordId('practice'), kind: 'practice', songId: song.id, songTitle: song.title, songArtist: song.artist,
       occurredAt: new Date(practiceAt).toISOString(), matchScore: Number(matchScore),
       feelings: feelings.trim(), problems: singingReflection.trim(), improvements: '',
-      needsMorePractice, needsImprovement, singingMoods, updatedAt: now,
+      needsMorePractice, needsImprovement, singingMoods, ...(femaleKey.trim() ? { femaleKey: femaleKey.trim() } : {}), updatedAt: now,
     };
     if (!isValidSongRecord(record)) {
       setMessage('请填写有效的时间和 70–100 分。');
@@ -155,14 +157,14 @@ const SongDetailPanel = ({
     try {
       const saved = await saveSongRecord(session, record);
       commitSaved(saved);
-      if (saved.kind !== 'practice' || Boolean(saved.needsMorePractice) !== needsMorePractice || Boolean(saved.needsImprovement) !== needsImprovement || JSON.stringify([...(saved.singingMoods ?? [])].sort()) !== JSON.stringify([...singingMoods].sort())) {
+      if (saved.kind !== 'practice' || Boolean(saved.needsMorePractice) !== needsMorePractice || Boolean(saved.needsImprovement) !== needsImprovement || JSON.stringify([...(saved.singingMoods ?? [])].sort()) !== JSON.stringify([...singingMoods].sort()) || (saved.femaleKey ?? '') !== femaleKey.trim()) {
         setEditingRecord(record);
-        setMessage('练习内容已保存，但练习标识或弹唱感受未同步。已保留当前选择，请更新云端服务后再次保存。');
+        setMessage('练习内容已保存，但练习标识、弹唱感受或女生选调未同步。已保留当前填写，请更新云端服务后再次保存。');
         return;
       }
       const wasEditing = editingRecord?.kind === 'practice';
       setEditingRecord(null);
-      setFeelings(''); setSingingReflection('');
+      setFeelings(''); setSingingReflection(''); setFemaleKey('');
       setNeedsMorePractice(false); setNeedsImprovement(false);
       setSingingMoods([]);
       setMessage(wasEditing ? '练习记录修改已同步' : '练习记录已同步');
@@ -439,6 +441,10 @@ const SongDetailPanel = ({
                   </div>
                 </details>
               </div>
+              <div className="min-w-40 flex-1">
+                <span className="mb-2 block text-xs font-bold text-white/45">女生选调</span>
+                <input value={femaleKey} onChange={(event) => setFemaleKey(event.target.value)} maxLength={80} placeholder="任意填写，例如：夹三品" className="h-10 w-full rounded-xl border border-orange-200/25 bg-black/20 px-3 text-sm font-bold text-orange-100 outline-none transition placeholder:text-white/25 focus:border-orange-200/50" />
+              </div>
             </div>
             <Field label="练习感受"><textarea value={feelings} onChange={(event) => setFeelings(event.target.value)} placeholder="音色、情绪、舒适程度……" className={areaClass} /></Field>
             <button type="button" disabled={Boolean(busy)} onClick={() => void submitPractice()} className="inline-flex h-11 items-center gap-2 rounded-full bg-orange-400 px-5 text-sm font-black text-black transition hover:bg-orange-300 disabled:opacity-40"><Save className="h-4 w-4" />{editingRecord?.kind === 'practice' ? '保存修改' : '保存练习记录'}</button>
@@ -516,7 +522,7 @@ const RecordTimeline = ({ records, busy, editingId, onEdit, onDelete, label = 'H
 
 const PracticeRecordDetails = ({ record }: { record: PracticeRecord }) => {
   const reflection = getPracticeReflection(record);
-  return <><div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1"><p className="text-sm font-bold text-orange-100">匹配度 {record.matchScore}</p><PracticeMarkerBadges record={record} /></div>{record.feelings && <RecordText label="感受" text={record.feelings} />}{reflection && <RecordText label="弹唱感想" text={reflection} />}</>;
+  return <><div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1"><p className="text-sm font-bold text-orange-100">匹配度 {record.matchScore}</p><PracticeMarkerBadges record={record} /></div>{record.femaleKey && <RecordText label="女生选调" text={record.femaleKey} />}{record.feelings && <RecordText label="感受" text={record.feelings} />}{reflection && <RecordText label="弹唱感想" text={reflection} />}</>;
 };
 
 const PracticeMarkerBadges = ({ record }: { record: PracticeRecord }) => (

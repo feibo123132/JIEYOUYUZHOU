@@ -158,6 +158,7 @@ const validateSongRecord = (value) => {
     const feelings = cleanOptionalText(value.feelings, 2000, 'INVALID_SONG_RECORD');
     const problems = cleanOptionalText(value.problems, 2000, 'INVALID_SONG_RECORD');
     const improvements = cleanOptionalText(value.improvements, 2000, 'INVALID_SONG_RECORD');
+    const femaleKey = value.femaleKey === undefined ? '' : cleanOptionalText(value.femaleKey, 80, 'INVALID_SONG_RECORD');
     if (value.needsMorePractice !== undefined && typeof value.needsMorePractice !== 'boolean') throw new Error('INVALID_SONG_RECORD');
     if (value.needsImprovement !== undefined && typeof value.needsImprovement !== 'boolean') throw new Error('INVALID_SONG_RECORD');
     if (value.singingMoods !== undefined && (!Array.isArray(value.singingMoods) || value.singingMoods.length > 5 || !value.singingMoods.every((mood) => ['快乐', '感动', '想哭', '爽歌', '舒服'].includes(mood)))) throw new Error('INVALID_SONG_RECORD');
@@ -171,6 +172,7 @@ const validateSongRecord = (value) => {
       needsMorePractice: Boolean(value.needsMorePractice),
       needsImprovement: Boolean(value.needsImprovement),
       singingMoods: [...new Set(value.singingMoods ?? [])],
+      ...(femaleKey ? { femaleKey } : {}),
     };
   }
   if (value.kind === 'roadshow') {
