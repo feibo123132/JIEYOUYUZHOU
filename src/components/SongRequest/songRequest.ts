@@ -2,7 +2,8 @@ import type { Song } from './songCatalog.ts';
 
 export type VoteCounts = Record<string, number>;
 export type VoteRequesters = Record<string, string[]>;
-export interface EditableCatalog { version: 9; artists: string[]; songs: Song[]; }
+export const CATALOG_VERSION = 10;
+export interface EditableCatalog { version: number; artists: string[]; songs: Song[]; }
 
 interface ReadableStorage {
   getItem: (key: string) => string | null;
@@ -15,6 +16,19 @@ interface WritableStorage {
 export const VOTE_STORAGE_KEY = 'jieyou-song-request-votes-v1';
 export const SUNG_VOTE_STORAGE_KEY = 'jieyou-song-request-sung-votes-v1';
 export const CATALOG_STORAGE_KEY = 'jieyou-song-catalog-v1';
+
+const V9_DEFAULT_SONG_ADDITION_IDS = [
+  'yrz-wan-an', 'yrz-shi-hao', 'yrz-xia-ye-xuan-lan-de-yan-huo',
+  'rny-hou-lai', 'zxz-yong-bu-shi-lian-de-ai', 'ldh-zai-jian-tai-nan', 'lbi-xiao-cheng-xia-tian',
+  'xry-lei-hai', 'tfz-xiao-xing-yun', 'fir-yue-ya-wan', 'yyw-lv-xing-zhong-wang-ji',
+  'zzy-ai-wo-bie-zou', 'zzy-xiao-yu', 'syc-bai-yang', 'syc-xing-rong',
+  'ys-hui-jia-de-lu', 'ys-ru-guo-tu-ran-xiang-qi-wo', 'ys-wo-bu-ceng-wang-ji',
+];
+
+const V10_DEFAULT_SONG_ADDITION_IDS = [
+  'yrz-you-xie',
+  ...V9_DEFAULT_SONG_ADDITION_IDS,
+];
 
 export const paginateRankingItems = <T>(items: T[], requestedPage: number, pageSize: number) => {
   const safePageSize = Math.max(1, Math.floor(pageSize));
@@ -52,7 +66,7 @@ export const orderPersonalRankingItems = <T extends object>(
 };
 
 export const createEditableCatalog = (songs: Song[]): EditableCatalog => ({
-  version: 9,
+  version: CATALOG_VERSION,
   artists: [...new Set(songs.map((song) => song.artist))],
   songs: [...songs],
 });
@@ -176,6 +190,38 @@ const isSong = (value: unknown): value is Song => {
     && (song.hotComment === undefined || typeof song.hotComment === 'string');
 };
 
+const mergeDefaultSongAdditions = (
+  catalogArtists: string[],
+  catalogSongs: Song[],
+  fallbackSongs: Song[],
+  addedSongIds: string[],
+): EditableCatalog => {
+  const addedIds = new Set(addedSongIds);
+  const additions = fallbackSongs.filter((song) => addedIds.has(song.id)
+    && !catalogSongs.some((cached) => cached.id === song.id || (cached.title === song.title && cached.artist === song.artist)));
+  return {
+    version: CATALOG_VERSION,
+    artists: [...new Set([...catalogArtists, ...additions.map((song) => song.artist)])],
+    songs: [...catalogSongs, ...additions],
+  };
+};
+
+export const upgradeEditableCatalog = (catalog: EditableCatalog, fallbackSongs: Song[]): EditableCatalog => {
+  if (catalog.version >= CATALOG_VERSION) {
+    return catalog;
+  }
+  const additionIds = catalog.version >= 9
+    ? V10_DEFAULT_SONG_ADDITION_IDS
+    : catalog.version === 8
+      ? V10_DEFAULT_SONG_ADDITION_IDS
+      : catalog.version === 7
+        ? ['xs-huan-ting', 'xs-ban-cheng-yan-sha', 'xs-nan-shan-yi', ...V10_DEFAULT_SONG_ADDITION_IDS]
+        : [];
+  return additionIds.length
+    ? mergeDefaultSongAdditions(catalog.artists, catalog.songs, fallbackSongs, additionIds)
+    : createEditableCatalog(fallbackSongs);
+};
+
 export const loadEditableCatalog = (storage: ReadableStorage, fallbackSongs: Song[]): EditableCatalog => {
   try {
     const raw = storage.getItem(CATALOG_STORAGE_KEY);
@@ -186,41 +232,17 @@ export const loadEditableCatalog = (storage: ReadableStorage, fallbackSongs: Son
       || !parsed.songs.every(isSong)) return createEditableCatalog(fallbackSongs);
     const catalogArtists = parsed.artists as string[];
     const catalogSongs = parsed.songs as Song[];
+    if (parsed.version === CATALOG_VERSION) {
+      return { version: CATALOG_VERSION, artists: [...new Set(catalogArtists)], songs: catalogSongs };
+    }
     if (parsed.version === 9) {
-      return { version: 9, artists: [...new Set(catalogArtists)], songs: catalogSongs };
+      return upgradeEditableCatalog({ version: 9, artists: catalogArtists, songs: catalogSongs }, fallbackSongs);
     }
     if (parsed.version === 8) {
-      const addedIds = new Set([
-        'yrz-wan-an', 'yrz-shi-hao', 'yrz-xia-ye-xuan-lan-de-yan-huo',
-        'rny-hou-lai', 'zxz-yong-bu-shi-lian-de-ai', 'ldh-zai-jian-tai-nan', 'lbi-xiao-cheng-xia-tian',
-        'xry-lei-hai', 'tfz-xiao-xing-yun', 'fir-yue-ya-wan', 'yyw-lv-xing-zhong-wang-ji',
-        'zzy-ai-wo-bie-zou', 'zzy-xiao-yu', 'syc-bai-yang', 'syc-xing-rong',
-        'ys-hui-jia-de-lu', 'ys-ru-guo-tu-ran-xiang-qi-wo', 'ys-wo-bu-ceng-wang-ji',
-      ]);
-      const additions = fallbackSongs.filter((song) => addedIds.has(song.id)
-        && !catalogSongs.some((cached) => cached.id === song.id || (cached.title === song.title && cached.artist === song.artist)));
-      return {
-        version: 9,
-        artists: [...new Set([...catalogArtists, ...additions.map((song) => song.artist)])],
-        songs: [...catalogSongs, ...additions],
-      };
+      return upgradeEditableCatalog({ version: 8, artists: catalogArtists, songs: catalogSongs }, fallbackSongs);
     }
     if (parsed.version === 7) {
-      const addedIds = new Set([
-        'xs-huan-ting', 'xs-ban-cheng-yan-sha', 'xs-nan-shan-yi',
-        'yrz-wan-an', 'yrz-shi-hao', 'yrz-xia-ye-xuan-lan-de-yan-huo',
-        'rny-hou-lai', 'zxz-yong-bu-shi-lian-de-ai', 'ldh-zai-jian-tai-nan', 'lbi-xiao-cheng-xia-tian',
-        'xry-lei-hai', 'tfz-xiao-xing-yun', 'fir-yue-ya-wan', 'yyw-lv-xing-zhong-wang-ji',
-        'zzy-ai-wo-bie-zou', 'zzy-xiao-yu', 'syc-bai-yang', 'syc-xing-rong',
-        'ys-hui-jia-de-lu', 'ys-ru-guo-tu-ran-xiang-qi-wo', 'ys-wo-bu-ceng-wang-ji',
-      ]);
-      const additions = fallbackSongs.filter((song) => addedIds.has(song.id)
-        && !catalogSongs.some((cached) => cached.id === song.id || (cached.title === song.title && cached.artist === song.artist)));
-      return {
-        version: 9,
-        artists: [...new Set([...catalogArtists, ...additions.map((song) => song.artist)])],
-        songs: [...catalogSongs, ...additions],
-      };
+      return upgradeEditableCatalog({ version: 7, artists: catalogArtists, songs: catalogSongs }, fallbackSongs);
     }
     if (parsed.version === 1 || parsed.version === 2 || parsed.version === 3 || parsed.version === 4 || parsed.version === 5 || parsed.version === 6) {
       const defaultCatalog = createEditableCatalog(fallbackSongs);
@@ -233,7 +255,7 @@ export const loadEditableCatalog = (storage: ReadableStorage, fallbackSongs: Son
         return cachedSong && cachedSong.artist !== song.artist ? [cachedSong.artist] : [];
       }));
       return {
-        version: 9,
+        version: CATALOG_VERSION,
         artists: [...new Set([
           ...defaultCatalog.artists,
           ...catalogArtists.filter((artist) => !renamedDefaultArtists.has(artist) || customSongArtists.has(artist)),

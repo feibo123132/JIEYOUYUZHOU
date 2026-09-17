@@ -100,7 +100,7 @@ test('artist settings draft is validated and survives pull conflicts or failures
   const draft = createArtistSettingsDraft(null, 2, sampleArtistSettingsPayload)
   saveArtistSettingsDraft(storage, draft)
   assert.deepEqual(loadArtistSettingsDraft(storage), draft)
-  values.set(ARTIST_SETTINGS_DRAFT_KEY, JSON.stringify({ ...draft, snapshot: { version: 1, artistOrder: [], customAvatars: {}, avatarAdjustments: {} } }))
+  values.set(ARTIST_SETTINGS_DRAFT_KEY, JSON.stringify({ ...draft, snapshot: { version: 2, artistOrder: [], songOrder: [], customAvatars: {}, avatarAdjustments: {} } }))
   assert.equal(loadArtistSettingsDraft(storage), null)
   saveArtistSettingsDraft(storage, draft)
 
@@ -126,7 +126,7 @@ test('artist settings draft is validated and survives pull conflicts or failures
     'repeated retries must not replace the pending draft',
   )
   values.delete(ARTIST_SETTINGS_DRAFT_KEY)
-  const defaultPayload = { ...sampleArtistSettingsPayload, customAvatars: {}, avatarAdjustments: {} }
+  const { catalog: _catalog, ...defaultPayload } = { ...sampleArtistSettingsPayload, customAvatars: {}, avatarAdjustments: {} }
   assert.equal(
     ensureArtistSettingsRetryDraft(storage, defaultPayload, defaultPayload.artistOrder, null, defaultPayload.songOrder),
     null,
@@ -412,7 +412,7 @@ test('新增九位歌手及陈奕迅的四十二首歌曲均带独立热评', as
   assert.equal(new Set(requestedSongs.map((song: { hotComment?: string } | undefined) => song?.hotComment)).size, 42)
 })
 
-test('第三版曲库缓存会补齐新默认歌曲并升级到第七版', async () => {
+test('第三版曲库缓存会补齐新默认歌曲并升级到新版', async () => {
   const { CATALOG_STORAGE_KEY, loadEditableCatalog } = await loadModule()
   const newDefaultSong = { id: 'default:new-v4', title: '新增默认歌', artist: '新增歌手', category: '华语流行', featured: false, hotComment: '新增热评' }
   const storage = {
@@ -423,7 +423,7 @@ test('第三版曲库缓存会补齐新默认歌曲并升级到第七版', async
 
   const catalog = loadEditableCatalog(storage, [...songs, newDefaultSong])
 
-  assert.equal(catalog.version, 9)
+  assert.equal(catalog.version, 10)
   assert.ok(catalog.artists.includes('新增歌手'))
   assert.equal(catalog.songs.find((song: { id: string }) => song.id === newDefaultSong.id)?.title, '新增默认歌')
 })
@@ -500,7 +500,7 @@ test('旧版曲库快照会补齐新版默认歌手并保留自定义歌曲', as
 
   const catalog = loadEditableCatalog(storage, [...songs, newDefaultSong])
 
-  assert.equal(catalog.version, 9)
+  assert.equal(catalog.version, 10)
   assert.deepEqual(catalog.artists, ['周杰伦', 'Coldplay', '新默认歌手', '自定义歌手'])
   assert.deepEqual(catalog.songs.map((song: { id: string }) => song.id), ['a', 'b', 'c', 'default:new', 'custom:legacy'])
 })
@@ -518,7 +518,7 @@ test('第四版曲库快照会补齐默认歌曲、同步热门标记并保留�
 
   const catalog = loadEditableCatalog(storage, [...songs, newDefaultSong])
 
-  assert.equal(catalog.version, 9)
+  assert.equal(catalog.version, 10)
   assert.equal(catalog.songs.find((song: { id: string }) => song.id === 'a')?.featured, true)
   assert.equal(catalog.songs.find((song: { id: string }) => song.id === 'default:new')?.title, '新版热门歌')
   assert.equal(catalog.songs.find((song: { id: string }) => song.id === 'custom:kept')?.title, '保留的自定义歌曲')
@@ -545,7 +545,7 @@ test('第五版曲库缓存会同步默认歌曲的歌手更正并保留自定�
 
   const catalog = loadEditableCatalog(storage, correctedSongs)
 
-  assert.equal(catalog.version, 9)
+  assert.equal(catalog.version, 10)
   assert.equal(catalog.songs.find((song: { id: string }) => song.id === songs[0].id)?.artist, '李佳薇')
   assert.equal(catalog.songs.find((song: { id: string }) => song.id === songs[1].id)?.artist, '王唯旖')
   assert.ok(catalog.songs.some((song: { id: string }) => song.id === 'custom:kept'))
@@ -564,7 +564,7 @@ test('第六版曲库缓存会补齐第七版新增歌手歌曲并保留自定�
 
   const catalog = loadEditableCatalog(storage, [...songs, newDefaultSong])
 
-  assert.equal(catalog.version, 9)
+  assert.equal(catalog.version, 10)
   assert.ok(catalog.artists.includes('新增歌手'))
   assert.ok(catalog.songs.some((song: { id: string }) => song.id === newDefaultSong.id))
   assert.ok(catalog.songs.some((song: { id: string }) => song.id === customSong.id))
@@ -581,8 +581,25 @@ test('第八版曲库缓存会补齐第九版新增点歌歌曲', async () => {
 
   const catalog = loadEditableCatalog(storage, [songs[0], newRequestSong])
 
-  assert.equal(catalog.version, 9)
+  assert.equal(catalog.version, 10)
   assert.ok(catalog.artists.includes('刘若英'))
+  assert.ok(catalog.songs.some((song: { id: string }) => song.id === 'rny-hou-lai'))
+})
+
+test('第九版云端曲库快照会补齐第十版新增点歌歌曲', async () => {
+  const { upgradeEditableCatalog } = await loadModule()
+  const newRequestSongs = [
+    { id: 'yrz-you-xie', title: '有些', artist: '颜人中', category: '华语流行', featured: true, hotComment: '有些话来不及说。' },
+    { id: 'rny-hou-lai', title: '后来', artist: '刘若英', category: '华语流行', featured: false, hotComment: '后来终于学会遗憾。' },
+  ]
+  const cloudCatalog = { version: 9, artists: ['周杰伦'], songs: [songs[0]] }
+
+  const catalog = upgradeEditableCatalog(cloudCatalog, [songs[0], ...newRequestSongs])
+
+  assert.equal(catalog.version, 10)
+  assert.ok(catalog.artists.includes('颜人中'))
+  assert.ok(catalog.artists.includes('刘若英'))
+  assert.ok(catalog.songs.some((song: { id: string }) => song.id === 'yrz-you-xie'))
   assert.ok(catalog.songs.some((song: { id: string }) => song.id === 'rny-hou-lai'))
 })
 

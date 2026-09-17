@@ -37,17 +37,36 @@ function memoryStore() {
   const workspaces = new Map();
   const votes = new Map();
   const songRecords = new Map();
+  const songScores = new Map();
   const locationKeys = { '医大（武鸣）': 'medicalWuming', '医大（本部）': 'medicalMain', '南湖': 'nanhu' };
   let artistSettings = null;
   const personalSettings = new Map();
   const ownerId = crypto.createHash('sha256').update('2421415030@qq.com').digest('hex');
+  const scoreDocumentId = (workspaceId, songId) => crypto.createHash('sha256').update(`${workspaceId}:score:${songId}`).digest('hex');
   return {
     workspaces,
     votes,
     songRecords,
+    songScores,
     get artistSettings() { return artistSettings; },
     getWorkspace: async (id) => workspaces.get(id) ?? null,
     setWorkspace: async (id, value) => { workspaces.set(id, structuredClone(value)); },
+    registerWithInvitation: async (id, account, code, now) => {
+      if (workspaces.has(id)) throw new Error('ALREADY_REGISTERED');
+      const inviteId = `invite-${crypto.createHash('sha256').update(code.trim().toUpperCase()).digest('hex')}`;
+      const invite = workspaces.get(inviteId);
+      if (!invite || invite.kind !== 'invitation' || invite.usedAt || invite.revokedAt
+        || !(Date.parse(invite.expiresAt) > Date.parse(now))
+        || (invite.boundAlias && invite.boundAlias !== account.alias.trim().toLowerCase())) throw new Error('INVALID_INVITATION');
+      workspaces.set(inviteId, { ...invite, usedAt: now, usedBy: id });
+      workspaces.set(id, structuredClone(account));
+    },
+    revokeInvitation: async (code, now) => {
+      const inviteId = `invite-${crypto.createHash('sha256').update(code.trim().toUpperCase()).digest('hex')}`;
+      const invite = workspaces.get(inviteId);
+      if (!invite || invite.kind !== 'invitation') throw new Error('INVALID_INVITATION');
+      workspaces.set(inviteId, { ...invite, revokedAt: now });
+    },
     setFeaturedSongIds: async (id, songIds, updatedAt) => {
       workspaces.set(id, { ...workspaces.get(id), featuredSongIds: structuredClone(songIds), updatedAt });
     },
@@ -127,6 +146,39 @@ function memoryStore() {
       const current = songRecords.get(documentId);
       if (!current || current.workspaceId !== workspaceId || current.deletedAt) throw new Error('NOT_FOUND');
       songRecords.set(documentId, { ...current, deletedAt, updatedAt: deletedAt });
+    },
+    getSongScores: async (workspaceId) => [...songScores.values()]
+      .filter((score) => score.workspaceId === workspaceId)
+      .map((score) => structuredClone(score)),
+    resolveSongScores: async (scores) => scores.map((score) => structuredClone(score)),
+    copySongScorePage: async (workspaceId, songId, fileID) => `${fileID}::copy:${workspaceId}:${songId}`,
+    seedSongScoresFromOwner: async (targetWorkspaceId, ownerWorkspaceId, seededAt) => {
+      const existingSongIds = new Set([...songScores.values()]
+        .filter((score) => score.workspaceId === targetWorkspaceId)
+        .map((score) => score.songId));
+      for (const source of [...songScores.values()].filter((score) => score.workspaceId === ownerWorkspaceId)) {
+        if (source.deletedAt || existingSongIds.has(source.songId)) continue;
+        const pages = [];
+        for (const page of source.pages || []) pages.push(`${page}::copy:${targetWorkspaceId}:${source.songId}`);
+        songScores.set(scoreDocumentId(targetWorkspaceId, source.songId), {
+          ...structuredClone(source),
+          workspaceId: targetWorkspaceId,
+          pages,
+          updatedAt: seededAt,
+        });
+        existingSongIds.add(source.songId);
+      }
+    },
+    saveCopiedSongScoreAtomically: async (documentId, value) => {
+      const current = songScores.get(documentId);
+      if (current && !current.deletedAt && (current.pages?.length || current.lyrics)) throw new Error('SCORE_ALREADY_EXISTS');
+      songScores.set(documentId, structuredClone(value));
+    },
+    saveSongScoreAtomically: async (documentId, value) => {
+      songScores.set(documentId, structuredClone(value));
+    },
+    deleteSongScoreAtomically: async (documentId, workspaceId, songId, deletedAt) => {
+      songScores.set(documentId, { workspaceId, songId, deletedAt, updatedAt: deletedAt });
     },
     getArtistSettings: async (id) => structuredClone(!id || id === ownerId ? artistSettings : personalSettings.get(id) ?? null),
     saveArtistSettingsAtomically: async (ownerWorkspaceId, expectedRevision, snapshot) => {
@@ -289,6 +341,50 @@ test('保存谱子时由云函数返回可显示的临时地址', async () => {
   assert.equal(result.ok, true);
   assert.deepEqual(result.score.pageUrls, ['https://example.test/private-score.jpg']);
   assert.equal(saved.workspaceId.length, 64);
+});
+
+test('新用户首次拉取谱子时获得站主独立副本，删除不会牵连站主和其它用户', async () => {
+  const store = memoryStore();
+  const { createHandler } = loadFunction();
+  const handler = createHandler(store);
+  const owner = { alias: '2421415030@qq.com', password: 'guitar-2026' };
+  const firstUser = { alias: 'first@example.com', password: 'guitar-2026' };
+  const secondUser = { alias: 'second@example.com', password: 'guitar-2026' };
+  const ownerPage = `cloud://env-123/song-request-scores/${'a'.repeat(64)}/${'b'.repeat(64)}/123e4567-e89b-12d3-a456-426614174000.jpg`;
+  const score = {
+    id: 'score-qing-tian',
+    songId: 'qing-tian',
+    songTitle: '晴天',
+    songArtist: '周杰伦',
+    pages: [ownerPage],
+  };
+
+  await seedExistingAccount(store, owner);
+  assert.equal((await handler({ action: 'songScores:save', ...owner, score })).ok, true);
+  const firstInvite = await handler({ action: 'invitations:create', ...owner, boundAlias: firstUser.alias });
+  assert.equal(firstInvite.ok, true);
+  assert.deepEqual(await handler({ action: 'roadshows:register', ...firstUser, invitationCode: firstInvite.code }), { ok: true, records: [] });
+
+  const firstPull = await handler({ action: 'songScores:pull', ...firstUser });
+  assert.equal(firstPull.ok, true);
+  assert.equal(firstPull.scores.length, 1);
+  assert.equal(firstPull.scores[0].songId, 'qing-tian');
+  assert.notEqual(firstPull.scores[0].pages[0], ownerPage);
+  assert.match(firstPull.scores[0].pages[0], /::copy:/);
+
+  assert.deepEqual(await handler({ action: 'songScores:delete', ...firstUser, songId: 'qing-tian' }), { ok: true });
+  assert.deepEqual((await handler({ action: 'songScores:pull', ...firstUser })).scores, []);
+
+  const ownerPull = await handler({ action: 'songScores:pull', ...owner });
+  assert.equal(ownerPull.scores.length, 1);
+  assert.deepEqual(ownerPull.scores[0].pages, [ownerPage]);
+
+  const secondInvite = await handler({ action: 'invitations:create', ...owner, boundAlias: secondUser.alias });
+  assert.equal(secondInvite.ok, true);
+  assert.deepEqual(await handler({ action: 'roadshows:register', ...secondUser, invitationCode: secondInvite.code }), { ok: true, records: [] });
+  const secondPull = await handler({ action: 'songScores:pull', ...secondUser });
+  assert.equal(secondPull.scores.length, 1);
+  assert.equal(secondPull.scores[0].songId, 'qing-tian');
 });
 
 test('validates global artist settings actions, revisions, images, and payload limits', () => {

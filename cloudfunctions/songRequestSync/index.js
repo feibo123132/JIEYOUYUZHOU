@@ -23,6 +23,7 @@ const PUBLIC_ERRORS = new Set([
 ]);
 
 const FEATURED_SONGS_OWNER_ALIAS = '2421415030@qq.com';
+const OWNER_SONG_SCORE_SEED_VERSION = 1;
 const incrementVoteAtomically = (db, songId, location, requesterName) => db.runTransaction(async (transaction) => {
   const ref = transaction.collection('song_request_votes').doc(songId);
   let data;
@@ -121,6 +122,37 @@ const publicArtistSettings = (settings) => {
   return snapshot;
 };
 const buildWritableWorkspace = ({ _id: _documentId, ...workspace }) => workspace;
+const ownerSongScoreSeedPending = () => ({ version: OWNER_SONG_SCORE_SEED_VERSION, status: 'pending' });
+const ownerSongScoreSeedDone = (seededAt) => ({ version: OWNER_SONG_SCORE_SEED_VERSION, status: 'done', seededAt });
+const shouldSeedOwnerSongScores = (workspace) => (
+  workspace?.songScoreSeedFromOwner?.version === OWNER_SONG_SCORE_SEED_VERSION
+  && workspace.songScoreSeedFromOwner.status === 'pending'
+);
+const buildSeededSongScore = (source, workspaceId, pages, updatedAt) => {
+  const {
+    _id: _documentId,
+    workspaceId: _sourceWorkspaceId,
+    deletedAt: _deletedAt,
+    pageUrls: _pageUrls,
+    ...score
+  } = source;
+  return {
+    ...score,
+    id: score.id || `score-${score.songId}`,
+    pages,
+    workspaceId,
+    updatedAt,
+  };
+};
+const ensureOwnerSongScoresSeeded = async (store, workspaceIdValue, workspace) => {
+  if (workspaceIdValue === workspaceId(FEATURED_SONGS_OWNER_ALIAS) || !shouldSeedOwnerSongScores(workspace)) return workspace;
+  if (!store.seedSongScoresFromOwner) return workspace;
+  const seededAt = store.now();
+  await store.seedSongScoresFromOwner(workspaceIdValue, workspaceId(FEATURED_SONGS_OWNER_ALIAS), seededAt);
+  const saved = { ...workspace, songScoreSeedFromOwner: ownerSongScoreSeedDone(seededAt), updatedAt: seededAt };
+  await store.setWorkspace(workspaceIdValue, saved);
+  return saved;
+};
 const buildSoftDeletedSongRecord = (current, workspaceId, deletedAt) => {
   if (!current || current.workspaceId !== workspaceId || current.deletedAt) throw new Error('NOT_FOUND');
   const { _id: _documentId, ...writableRecord } = current;
@@ -274,6 +306,7 @@ function createHandler(store) {
           passwordSalt: salt,
           passwordHash: passwordHash(request.password, salt),
           roadshows: [],
+          songScoreSeedFromOwner: ownerSongScoreSeedPending(),
           updatedAt: store.now(),
         }, request.invitationCode, store.now());
         return { ok: true, records: [] };
@@ -411,6 +444,7 @@ function createHandler(store) {
         return { ok: true, score: scores[0] };
       }
       if (request.action === 'songScores:pull') {
+        await ensureOwnerSongScoresSeeded(store, id, workspace);
         const scores = await store.getSongScores(id);
         const visibleScores = scores.filter((score) => !score.deletedAt).map(publicSongScore);
         return { ok: true, scores: store.resolveSongScores ? await store.resolveSongScores(visibleScores) : visibleScores };
@@ -479,6 +513,14 @@ exports.main = async (event) => {
     const songScores = db.collection('song_request_song_scores');
     const artistSettings = db.collection('song_request_artist_settings');
     const command = db.command;
+    const copySongScorePageFile = async (accountId, songId, fileID) => {
+      const downloaded = await app.downloadFile({ fileID });
+      if (!downloaded.fileContent?.length) throw new Error('SCORE_DOWNLOAD_FAILED');
+      const songHash = crypto.createHash('sha256').update(songId.trim().toLocaleLowerCase()).digest('hex');
+      const uploaded = await app.uploadFile({ cloudPath: 'song-request-scores/' + accountId + '/' + songHash + '/' + crypto.randomUUID() + '.jpg', fileContent: downloaded.fileContent });
+      if (!uploaded?.fileID) throw new Error('SCORE_UPLOAD_FAILED');
+      return uploaded.fileID;
+    };
     const readVoteCounts = async (location) => {
       const pageSize = 1000;
       const counts = {};
@@ -627,13 +669,33 @@ exports.main = async (event) => {
         return scores.map((score) => ({ ...score, pageUrls: score.pages.map((page) => urlByFileId.get(page) || page) }));
       },
       deleteCopiedScoreFiles: fileList => app.deleteFile({ fileList }),
-      async copySongScorePage(accountId, songId, fileID) {
-        const downloaded = await app.downloadFile({ fileID });
-        if (!downloaded.fileContent?.length) throw new Error('SCORE_DOWNLOAD_FAILED');
-        const songHash = crypto.createHash('sha256').update(songId.trim().toLocaleLowerCase()).digest('hex');
-        const uploaded = await app.uploadFile({ cloudPath: 'song-request-scores/' + accountId + '/' + songHash + '/' + crypto.randomUUID() + '.jpg', fileContent: downloaded.fileContent });
-        if (!uploaded?.fileID) throw new Error('SCORE_UPLOAD_FAILED');
-        return uploaded.fileID;
+      copySongScorePage: copySongScorePageFile,
+      async seedSongScoresFromOwner(targetWorkspaceId, ownerWorkspaceId, seededAt) {
+        const pageSize = 100;
+        const existingSongIds = new Set();
+        for (let offset = 0; ; offset += pageSize) {
+          const result = await songScores.where({ workspaceId: targetWorkspaceId }).skip(offset).limit(pageSize).get();
+          const page = result.data || [];
+          for (const score of page) if (score.songId) existingSongIds.add(score.songId);
+          if (page.length < pageSize) break;
+        }
+        for (let offset = 0; ; offset += pageSize) {
+          const result = await songScores.where({ workspaceId: ownerWorkspaceId }).skip(offset).limit(pageSize).get();
+          const page = result.data || [];
+          for (const source of page) {
+            if (source.deletedAt || !source.songId || existingSongIds.has(source.songId)) continue;
+            const pages = [];
+            try {
+              for (const fileID of source.pages || []) pages.push(await copySongScorePageFile(targetWorkspaceId, source.songId, fileID));
+              await songScores.doc(songScoreDocumentId(targetWorkspaceId, source.songId)).set(buildSeededSongScore(source, targetWorkspaceId, pages, seededAt));
+              existingSongIds.add(source.songId);
+            } catch (error) {
+              if (pages.length) { try { await app.deleteFile({ fileList: pages }); } catch {} }
+              throw error;
+            }
+          }
+          if (page.length < pageSize) return;
+        }
       },
       saveCopiedSongScoreAtomically: (documentId, value) => db.runTransaction(async transaction => {
         const ref = transaction.collection('song_request_song_scores').doc(documentId);

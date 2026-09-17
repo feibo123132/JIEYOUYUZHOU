@@ -215,8 +215,10 @@ const validateAdjustment = (value) => {
   return { x: value.x, y: value.y, scale: value.scale, rotation: value.rotation };
 };
 
+const EDITABLE_CATALOG_VERSION = 10;
+
 const validateCatalog = (value) => {
-  if (!value || value.version !== 8 || !Array.isArray(value.artists) || value.artists.length > 200 || !Array.isArray(value.songs) || value.songs.length > 2000) throw new Error('INVALID_ARTIST_SETTINGS');
+  if (!value || value.version !== EDITABLE_CATALOG_VERSION || !Array.isArray(value.artists) || value.artists.length > 200 || !Array.isArray(value.songs) || value.songs.length > 2000) throw new Error('INVALID_ARTIST_SETTINGS');
   const artists = value.artists.map(validateArtistName);
   const songs = value.songs.map(song => ({
     id: cleanText(song.id, 100, 'INVALID_ARTIST_SETTINGS'), title: cleanText(song.title, 100, 'INVALID_ARTIST_SETTINGS'),
@@ -224,7 +226,7 @@ const validateCatalog = (value) => {
     featured: Boolean(song.featured), ...(song.hotComment ? { hotComment: cleanText(song.hotComment, 2000, 'INVALID_ARTIST_SETTINGS') } : {}),
   }));
   if (new Set(artists).size !== artists.length || new Set(songs.map(s => s.id)).size !== songs.length || songs.some(s => !artists.includes(s.artist))) throw new Error('INVALID_ARTIST_SETTINGS');
-  return { version: 8, artists, songs };
+  return { version: EDITABLE_CATALOG_VERSION, artists, songs };
 };
 
 const validateArtistSettings = (value) => {

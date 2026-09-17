@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent } from 'react';
 import {
   ArrowLeft, ArrowUpDown, CalendarDays, Check, ChevronLeft, ChevronRight, Disc3, Eye, Guitar,
-  GripVertical, Library, ListOrdered, Mic2, PenLine, Plus, RotateCcw, Search, SlidersHorizontal, Sparkles, Target, Trash2, Trophy, Upload, UserRound, X,
+  GripVertical, Library, ListOrdered, LogOut, Mic2, PenLine, Plus, RotateCcw, Search, SlidersHorizontal, Sparkles, Target, Trash2, Trophy, Upload, UserRound, X,
 } from 'lucide-react';
 import useAppStore from '../../store/appStore';
 import { SONGS, type Song } from './songCatalog';
@@ -11,6 +11,7 @@ import {
   insertCatalogArtist, insertCatalogSong, loadEditableCatalog, loadSungVoteCounts, loadVoteCounts, rankArtistsByVotes, rankSongsByVotes,
   moveCatalogArtist, moveCatalogSong, removeCatalogArtist, removeCatalogSong, saveEditableCatalog, saveSungVoteCounts, saveVoteCounts,
   orderPersonalRankingItems, paginateRankingItems, sortCatalogByMatchScore, togglePersonalRankingRandom, togglePersonalRankingReverse,
+  upgradeEditableCatalog,
   type EditableCatalog, type RankingDisplayMode, type VoteCounts, type VoteRequesters,
 } from './songRequest';
 import {
@@ -33,7 +34,7 @@ import {
   type SongScore,
 } from './songScores';
 import {
-  bestMatchScore, getMatchQuality, loadSongRecordCache, parsePublicPracticeRanking, parseSongRecords, rankSongsByPracticeMatch, readBrowserSongRecordSession, recoverSongsFromRecords,
+  bestMatchScore, clearBrowserSongRecordSession, clearSongRecordCache, getMatchQuality, loadSongRecordCache, parsePublicPracticeRanking, parseSongRecords, rankSongsByPracticeMatch, readBrowserSongRecordSession, recoverSongsFromRecords,
   saveSongRecordCache, SONG_REQUEST_SESSION_EVENT,
   type PublicPracticeRankingItem, type SongRecord, type SongRecordSession,
 } from './songRecords';
@@ -353,12 +354,24 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   const applyCloudArtistSettings = (snapshot: ReturnType<typeof parseArtistSettingsSnapshot>) => {
     if (!snapshot) return;
     artistSettingsRevisionRef.current = snapshot.revision;
+    let upgradedPayload: ArtistSettingsPayload | null = null;
     setCatalog((current) => {
+      const cloudCatalog = snapshot.catalog ? upgradeEditableCatalog(snapshot.catalog, SONGS) : null;
+      const baseCatalog = cloudCatalog ?? current;
       const next = {
-        ...(snapshot.catalog ?? current),
-        artists: mergeArtistOrder(snapshot.artistOrder, (snapshot.catalog ?? current).artists),
-        songs: mergeSongOrder(snapshot.songOrder, (snapshot.catalog ?? current).songs),
+        ...baseCatalog,
+        artists: mergeArtistOrder(snapshot.artistOrder, baseCatalog.artists),
+        songs: mergeSongOrder(snapshot.songOrder, baseCatalog.songs),
       };
+      if (cloudCatalog && cloudCatalog !== snapshot.catalog) {
+        upgradedPayload = createArtistSettingsPayload(
+          next.artists,
+          snapshot.customAvatars,
+          snapshot.avatarAdjustments,
+          next.songs.map((song) => song.id),
+          next,
+        );
+      }
       try { saveEditableCatalog(settingsStorage, next); } catch {}
       return next;
     });
@@ -369,6 +382,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
       settingsStorage.setItem(ARTIST_AVATAR_ADJUSTMENTS_KEY, JSON.stringify(snapshot.avatarAdjustments));
       saveArtistSettingsCache(settingsStorage, snapshot);
     } catch {}
+    if (upgradedPayload && artistSettingsSessionRef.current) queueArtistSettings(upgradedPayload);
   };
 
   const runArtistSettingsPush = () => {
@@ -1711,7 +1725,14 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
           <button type="button" onClick={goBack} className="inline-flex h-11 items-center gap-2 rounded-full border border-white/10 bg-black/35 px-4 text-sm font-semibold text-white/70 backdrop-blur-xl transition hover:text-white">
             <ArrowLeft className="h-4 w-4" /> {selectedSong ? detailBackLabel : activeSection === null ? '宇宙' : selectedArtist ? sectionTitle : '点歌台'}
           </button>
-          <span className="text-[10px] font-bold tracking-[0.28em] text-orange-200/55">JIEYOU · SONG REQUEST</span>
+          {songRecordSession ? (
+            <div className="flex min-w-0 items-center gap-2 rounded-full border border-white/10 bg-black/30 px-3 py-2 text-xs text-white/55 backdrop-blur-xl">
+              <span className="min-w-0 max-w-[42vw] truncate sm:max-w-64">当前：<b className="font-bold text-orange-100/85">{songRecordSession.alias}</b></span>
+              <button type="button" onClick={() => { clearSongRecordCache(window.localStorage, songRecordSession.alias); clearBrowserSongRecordSession(); window.dispatchEvent(new Event(SONG_REQUEST_SESSION_EVENT)); }} className="inline-flex shrink-0 items-center gap-1 rounded-full border border-orange-200/20 bg-orange-300/10 px-2.5 py-1 font-black text-orange-100 transition hover:bg-orange-300/20">
+                <LogOut className="h-3.5 w-3.5" />退出
+              </button>
+            </div>
+          ) : <span className="text-xs font-bold text-white/35">游客浏览</span>}
         </header>
 
         {selectedSong ? (
@@ -2533,3 +2554,4 @@ const AccountSongRequestStation = (props: SongRequestStationProps) => {
   return <SongRequestStation key={account} {...props} />;
 };
 export default AccountSongRequestStation;
+

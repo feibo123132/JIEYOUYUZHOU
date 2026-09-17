@@ -45,8 +45,6 @@ import {
 } from './songRequestCloud';
 import {
   bestMatchScore,
-  clearBrowserSongRecordSession,
-  clearSongRecordCache,
   getMatchQuality,
   readBrowserSongRecordSession,
   saveBrowserSongRecordSession,
@@ -230,17 +228,6 @@ const RoadshowPanel = ({
     }
   };
 
-  const lock = () => {
-    if (credentials) clearSongRecordCache(localStorage, credentials.alias);
-    clearBrowserSongRecordSession();
-    window.dispatchEvent(new Event(SONG_REQUEST_SESSION_EVENT));
-    setCredentials(null);
-    setPassword('');
-    setEditing(null);
-    setRecords([]);
-    setMessage('我的档案已锁定');
-  };
-
   const persistRecord = async (candidate: RoadshowRecord | null = editing) => {
     if (!credentials || !candidate) return false;
     if (!candidate.title.trim()) { setMessage('请填写路演名称后再保存或切换。'); return false; }
@@ -352,7 +339,6 @@ const RoadshowPanel = ({
         onRecordAttempt={(record) => { void persistRecord(record); }}
         onOpenSongDetail={(song) => onOpenSongDetail(resolveRoadshowSong(songs, song))}
         onDelete={() => void removeRecord(editing)}
-        onLock={lock}
       />
     );
   }
@@ -365,7 +351,6 @@ const RoadshowPanel = ({
           <h2>我的档案</h2>
           <p>{credentials.alias} 的私人记录</p>
         </div>
-        <button type="button" onClick={lock} className="archive-lock"><Lock size={15} />锁定档案</button>
       </header>
 
       <nav className="archive-tabs" aria-label="档案与授权">
@@ -439,17 +424,15 @@ interface EditorProps {
   onRecordAttempt: (record: RoadshowRecord) => void;
   onOpenSongDetail: (song: RoadshowSong) => void;
   onDelete: () => void;
-  onLock: () => void;
 }
 
-const RoadshowEditor = ({ editorTab, setEditorTab, onIncrementSingCount, pendingSingCounts, credentials, record, allRecords, songRecords, catalogSongs, busy, message, quizAssignments, canManageFeaturedSongs = false, onChange, onBack, onSwitch, onSave, onRecordAttempt, onOpenSongDetail, onDelete, onLock }: EditorProps) => {
+const RoadshowEditor = ({ editorTab, setEditorTab, onIncrementSingCount, pendingSingCounts, credentials, record, allRecords, songRecords, catalogSongs, busy, message, quizAssignments, canManageFeaturedSongs = false, onChange, onBack, onSwitch, onSave, onRecordAttempt, onOpenSongDetail, onDelete }: EditorProps) => {
   const updateList = (key: 'performanceSongs' | 'recognitionSongs', songs: RoadshowSong[]) => onChange({ ...record, [key]: songs });
   return (
     <fieldset disabled={busy} className="min-w-0 space-y-5">
       <div className="rounded-[1.75rem] border border-orange-200/15 bg-[#120b08]/85 p-5 backdrop-blur-xl sm:p-7">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <button type="button" onClick={onBack} className="text-sm font-bold text-white/50 hover:text-white">← 返回路演列表</button>
-          <button type="button" onClick={onLock} className="inline-flex items-center gap-2 text-xs font-bold text-white/40 hover:text-white"><Lock className="h-4 w-4" />锁定档案</button>
         </div>
         <div data-roadshow-editor-grid className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <div className="flex h-12 min-w-0 items-center rounded-xl border border-white/10 bg-black/35 focus-within:border-orange-300/45">

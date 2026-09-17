@@ -8,7 +8,7 @@ const owner = { alias: '2421415030@qq.com', password: 'test-password' };
 const user = { alias: 'visitor', password: 'test-password' };
 const other = { alias: 'other', password: 'test-password' };
 const song = { id: 'qing-tian', title: '晴天', artist: '周杰伦', category: '流行', featured: true };
-const seed = { version: 1, artistOrder: [song.artist], songOrder: [song.id], customAvatars: {}, avatarAdjustments: {}, catalog: { version: 9, artists: [song.artist], songs: [song] } };
+const seed = { version: 1, artistOrder: [song.artist], songOrder: [song.id], customAvatars: {}, avatarAdjustments: {}, catalog: { version: 10, artists: [song.artist], songs: [song] } };
 function setup() {
   const settings = new Map(); const scores = new Map(); const files = new Map();
   const accounts = new Map([owner, user, other].map(auth => [hash(auth.alias), { passwordSalt: 'salt', passwordHash: crypto.scryptSync(auth.password, 'salt', 32).toString('hex'), roadshows: [{ id: 'legacy' }] }]));
@@ -44,7 +44,7 @@ test('个人歌单首次复制站主快照，之后双方修改互不影响，�
   assert.equal((await call({ action: 'artistSettings:push', ...owner, expectedRevision: null, snapshot: seed })).ok, true);
   const first = await call({ action: 'artistSettings:privatePull', ...user, seed });
   assert.deepEqual(first.snapshot.catalog, seed.catalog);
-  const empty = { ...seed, artistOrder: [], songOrder: [], catalog: { version: 9, artists: [], songs: [] } };
+  const empty = { ...seed, artistOrder: [], songOrder: [], catalog: { version: 10, artists: [], songs: [] } };
   assert.equal((await call({ action: 'artistSettings:push', ...user, expectedRevision: 1, snapshot: empty })).ok, true);
   assert.deepEqual((await call({ action: 'artistSettings:pull' })).snapshot.catalog, seed.catalog);
   const changed = { ...seed, catalog: { ...seed.catalog, songs: [{ ...song, title: '站主修改' }] } };
