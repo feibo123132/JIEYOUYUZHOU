@@ -58,12 +58,24 @@ function memoryStore() {
       const count = location ? vote.locationCounts?.[locationKeys[location]] || 0 : vote.count;
       return count > 0 ? [[songId, count]] : [];
     })),
-    incrementVote: async (songId, location) => {
-      const current = votes.get(songId) || { count: 0, locationCounts: {} };
+    getVoteRequesters: async (location) => Object.fromEntries([...votes.entries()].flatMap(([songId, vote]) => {
       const key = locationKeys[location];
+      const count = location ? vote.locationCounts?.[key] || 0 : vote.count;
+      const names = location ? vote.locationRequesterNames?.[key] || [] : vote.requesterNames || [];
+      return count > 0 && names.length ? [[songId, names]] : [];
+    })),
+    incrementVote: async (songId, location, requesterName) => {
+      const current = votes.get(songId) || { count: 0, locationCounts: {}, requesterNames: [], locationRequesterNames: {} };
+      const key = locationKeys[location];
+      const name = typeof requesterName === 'string' ? requesterName.trim() : '';
+      const requesterNames = name ? [name, ...(current.requesterNames || []).filter((item) => item !== name)].slice(0, 8) : current.requesterNames || [];
+      const locationRequesterNames = structuredClone(current.locationRequesterNames || {});
+      if (key && name) locationRequesterNames[key] = [name, ...(locationRequesterNames[key] || []).filter((item) => item !== name)].slice(0, 8);
       const next = {
         count: current.count + 1,
         locationCounts: { ...current.locationCounts, ...(key ? { [key]: (current.locationCounts[key] || 0) + 1 } : {}) },
+        requesterNames,
+        locationRequesterNames,
       };
       votes.set(songId, next);
       return next.count;
@@ -152,6 +164,9 @@ test('validates public and private actions without rejecting platform metadata',
 
   assert.deepEqual(validateRequest({ action: 'votes:increment', songId: 'qing-tian', userInfo: { uid: 'u1' } }), {
     action: 'votes:increment', songId: 'qing-tian',
+  });
+  assert.deepEqual(validateRequest({ action: 'votes:increment', songId: 'qing-tian', requesterName: ' 小刘 ' }), {
+    action: 'votes:increment', songId: 'qing-tian', requesterName: '小刘',
   });
   assert.deepEqual(validateRequest({ action: 'votes:finishAll', alias: '2421415030@qq.com', password: 'guitar-2026' }), {
     action: 'votes:finishAll', alias: '2421415030@qq.com', password: 'guitar-2026',
@@ -380,6 +395,20 @@ test('increments and pulls public song request votes', async () => {
   assert.deepEqual(await handler({ action: 'votes:increment', songId: 'qing-tian' }), { ok: true, count: 1, location: null });
   assert.deepEqual(await handler({ action: 'votes:increment', songId: 'qing-tian' }), { ok: true, count: 2, location: null });
   assert.deepEqual(await handler({ action: 'votes:pull' }), { ok: true, counts: { 'qing-tian': 2 }, sungCounts: {} });
+})
+
+test('public song request votes can include guest requester names', async () => {
+  const { createHandler } = loadFunction();
+  const handler = createHandler(memoryStore());
+
+  assert.deepEqual(await handler({ action: 'votes:increment', songId: 'qing-tian', requesterName: '001' }), { ok: true, count: 1, location: null });
+  assert.deepEqual(await handler({ action: 'votes:increment', songId: 'qing-tian', requesterName: '阿宁' }), { ok: true, count: 2, location: null });
+  assert.deepEqual(await handler({ action: 'votes:pull' }), {
+    ok: true,
+    counts: { 'qing-tian': 2 },
+    sungCounts: {},
+    requesterNames: { 'qing-tian': ['阿宁', '001'] },
+  });
 })
 
 test('only the authenticated owner can move every pending vote into cumulative sung counts', async () => {

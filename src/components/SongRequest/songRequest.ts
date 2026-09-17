@@ -1,6 +1,7 @@
 import type { Song } from './songCatalog.ts';
 
 export type VoteCounts = Record<string, number>;
+export type VoteRequesters = Record<string, string[]>;
 export interface EditableCatalog { version: 8; artists: string[]; songs: Song[]; }
 
 interface ReadableStorage {
@@ -252,6 +253,16 @@ export const incrementSongVote = (counts: VoteCounts, songId: string): VoteCount
   [songId]: (counts[songId] ?? 0) + 1,
 });
 
+export const cleanVoteRequesterName = (value: string) => value.trim().replace(/\s+/g, ' ').slice(0, 24);
+
+export const addSongVoteRequester = (requesters: VoteRequesters, songId: string, rawName: string): VoteRequesters => {
+  const name = cleanVoteRequesterName(rawName);
+  if (!name) return requesters;
+  const previous = requesters[songId] ?? [];
+  const next = [name, ...previous.filter((item) => item !== name)].slice(0, 8);
+  return { ...requesters, [songId]: next };
+};
+
 export const finishRequestedVotes = (pending: VoteCounts, sung: VoteCounts) => ({
   pending: {},
   sung: Object.entries(pending).reduce<VoteCounts>((next, [songId, count]) => ({
@@ -260,11 +271,11 @@ export const finishRequestedVotes = (pending: VoteCounts, sung: VoteCounts) => (
   }), { ...sung }),
 });
 
-export const rankSongsByVotes = (songs: Song[], counts: VoteCounts) => songs
-  .map((song, catalogIndex) => ({ song, count: counts[song.id] ?? 0, catalogIndex }))
+export const rankSongsByVotes = (songs: Song[], counts: VoteCounts, requesters: VoteRequesters = {}) => songs
+  .map((song, catalogIndex) => ({ song, count: counts[song.id] ?? 0, requesters: requesters[song.id] ?? [], catalogIndex }))
   .filter((item) => item.count > 0)
   .sort((left, right) => right.count - left.count || left.catalogIndex - right.catalogIndex)
-  .map(({ song, count }) => ({ song, count }));
+  .map(({ song, count, requesters }) => ({ song, count, requesters }));
 
 export const rankArtistsByVotes = (songs: Song[], counts: VoteCounts) => {
   const ranking = new Map<string, { artist: string; count: number; songCount: number; catalogIndex: number }>();

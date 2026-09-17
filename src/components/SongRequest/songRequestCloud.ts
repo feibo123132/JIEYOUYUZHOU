@@ -1,5 +1,5 @@
 import { ensureSignIn, tcbApp } from '../../services/tcb';
-import type { VoteCounts } from './songRequest';
+import type { VoteCounts, VoteRequesters } from './songRequest';
 import type { FeelingsNotebook, NotebookPage } from './feelingsNotebook';
 import type { PublicQuizParticipantRankingItem, PublicQuizRankingItem, RoadshowLocation, RoadshowRecord } from './roadshow';
 import type { PublicPracticeRankingItem, SongRecord } from './songRecords';
@@ -32,6 +32,7 @@ export const callOwnerStars = <T,>(credentials: Credentials, action: string, pay
 export interface CloudVoteState {
   counts: VoteCounts;
   sungCounts: VoteCounts;
+  requesterNames: VoteRequesters;
 }
 
 type CloudResult<T> = { ok: true } & T;
@@ -53,19 +54,19 @@ const callSync = async <T>(data: Record<string, unknown>): Promise<CloudResult<T
 };
 
 export const pullCloudVoteState = async (location?: RoadshowLocation): Promise<CloudVoteState> => {
-  const result = await callSync<{ counts: VoteCounts; sungCounts?: VoteCounts }>({ action: 'votes:pull', ...(location ? { location } : {}) });
-  return { counts: result.counts, sungCounts: result.sungCounts ?? {} };
+  const result = await callSync<{ counts: VoteCounts; sungCounts?: VoteCounts; requesterNames?: VoteRequesters }>({ action: 'votes:pull', ...(location ? { location } : {}) });
+  return { counts: result.counts, sungCounts: result.sungCounts ?? {}, requesterNames: result.requesterNames ?? {} };
 };
 
 export const pullCloudVotes = async (location?: RoadshowLocation): Promise<VoteCounts> => (await pullCloudVoteState(location)).counts;
 
-export const incrementCloudVote = async (songId: string, location?: RoadshowLocation): Promise<{ count: number; location: RoadshowLocation | null }> => (
-  await callSync<{ count: number; location: RoadshowLocation | null }>({ action: 'votes:increment', songId, ...(location ? { location } : {}) })
+export const incrementCloudVote = async (songId: string, location?: RoadshowLocation, requesterName?: string): Promise<{ count: number; location: RoadshowLocation | null }> => (
+  await callSync<{ count: number; location: RoadshowLocation | null }>({ action: 'votes:increment', songId, ...(location ? { location } : {}), ...(requesterName ? { requesterName } : {}) })
 );
 
 export const finishCloudVotes = async (credentials: Credentials): Promise<CloudVoteState> => {
   const result = await callSync<CloudVoteState>({ action: 'votes:finishAll', ...credentials });
-  return { counts: result.counts, sungCounts: result.sungCounts };
+  return { counts: result.counts, sungCounts: result.sungCounts, requesterNames: result.requesterNames ?? {} };
 };
 
 export const adjustCloudSungVote = async (credentials: Credentials, songId: string, delta: 1 | -1, location?: RoadshowLocation): Promise<VoteCounts> => (
@@ -74,7 +75,7 @@ export const adjustCloudSungVote = async (credentials: Credentials, songId: stri
 
 export const clearCloudVotes = async (credentials: Credentials, kind: 'pending' | 'sung'): Promise<CloudVoteState> => {
   const result = await callSync<CloudVoteState>({ action: kind === 'pending' ? 'votes:clearPending' : 'votes:clearSung', ...credentials });
-  return { counts: result.counts, sungCounts: result.sungCounts };
+  return { counts: result.counts, sungCounts: result.sungCounts, requesterNames: result.requesterNames ?? {} };
 };
 
 export const pullCloudFeaturedSongIds = async (): Promise<string[] | null> => (

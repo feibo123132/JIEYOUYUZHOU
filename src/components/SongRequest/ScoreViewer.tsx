@@ -31,9 +31,9 @@ const AUTO_SCROLL_SPEED_LABELS: Record<AutoScrollSpeed, string> = {
   3: '快',
 };
 const AUTO_SCROLL_PIXELS_PER_SECOND: Record<Exclude<AutoScrollSpeed, 0>, number> = {
-  1: 8,
-  2: 12,
-  3: 16,
+  1: 5,
+  2: 8,
+  3: 11,
 };
 
 const ScoreViewer = ({ songId, songTitle, pages, onPagesStale, onClose }: ScoreViewerProps) => {

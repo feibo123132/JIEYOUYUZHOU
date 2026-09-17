@@ -898,6 +898,10 @@ test('ranks requested songs by count and keeps catalog order for ties', async ()
     rankSongsByVotes(songs, { a: 2, b: 3, c: 2 }).map((item: { song: { id: string }, count: number }) => [item.song.id, item.count]),
     [['b', 3], ['a', 2], ['c', 2]],
   )
+  assert.deepEqual(
+    rankSongsByVotes(songs, { a: 2 }, { a: ['阿宁', '001'] }).map((item: { song: { id: string }, requesters: string[] }) => [item.song.id, item.requesters]),
+    [['a', ['阿宁', '001']]],
+  )
   assert.deepEqual(rankSongsByVotes(songs, {}), [])
 })
 
@@ -910,6 +914,10 @@ test('点歌榜提供已点已唱及歌曲歌手切换并由站主批量唱完',
   assert.match(station, />已唱</)
   assert.match(station, /aria-label="已唱排行类型切换"/)
   assert.match(station, /data-request-ranking-controls/)
+  assert.match(station, /REQUESTER_NAME_STORAGE_KEY/)
+  assert.match(station, /点歌昵称/)
+  assert.match(station, /点歌：\{requesters\.join/)
+  assert.match(cloud, /requesterName/)
   assert.match(station, /ROADSHOW_RANKING_LOCATIONS\.map/)
   assert.match(station, />歌手</)
   assert.match(station, />歌曲</)
@@ -918,9 +926,9 @@ test('点歌榜提供已点已唱及歌曲歌手切换并由站主批量唱完',
   const sungModeControls = station.slice(station.indexOf('aria-label="已唱排行类型切换"'), station.indexOf('aria-label="点歌榜地点筛选"'))
   assert.ok(sungModeControls.indexOf('>歌曲</button>') < sungModeControls.indexOf('>歌手</button>'))
   assert.match(station, />唱完</)
-  assert.match(station, /canManageFeaturedSongs && ranking\.length > 0/)
+  assert.match(station, /canManageFeaturedSongs && displayRanking\.length > 0/)
   assert.match(station, /data-request-ranking-panel[^>]*className="relative flex h-\[calc\(100svh-14rem\)\] min-h-\[28rem\] flex-col overflow-hidden/)
-  assert.match(station, /rankingView === 'requests' \? \(\s*<div className="flex min-h-0 flex-1 flex-col gap-4">/)
+  assert.match(station, /visibleRankingView === 'requests' \? \(\s*<div className="flex min-h-0 flex-1 flex-col gap-4">/)
   assert.match(station, /<div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-2">/)
   assert.match(station, /<div className="flex shrink-0 justify-center pt-4">/)
   assert.match(station, /finishCloudVotes\(songRecordSession\)/)
@@ -1092,7 +1100,10 @@ test('歌手页支持持久排序及上传头像后继续微调', () => {
   const source = readFileSync(stationUrl, 'utf8')
 
   assert.match(source, /const \[artistOrderMode, setArtistOrderMode\] = useState\(false\)/)
-  assert.match(source, /调整排序/)
+  assert.match(source, />排序/)
+  assert.match(source, />头像/)
+  assert.match(source, />编辑/)
+  assert.match(source, />点歌/)
   assert.match(source, /moveCatalogArtist\(catalog, artist, targetArtist\)/)
   assert.match(source, /前移/)
   assert.match(source, /后移/)
@@ -1768,7 +1779,7 @@ test('歌手头像支持本机手动微调和重置', () => {
   const source = readFileSync(stationUrl, 'utf8')
 
   assert.match(source, /ARTIST_AVATAR_ADJUSTMENTS_KEY/)
-  assert.match(source, /调整头像/)
+  assert.match(source, />头像/)
   assert.match(source, /左右/)
   assert.match(source, /上下/)
   assert.match(source, /缩放/)

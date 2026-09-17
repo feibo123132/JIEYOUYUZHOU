@@ -47,7 +47,7 @@ test('歌手详情页提供歌曲调整排序模式并接入同步队列', () =>
   const source = readFileSync(new URL('../src/components/SongRequest/SongRequestStation.tsx', import.meta.url), 'utf8')
 
   assert.match(source, /const \[songOrderMode, setSongOrderMode\] = useState\(false\)/)
-  assert.match(source, /selectedArtist &&[\s\S]*调整排序/)
+  assert.match(source, /selectedArtist &&[\s\S]*>排序/)
   assert.match(source, /draggable=\{songOrderMode\}/)
   assert.match(source, /handleSongDragStart/)
   assert.match(source, /insertCatalogSong\(catalog, sourceSongId, targetSongId, placement\)/)

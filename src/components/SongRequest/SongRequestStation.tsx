@@ -1,17 +1,17 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent } from 'react';
 import {
   ArrowLeft, ArrowUpDown, CalendarDays, Check, ChevronLeft, ChevronRight, Disc3, Eye, Guitar,
-  GripVertical, Library, ListOrdered, Mic2, PenLine, Plus, RotateCcw, Search, SlidersHorizontal, Sparkles, Target, Trash2, Trophy, Upload, X,
+  GripVertical, Library, ListOrdered, Mic2, PenLine, Plus, RotateCcw, Search, SlidersHorizontal, Sparkles, Target, Trash2, Trophy, Upload, UserRound, X,
 } from 'lucide-react';
 import useAppStore from '../../store/appStore';
 import { SONGS, type Song } from './songCatalog';
 import {
-  addCatalogArtist, addCatalogSong, createEditableCatalog, getFeaturedSongs,
+  addCatalogArtist, addCatalogSong, addSongVoteRequester, cleanVoteRequesterName, createEditableCatalog, getFeaturedSongs,
   getPersonalRankingPodiumSize, getRankingMedalTone, getSongSubtitle, incrementSongVote, isFeaturedSongManager,
   insertCatalogArtist, insertCatalogSong, loadEditableCatalog, loadSungVoteCounts, loadVoteCounts, rankArtistsByVotes, rankSongsByVotes,
   moveCatalogArtist, moveCatalogSong, removeCatalogArtist, removeCatalogSong, saveEditableCatalog, saveSungVoteCounts, saveVoteCounts,
   orderPersonalRankingItems, paginateRankingItems, sortCatalogByMatchScore, togglePersonalRankingRandom, togglePersonalRankingReverse,
-  type EditableCatalog, type RankingDisplayMode, type VoteCounts,
+  type EditableCatalog, type RankingDisplayMode, type VoteCounts, type VoteRequesters,
 } from './songRequest';
 import {
   buildQuizParticipantRanking, collectUsedRecognitionSongIds, createRoadshowSong, deduplicateRoadshowSongs, findSongAppearances, getLatestRoadshow, groupSongsByArtist, parseRoadshowCache,
@@ -196,6 +196,7 @@ const resizeArtistAvatar = (file: File): Promise<string> => new Promise((resolve
 });
 
 const PENDING_SING_COUNTS_KEY = 'jieyou-pending-sing-counts-v1';
+const REQUESTER_NAME_STORAGE_KEY = 'jieyou-song-request-requester-name-v1';
 
 const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   const accountAlias = readBrowserSongRecordSession()?.alias.trim().toLowerCase() || '';
@@ -235,6 +236,16 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     typeof window === 'undefined' ? {} : loadSungVoteCounts(window.localStorage, catalog.songs.map((song) => song.id))
   ));
   const [locationVotes, setLocationVotes] = useState<VoteCounts>({});
+  const [voteRequesters, setVoteRequesters] = useState<VoteRequesters>({});
+  const [locationVoteRequesters, setLocationVoteRequesters] = useState<VoteRequesters>({});
+  const [requesterDialogOpen, setRequesterDialogOpen] = useState(false);
+  const [requesterNameDraft, setRequesterNameDraft] = useState(() => (
+    typeof window === 'undefined' ? '' : window.localStorage.getItem(REQUESTER_NAME_STORAGE_KEY) ?? ''
+  ));
+  const [guestRequesterName, setGuestRequesterName] = useState(() => (
+    typeof window === 'undefined' ? '' : window.localStorage.getItem(REQUESTER_NAME_STORAGE_KEY) ?? ''
+  ));
+  const [pendingRequesterSong, setPendingRequesterSong] = useState<Song | null>(null);
   const [finishingVotes, setFinishingVotes] = useState(false);
   const [clearingVotes, setClearingVotes] = useState(false);
   const voteMutationBusyRef = useRef(false);
@@ -510,21 +521,24 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     if (clearingVotes) return;
     const version = voteSyncVersionRef.current;
     // 始终拉取总榜数据到 votes，确保总榜有数据
-    pullCloudVoteState().then(({ counts, sungCounts }) => {
+    pullCloudVoteState().then(({ counts, sungCounts, requesterNames }) => {
       if (!active || version !== voteSyncVersionRef.current) return;
       setVotes(counts);
       setSungVotes(sungCounts);
+      setVoteRequesters(requesterNames);
       try { saveVoteCounts(window.localStorage, counts); } catch {}
       try { saveSungVoteCounts(window.localStorage, sungCounts); } catch {}
     }).catch(() => { if (active && version === voteSyncVersionRef.current) showSyncMessage('云端暂时未连接，本次点歌稍后再试'); });
     // 若选了具体地点，额外拉取地点分榜到 locationVotes
     if (location) {
-      pullCloudVoteState(location).then(({ counts }) => {
+      pullCloudVoteState(location).then(({ counts, requesterNames }) => {
         if (!active || version !== voteSyncVersionRef.current) return;
         setLocationVotes(counts);
+        setLocationVoteRequesters(requesterNames);
       }).catch(() => {});
     } else {
       setLocationVotes({});
+      setLocationVoteRequesters({});
     }
     return () => { active = false; };
   }, [rankingLocation, showSyncMessage, clearingVotes]);
@@ -694,7 +708,11 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     }
     return songDisplayMode === 'full' ? providedSongs : randomSongs;
   }, [providedSongs, query, randomSongs, songDisplayMode]);
-  const ranking = useMemo(() => rankSongsByVotes(catalogSongs, rankingLocation === '总榜' ? votes : locationVotes), [catalogSongs, votes, locationVotes, rankingLocation]);
+  const ranking = useMemo(() => rankSongsByVotes(
+    catalogSongs,
+    rankingLocation === '总榜' ? votes : locationVotes,
+    rankingLocation === '总榜' ? voteRequesters : locationVoteRequesters,
+  ), [catalogSongs, votes, locationVotes, voteRequesters, locationVoteRequesters, rankingLocation]);
   const displayRanking = useMemo(() => {
     if (requestVoteView !== 'pending' || !pendingRandomActive) return ranking;
     const arr = [...ranking];
@@ -1153,27 +1171,42 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     setActiveSection('roadshows');
   };
 
-  const requestSong = async (song: Song) => {
+  const openRequesterDialog = (song?: Song) => {
+    setPendingRequesterSong(song ?? null);
+    setRequesterNameDraft(guestRequesterName);
+    setRequesterDialogOpen(true);
+  };
+
+  const requestSong = async (song: Song, explicitRequesterName?: string) => {
+    const requesterName = cleanVoteRequesterName(explicitRequesterName ?? guestRequesterName);
+    if (!requesterName) {
+      openRequesterDialog(song);
+      return;
+    }
     if (voteMutationBusyRef.current) return;
     const version = voteSyncVersionRef.current;
     const previousVotes = votes;
+    const previousRequesters = voteRequesters;
     const optimistic = incrementSongVote(votes, song.id);
     setVotes(optimistic);
+    setVoteRequesters(addSongVoteRequester(voteRequesters, song.id, requesterName));
     setRequestedId(song.id);
     showSyncMessage('');
     try {
-      const incrementResult = await incrementCloudVote(song.id);
+      const incrementResult = await incrementCloudVote(song.id, undefined, requesterName);
       // 拉取总榜数据确保 votes 始终有数据，ranking 不会为空
       const totalSynced = await pullCloudVoteState();
       if (version !== voteSyncVersionRef.current) return;
       setVotes(totalSynced.counts);
       setSungVotes(totalSynced.sungCounts);
+      setVoteRequesters(totalSynced.requesterNames);
       saveVoteCounts(window.localStorage, totalSynced.counts);
       // 若当前查看了具体地点，同步刷新地点分榜
       if (rankingLocation !== '总榜') {
-        pullCloudVoteState(rankingLocation).then(({ counts }) => {
+        pullCloudVoteState(rankingLocation).then(({ counts, requesterNames }) => {
           if (version !== voteSyncVersionRef.current) return;
           setLocationVotes(counts);
+          setLocationVoteRequesters(requesterNames);
         }).catch(() => {});
       }
       // 明确告知实际归入的地点
@@ -1186,10 +1219,28 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     } catch {
       if (version !== voteSyncVersionRef.current) return;
       setVotes(previousVotes);
+      setVoteRequesters(previousRequesters);
       showSyncMessage('点歌未提交，请检查网络后重试');
     } finally {
       window.setTimeout(() => setRequestedId((current) => current === song.id ? null : current), 1000);
     }
+  };
+
+  const submitRequesterName = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const nextName = cleanVoteRequesterName(requesterNameDraft);
+    if (!nextName) {
+      showSyncMessage('请先输入点歌昵称');
+      return;
+    }
+    setGuestRequesterName(nextName);
+    setRequesterNameDraft(nextName);
+    try { window.localStorage.setItem(REQUESTER_NAME_STORAGE_KEY, nextName); } catch {}
+    const song = pendingRequesterSong;
+    setRequesterDialogOpen(false);
+    setPendingRequesterSong(null);
+    if (song) void requestSong(song, nextName);
+    else showSyncMessage(`已使用「${nextName}」点歌`);
   };
 
   const canManageFeaturedSongs = isFeaturedSongManager(songRecordSession?.alias);
@@ -1757,10 +1808,14 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                       {requestVoteView === 'pending' ? (
                         displayRanking.length ? <>
                           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-2">
-                            <ol className="space-y-3">{displayRanking.map(({ song, count }, index) => (
+                            <ol className="space-y-3">{displayRanking.map(({ song, count, requesters }, index) => (
                               <li key={song.id} className="flex items-center gap-4 rounded-2xl border border-white/10 bg-white/[.035] p-4">
                                 <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-full font-serif font-black ${RANKING_MEDAL_CLASSES[getRankingMedalTone(index, 3)]}`}>{index + 1}</span>
-                                <button type="button" onClick={() => openSongDetail(song)} className="min-w-0 flex-1 text-left"><p className="truncate font-bold hover:text-orange-100">{song.title}</p><p className="truncate text-xs text-white/40">{song.artist}</p></button>
+                                <button type="button" onClick={() => openSongDetail(song)} className="min-w-0 flex-1 text-left">
+                                  <p className="truncate font-bold hover:text-orange-100">{song.title}</p>
+                                  <p className="truncate text-xs text-white/40">{song.artist}</p>
+                                  {requesters.length > 0 && <p className="mt-1 truncate text-[11px] font-semibold text-orange-100/55">点歌：{requesters.join('、')}</p>}
+                                </button>
                                 {(() => {
                                   const included = latestRoadshow && prepareLatestRoadshowPerformanceSong([latestRoadshow], song).kind === 'duplicate';
                                   return <div className="flex shrink-0 flex-col items-center gap-1.5" title={latestRoadshow ? `最新路演：${latestRoadshow.title} · ${latestRoadshow.date} · 路演歌曲` : undefined}>
@@ -2024,20 +2079,20 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                     <div className="ml-auto flex shrink-0 flex-wrap justify-end gap-2">
                       {!selectedArtist && <>
                         <button type="button" aria-pressed={artistOrderMode} onClick={() => { if (artistOrderMode) syncCurrentArtistSettings(); clearArtistDragState(); setArtistOrderMode((current) => !current); setAvatarAdjustMode(false); setAdjustingArtist(null); }} className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-xs font-bold transition ${artistOrderMode ? 'border-orange-200/40 bg-orange-300 text-black' : 'border-white/10 bg-black/30 text-white/55 hover:text-white'}`}>
-                          <ListOrdered className="h-4 w-4" />{artistOrderMode ? '完成排序' : '调整排序'}
+                          <ListOrdered className="h-4 w-4" />排序
                         </button>
                         <button type="button" aria-pressed={avatarAdjustMode} onClick={() => { if (avatarAdjustMode) syncCurrentArtistSettings(); clearArtistDragState(); setAvatarAdjustMode((current) => !current); setArtistOrderMode(false); setAdjustingArtist(null); }} className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-xs font-bold transition ${avatarAdjustMode ? 'border-orange-200/40 bg-orange-300 text-black' : 'border-white/10 bg-black/30 text-white/55 hover:text-white'}`}>
-                          <SlidersHorizontal className="h-4 w-4" />{avatarAdjustMode ? '完成头像' : '调整头像'}
+                          <SlidersHorizontal className="h-4 w-4" />头像
                         </button>
                       </>}
                       {selectedArtist && (
                         <button type="button" aria-pressed={songOrderMode} onClick={() => { clearSongDragState(); setSongOrderMode((current) => !current); }} className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-xs font-bold transition ${songOrderMode ? 'border-orange-200/40 bg-orange-300 text-black' : 'border-white/10 bg-black/30 text-white/55 hover:text-white'}`}>
-                          <ListOrdered className="h-4 w-4" />{songOrderMode ? '完成排序' : '调整排序'}
+                          <ListOrdered className="h-4 w-4" />排序
                         </button>
                       )}
                       {selectedArtist && (
                         <button type="button" aria-pressed={songEditMode} onClick={() => { clearSongDragState(); setSongOrderMode(false); setSongEditMode((current) => !current); }} className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-xs font-bold transition ${songEditMode ? 'border-orange-200/40 bg-orange-300 text-black' : 'border-white/10 bg-black/30 text-white/55 hover:text-white'}`}>
-                          <PenLine className="h-4 w-4" />{songEditMode ? '完成编辑' : '编辑歌曲'}
+                          <PenLine className="h-4 w-4" />编辑
                         </button>
                       )}
                       {selectedArtist && (
@@ -2052,9 +2107,12 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                       )}
                       {!selectedArtist && (
                         <button type="button" aria-pressed={artistEditMode} onClick={() => { clearArtistDragState(); setArtistOrderMode(false); setAvatarAdjustMode(false); setAdjustingArtist(null); setArtistEditMode((current) => !current); }} className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-xs font-bold transition ${artistEditMode ? 'border-orange-200/40 bg-orange-300 text-black' : 'border-white/10 bg-black/30 text-white/55 hover:text-white'}`}>
-                          <PenLine className="h-4 w-4" />{artistEditMode ? '完成编辑' : '编辑歌手'}
+                          <PenLine className="h-4 w-4" />编辑
                         </button>
                       )}
+                      <button type="button" aria-label={guestRequesterName ? `当前点歌昵称：${guestRequesterName}` : '输入游客点歌昵称'} onClick={() => openRequesterDialog()} className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-xs font-bold transition ${guestRequesterName ? 'border-orange-200/40 bg-orange-300/20 text-orange-100' : 'border-white/10 bg-black/30 text-white/55 hover:text-white'}`}>
+                        <UserRound className="h-4 w-4" />点歌
+                      </button>
                       {!selectedArtist && (
                         <button type="button" onClick={handleSortByMatch} className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/30 px-3.5 py-2 text-xs font-bold text-white/55 transition hover:border-orange-200/35 hover:text-orange-100">
                           <ArrowUpDown className="h-4 w-4" />匹配度
@@ -2260,6 +2318,35 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
           </section>
         )}
       </div>
+      )}
+      {requesterDialogOpen && (
+        <div className="fixed inset-0 z-[85] grid place-items-center p-5">
+          <button type="button" aria-label="关闭点歌昵称弹窗" onClick={() => { setRequesterDialogOpen(false); setPendingRequesterSong(null); }} className="absolute inset-0 bg-black/65 backdrop-blur-md" />
+          <form onSubmit={submitRequesterName} role="dialog" aria-modal="true" aria-labelledby="song-requester-dialog-title" className="relative w-full max-w-sm overflow-hidden rounded-[1.75rem] border border-orange-200/20 bg-[#120b08]/95 p-6 shadow-[0_30px_100px_rgba(0,0,0,.72)]">
+            <div className="pointer-events-none absolute -right-16 -top-20 h-44 w-44 rounded-full bg-orange-400/12 blur-3xl" />
+            <button type="button" aria-label="关闭点歌昵称" onClick={() => { setRequesterDialogOpen(false); setPendingRequesterSong(null); }} className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-full border border-white/10 text-white/40 transition hover:bg-white/10 hover:text-white"><X className="h-4 w-4" /></button>
+            <span className="grid h-12 w-12 place-items-center rounded-2xl border border-orange-200/20 bg-orange-300/10 text-orange-100"><UserRound className="h-5 w-5" /></span>
+            <p className="mt-5 text-[10px] font-black tracking-[.25em] text-orange-200/45">SONG REQUEST</p>
+            <h2 id="song-requester-dialog-title" className="mt-2 font-serif text-3xl font-black text-white">{pendingRequesterSong ? '留下昵称再点歌' : '设置点歌昵称'}</h2>
+            <p className="mt-2 text-sm leading-6 text-white/45">
+              {pendingRequesterSong ? `你正在点「${pendingRequesterSong.title}」，昵称会显示在点歌榜里。` : '来参加路演的游客可以先输入昵称，再去歌单里点歌。'}
+            </p>
+            <label className="mt-5 block">
+              <span className="text-xs font-bold text-white/45">点歌昵称</span>
+              <input
+                autoFocus
+                value={requesterNameDraft}
+                onChange={(event) => setRequesterNameDraft(event.target.value)}
+                maxLength={24}
+                placeholder="例如：001、小刘、阿宁"
+                className="mt-2 h-12 w-full rounded-2xl border border-orange-200/20 bg-black/35 px-4 text-sm font-bold text-white outline-none transition placeholder:text-white/25 focus:border-orange-200/55"
+              />
+            </label>
+            <button type="submit" className="mt-5 inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-orange-400 text-sm font-black text-black transition hover:bg-orange-300">
+              <Plus className="h-4 w-4" />{pendingRequesterSong ? '确认点歌' : '开始点歌'}
+            </button>
+          </form>
+        </div>
       )}
       {popularActionSong && (
         <div className="fixed inset-0 z-[80] grid place-items-center p-5">

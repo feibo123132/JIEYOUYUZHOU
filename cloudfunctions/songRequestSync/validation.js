@@ -300,7 +300,8 @@ function validateRequest(event) {
   if (event.action === 'votes:increment') {
     const songId = cleanText(event.songId, 80, 'INVALID_SONG_ID');
     if (!/^[a-z0-9-]+$/i.test(songId)) throw new Error('INVALID_SONG_ID');
-    return { action: event.action, songId, ...optionalRankingLocation(event.location) };
+    const requesterName = event.requesterName === undefined ? '' : cleanOptionalText(event.requesterName, 24, 'INVALID_ALIAS');
+    return { action: event.action, songId, ...(requesterName ? { requesterName } : {}), ...optionalRankingLocation(event.location) };
   }
 
   const alias = cleanText(event.alias, 30, 'INVALID_ALIAS');

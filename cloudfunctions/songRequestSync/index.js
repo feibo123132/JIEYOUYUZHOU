@@ -23,7 +23,7 @@ const PUBLIC_ERRORS = new Set([
 ]);
 
 const FEATURED_SONGS_OWNER_ALIAS = '2421415030@qq.com';
-const incrementVoteAtomically = (db, songId, location) => db.runTransaction(async (transaction) => {
+const incrementVoteAtomically = (db, songId, location, requesterName) => db.runTransaction(async (transaction) => {
   const ref = transaction.collection('song_request_votes').doc(songId);
   let data;
   try {
@@ -36,7 +36,13 @@ const incrementVoteAtomically = (db, songId, location) => db.runTransaction(asyn
   const locationCounts = { ...(data?.locationCounts || {}) };
   const key = ROADSHOW_LOCATION_KEYS[location];
   if (key) locationCounts[key] = (Number(locationCounts[key]) || 0) + 1;
-  await ref.set({ count, locationCounts, updatedAt: new Date().toISOString() });
+  const requesterNames = mergeRequesterNames(data?.requesterNames, requesterName);
+  const locationRequesterNames = { ...(data?.locationRequesterNames || {}) };
+  if (key) locationRequesterNames[key] = mergeRequesterNames(locationRequesterNames[key], requesterName);
+  const next = { count, locationCounts, updatedAt: new Date().toISOString() };
+  if (requesterNames.length) next.requesterNames = requesterNames;
+  if (Object.keys(locationRequesterNames).length) next.locationRequesterNames = locationRequesterNames;
+  await ref.set(next);
   return count;
 });
 const clearVoteStateAtomically = (db, ownerWorkspaceId, kind, songIds) => db.runTransaction(async (transaction) => {
@@ -90,6 +96,14 @@ const cleanVoteCounts = (value) => value && typeof value === 'object' && !Array.
 const cleanLocationVoteCounts = (value) => Object.fromEntries(Object.values(ROADSHOW_LOCATION_KEYS).map((key) => [
   key, cleanVoteCounts(value?.[key]),
 ]));
+const cleanRequesterNames = (value) => Array.isArray(value)
+  ? [...new Set(value.filter((item) => typeof item === 'string').map((item) => item.trim()).filter(Boolean))].slice(0, 8)
+  : [];
+const mergeRequesterNames = (value, requesterName) => {
+  const current = cleanRequesterNames(value);
+  const name = typeof requesterName === 'string' ? requesterName.trim().replace(/\s+/g, ' ').slice(0, 24) : '';
+  return name ? [name, ...current.filter((item) => item !== name)].slice(0, 8) : current;
+};
 const latestRoadshowLocation = (workspace) => {
   const records = Array.isArray(workspace?.roadshows) ? workspace.roadshows.filter((record) => !record.deletedAt && ROADSHOW_LOCATION_KEYS[record.location]) : [];
   records.sort((left, right) => String(right.date || '').localeCompare(String(left.date || '')) || String(right.updatedAt || '').localeCompare(String(left.updatedAt || '')));
@@ -209,11 +223,14 @@ function createHandler(store) {
       if (request.action === 'votes:pull') {
         const owner = await store.getWorkspace(workspaceId(FEATURED_SONGS_OWNER_ALIAS));
         const locationKey = request.location ? ROADSHOW_LOCATION_KEYS[request.location] : null;
-        return {
+        const response = {
           ok: true,
           counts: await store.getVotes(request.location),
           sungCounts: cleanVoteCounts(locationKey ? owner?.sungVoteCountsByLocation?.[locationKey] : owner?.sungVoteCounts),
         };
+        const requesterNames = store.getVoteRequesters ? await store.getVoteRequesters(request.location) : {};
+        if (Object.keys(requesterNames).length) response.requesterNames = requesterNames;
+        return response;
       }
       if (request.action === 'songRecords:publicRanking') {
         return { ok: true, ranking: buildPublicPracticeRanking(await store.getAllSongRecords()) };
@@ -241,7 +258,7 @@ function createHandler(store) {
       if (request.action === 'votes:increment') {
         const owner = await store.getWorkspace(workspaceId(FEATURED_SONGS_OWNER_ALIAS));
         const location = ROADSHOW_LOCATION_KEYS[request.location] ? request.location : latestRoadshowLocation(owner);
-        return { ok: true, count: await store.incrementVote(request.songId, location), location: location || null };
+        return { ok: true, count: await store.incrementVote(request.songId, location, request.requesterName), location: location || null };
       }
 
       if (request.action === 'roadshows:register') {
@@ -476,6 +493,22 @@ exports.main = async (event) => {
         if (page.length < pageSize) return counts;
       }
     };
+    const readVoteRequesters = async (location) => {
+      const pageSize = 1000;
+      const requesters = {};
+      const locationKey = location ? ROADSHOW_LOCATION_KEYS[location] : null;
+      for (let offset = 0; ; offset += pageSize) {
+        const result = await votes.skip(offset).limit(pageSize).get();
+        const page = result.data || [];
+        for (const item of page) {
+          const count = Number(locationKey ? item.locationCounts?.[locationKey] : item.count) || 0;
+          if (count <= 0) continue;
+          const names = cleanRequesterNames(locationKey ? item.locationRequesterNames?.[locationKey] : item.requesterNames);
+          if (names.length) requesters[item._id] = names;
+        }
+        if (page.length < pageSize) return requesters;
+      }
+    };
     defaultHandler = createHandler({
       async getWorkspace(id) {
         try {
@@ -496,12 +529,13 @@ exports.main = async (event) => {
       setFeaturedSongIds: (id, songIds, updatedAt) => workspaces.doc(id).update({ featuredSongIds: songIds, updatedAt }),
       setQuizLibraryAssignments: (id, assignments, updatedAt) => workspaces.doc(id).update({ quizLibraryAssignments: assignments, updatedAt }),
       getVotes: readVoteCounts,
+      getVoteRequesters: readVoteRequesters,
       async clearVotesAtomically(ownerWorkspaceId, kind) {
         const songIds = kind === 'pending' ? Object.keys(await readVoteCounts()) : [];
         const sungCounts = await clearVoteStateAtomically(db, ownerWorkspaceId, kind, songIds);
         return { counts: await readVoteCounts(), sungCounts };
       },
-      incrementVote: (songId, location) => incrementVoteAtomically(db, songId, location),
+      incrementVote: (songId, location, requesterName) => incrementVoteAtomically(db, songId, location, requesterName),
       async finishVotesAtomically(ownerWorkspaceId) {
         const pendingSnapshot = await readVoteCounts();
         const songIds = Object.keys(pendingSnapshot);
