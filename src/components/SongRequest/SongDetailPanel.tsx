@@ -522,7 +522,7 @@ const RecordTimeline = ({ records, busy, editingId, onEdit, onDelete, label = 'H
 
 const PracticeRecordDetails = ({ record }: { record: PracticeRecord }) => {
   const reflection = getPracticeReflection(record);
-  return <><div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1"><p className="text-sm font-bold text-orange-100">匹配度 {record.matchScore}</p><PracticeMarkerBadges record={record} /></div>{record.femaleKey && <RecordText label="女生选调" text={record.femaleKey} />}{record.feelings && <RecordText label="感受" text={record.feelings} />}{reflection && <RecordText label="弹唱感想" text={reflection} />}</>;
+  return <><div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1"><p className="text-sm font-bold text-orange-100">匹配度 {record.matchScore}</p>{record.femaleKey && <p className="text-xs font-bold text-white/45"><span className="mr-1 text-[10px] font-black tracking-wider text-white/25">女生选调</span>{record.femaleKey}</p>}<PracticeMarkerBadges record={record} /></div>{record.feelings && <RecordText label="感受" text={record.feelings} />}{reflection && <RecordText label="弹唱感想" text={reflection} />}</>;
 };
 
 const PracticeMarkerBadges = ({ record }: { record: PracticeRecord }) => (
