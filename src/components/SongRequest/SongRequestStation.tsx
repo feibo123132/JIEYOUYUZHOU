@@ -1811,11 +1811,13 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                             <ol className="space-y-3">{displayRanking.map(({ song, count, requesters }, index) => (
                               <li key={song.id} className="flex items-center gap-4 rounded-2xl border border-white/10 bg-white/[.035] p-4">
                                 <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-full font-serif font-black ${RANKING_MEDAL_CLASSES[getRankingMedalTone(index, 3)]}`}>{index + 1}</span>
-                                <button type="button" onClick={() => openSongDetail(song)} className="min-w-0 flex-1 text-left">
-                                  <p className="truncate font-bold hover:text-orange-100">{song.title}</p>
-                                  <p className="truncate text-xs text-white/40">{song.artist}</p>
-                                  {requesters.length > 0 && <p className="mt-1 truncate text-[11px] font-semibold text-orange-100/55">点歌：{requesters.join('、')}</p>}
-                                </button>
+                                 <button type="button" onClick={() => openSongDetail(song)} className="min-w-0 flex-1 text-left">
+                                   <p className="truncate font-bold hover:text-orange-100">{song.title}</p>
+                                  <p className="truncate text-xs text-white/40">
+                                    <span>{song.artist}</span>
+                                    {requesters.length > 0 && <span className="ml-2 font-semibold text-orange-100/55">点歌：{requesters.join('、')}</span>}
+                                  </p>
+                                 </button>
                                 {(() => {
                                   const included = latestRoadshow && prepareLatestRoadshowPerformanceSong([latestRoadshow], song).kind === 'duplicate';
                                   return <div className="flex shrink-0 flex-col items-center gap-1.5" title={latestRoadshow ? `最新路演：${latestRoadshow.title} · ${latestRoadshow.date} · 路演歌曲` : undefined}>
