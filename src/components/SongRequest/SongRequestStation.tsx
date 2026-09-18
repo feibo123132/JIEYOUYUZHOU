@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent } from 'react';
 import {
   ArrowLeft, ArrowUpDown, CalendarDays, Check, ChevronLeft, ChevronRight, Disc3, Eye, Guitar,
-  GripVertical, Library, ListOrdered, LogOut, Mic2, PenLine, Plus, RotateCcw, Search, SlidersHorizontal, Sparkles, Target, Trash2, Trophy, Upload, UserRound, X,
+  GripVertical, Library, ListOrdered, LogOut, Menu, Mic2, PenLine, Plus, RotateCcw, Search, SlidersHorizontal, Sparkles, Target, Trash2, Trophy, Upload, UserRound, X,
 } from 'lucide-react';
 import useAppStore from '../../store/appStore';
 import { SONGS, type Song } from './songCatalog';
@@ -71,6 +71,8 @@ const ARTIST_LANGUAGE_FILTERS: { value: ArtistLanguageFilter; label: string }[] 
   { value: 'single', label: '一人一曲' },
 ];
 
+const CARD_DRAW_PROJECT_URL = 'https://github.com/feibo123132/Mingxinpian';
+const CARD_DRAW_PROJECT_PATH = String.raw`D:\0-DeskMove\0829 Banana＆seedream\1204  全栈设计师\4、明信片抽卡 1225`;
 const PERSONAL_RANKING_SCROLL_THRESHOLD = 8;
 const REQUEST_RANKING_SCROLL_THRESHOLD = 8;
 const PERSONAL_RANKING_PAGE_SIZE = 50;
@@ -222,6 +224,8 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   const [personalRankingArtist, setPersonalRankingArtist] = useState<string | null>(null);
   const [personalRankingMode, setPersonalRankingMode] = useState<RankingDisplayMode>('normal');
   const [personalRankingPage, setPersonalRankingPage] = useState(1);
+  const [personalRankingSelectMode, setPersonalRankingSelectMode] = useState(false);
+  const [selectedPersonalRankingSongIds, setSelectedPersonalRankingSongIds] = useState<string[]>([]);
   const [rankingArtistQuery, setRankingArtistQuery] = useState('');
   const [selectedArtist, setSelectedArtist] = useState<string | null>(null);
   const [selectedSong, setSelectedSong] = useState<Song | null>(null);
@@ -295,6 +299,19 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   const [songRecordSession] = useState<SongRecordSession | null>(() => (
     typeof window === 'undefined' ? null : readBrowserSongRecordSession()
   ));
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const logoutSongRecordSession = useCallback(() => {
+    if (!songRecordSession || typeof window === 'undefined') return;
+    clearSongRecordCache(window.localStorage, songRecordSession.alias);
+    clearBrowserSongRecordSession();
+    setAccountMenuOpen(false);
+    window.dispatchEvent(new Event(SONG_REQUEST_SESSION_EVENT));
+  }, [songRecordSession]);
+  const openCardDrawProject = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    setAccountMenuOpen(false);
+    window.open(CARD_DRAW_PROJECT_URL, '_blank', 'noopener,noreferrer');
+  }, []);
   const canManageCatalog = Boolean(songRecordSession && catalogReady);
   const requireCatalogManager = () => {
     if (canManageCatalog) return true;
@@ -809,14 +826,24 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     () => paginateRankingItems(visiblePersonalRanking, personalRankingPage, PERSONAL_RANKING_PAGE_SIZE),
     [personalRankingPage, visiblePersonalRanking],
   );
+  const selectedPersonalRankingSongs = useMemo(() => {
+    if (!selectedPersonalRankingSongIds.length) return [];
+    const selectedIds = new Set(selectedPersonalRankingSongIds);
+    return visiblePersonalRanking
+      .map(({ song }) => song)
+      .filter((song) => selectedIds.has(song.id));
+  }, [selectedPersonalRankingSongIds, visiblePersonalRanking]);
 
   useEffect(() => {
     setPersonalRankingPage(1);
+    setPersonalRankingSelectMode(false);
+    setSelectedPersonalRankingSongIds([]);
   }, [personalRankingArtist, personalRankingMode]);
 
   useEffect(() => {
     setPersonalRankingPage((current) => Math.min(current, paginatedPersonalRanking.pageCount));
   }, [paginatedPersonalRanking.pageCount]);
+
   const artistSongCount = personalRankingArtist
     ? catalogSongs.filter((song) => song.artist === personalRankingArtist).length
     : 0;
@@ -1309,6 +1336,13 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   const visibleRankingView: RankingView = nonOwnerSession ? 'personal' : rankingView;
 
   useEffect(() => {
+    if (visibleRankingView !== 'personal') {
+      setPersonalRankingSelectMode(false);
+      setSelectedPersonalRankingSongIds([]);
+    }
+  }, [visibleRankingView]);
+
+  useEffect(() => {
     if (!canManageFeaturedSongs && rankingLocation !== '总榜') {
       setRankingLocation('总榜');
     }
@@ -1578,6 +1612,54 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     }
   };
 
+  const addSelectedPersonalRankingSongsToLatestRoadshow = async () => {
+    if (!songRecordSession || !canManageFeaturedSongs) {
+      showSyncMessage('请先以站主账号进入我的档案后再加入路演歌曲。');
+      return;
+    }
+    if (roadshowBusyId) return;
+    if (!selectedPersonalRankingSongs.length) {
+      setPersonalRankingSelectMode(true);
+      showSyncMessage('请先选择要加入最新路演的歌曲');
+      return;
+    }
+    setRoadshowBusyId('practice-batch');
+    showSyncMessage('');
+    try {
+      const records = await pullRoadshows(songRecordSession);
+      const latest = getLatestRoadshow(records);
+      if (!latest) {
+        setRoadshowArchives([]);
+        showSyncMessage('还没有路演，请先在私人记录中创建一场路演');
+        return;
+      }
+      const previousSongs = deduplicateRoadshowSongs(latest.performanceSongs);
+      const performanceSongs = deduplicateRoadshowSongs([
+        ...previousSongs,
+        ...selectedPersonalRankingSongs.map(createRoadshowSong),
+      ]);
+      const addedCount = performanceSongs.length - previousSongs.length;
+      if (addedCount <= 0) {
+        setRoadshowArchives(records);
+        setPersonalRankingSelectMode(false);
+        setSelectedPersonalRankingSongIds([]);
+        showSyncMessage('所选歌曲都已在最新路演中，无需重复加入');
+        return;
+      }
+      const updated: RoadshowRecord = { ...latest, performanceSongs, updatedAt: new Date().toISOString() };
+      const saved = await saveRoadshow(songRecordSession, updated);
+      rememberRoadshowUpdate(records, saved);
+      setPersonalRankingSelectMode(false);
+      setSelectedPersonalRankingSongIds([]);
+      window.dispatchEvent(new CustomEvent('jieyou-roadshow-imported', { detail: { recordId: saved.id } }));
+      showSyncMessage(`已将 ${addedCount} 首练习榜歌曲加入“${saved.title}”`);
+    } catch {
+      showSyncMessage('批量加入最新路演失败，请检查网络后重试');
+    } finally {
+      setRoadshowBusyId(null);
+    }
+  };
+
   const QuizLevelControl = ({ song }: { song: Song }) => {
     const currentLevel = quizAssignments[song.id];
     const current = QUIZ_LEVELS.find((level) => level.id === currentLevel);
@@ -1802,14 +1884,46 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
           <button type="button" onClick={goBack} className="inline-flex h-11 items-center gap-2 rounded-full border border-white/10 bg-black/35 px-4 text-sm font-semibold text-white/70 backdrop-blur-xl transition hover:text-white">
             <ArrowLeft className="h-4 w-4" /> {selectedSong ? detailBackLabel : activeSection === null ? '宇宙' : selectedArtist ? sectionTitle : '点歌台'}
           </button>
-          {songRecordSession ? (
-            <div className="flex min-w-0 items-center gap-2 rounded-full border border-white/10 bg-black/30 px-3 py-2 text-xs text-white/55 backdrop-blur-xl">
-              <span className="min-w-0 max-w-[42vw] truncate sm:max-w-64">当前：<b className="font-bold text-orange-100/85">{maskSongRecordAccount(songRecordSession.alias)}</b></span>
-              <button type="button" onClick={() => { clearSongRecordCache(window.localStorage, songRecordSession.alias); clearBrowserSongRecordSession(); window.dispatchEvent(new Event(SONG_REQUEST_SESSION_EVENT)); }} className="inline-flex shrink-0 items-center gap-1 rounded-full border border-orange-200/20 bg-orange-300/10 px-2.5 py-1 font-black text-orange-100 transition hover:bg-orange-300/20">
-                <LogOut className="h-3.5 w-3.5" />退出
-              </button>
-            </div>
-          ) : <span className="text-xs font-bold text-white/35">游客浏览</span>}
+          <div className="relative z-50">
+            {accountMenuOpen && <button type="button" aria-label="关闭账户菜单" className="fixed inset-0 z-40 cursor-default bg-transparent" onClick={() => setAccountMenuOpen(false)} />}
+            <button
+              type="button"
+              aria-label={songRecordSession ? `打开账户菜单，当前账号 ${maskSongRecordAccount(songRecordSession.alias)}` : '打开账户菜单，当前为游客浏览'}
+              aria-expanded={accountMenuOpen}
+              onClick={() => setAccountMenuOpen((open) => !open)}
+              className="relative z-50 grid h-11 w-11 place-items-center bg-transparent text-white/80 transition hover:text-orange-100"
+            >
+              <Menu className="h-6 w-6" />
+            </button>
+            {accountMenuOpen && (
+              <div className="absolute right-0 top-full z-50 mt-3 w-56 overflow-hidden rounded-[1.35rem] border border-orange-200/15 bg-[#fbf7ef]/95 text-slate-900 shadow-[0_26px_80px_rgba(0,0,0,0.45)] backdrop-blur-2xl">
+                <div className="px-5 py-4">
+                  <p className="flex items-center gap-2 text-xs font-bold text-slate-500"><UserRound className="h-3.5 w-3.5" />当前账号</p>
+                  <p className="mt-2 break-all text-base font-black tracking-tight text-slate-950">{songRecordSession?.alias ?? '游客浏览'}</p>
+                </div>
+                <div className="border-t border-slate-900/10 py-1.5">
+                  <button
+                    type="button"
+                    onClick={openCardDrawProject}
+                    title={`打开本机抽卡项目：${CARD_DRAW_PROJECT_PATH}`}
+                    className="flex w-full items-center gap-3 px-5 py-3 text-left text-sm font-bold text-slate-700 transition hover:bg-orange-100/80 hover:text-orange-700"
+                  >
+                    <Sparkles className="h-4 w-4 text-emerald-600" />抽卡
+                  </button>
+                </div>
+                <div className="border-t border-slate-900/10 py-1.5">
+                  <button
+                    type="button"
+                    disabled={!songRecordSession}
+                    onClick={logoutSongRecordSession}
+                    className="flex w-full items-center gap-3 px-5 py-3 text-left text-sm font-bold text-red-500 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent"
+                  >
+                    <LogOut className="h-4 w-4" />退出登录
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </header>
 
         {selectedSong ? (
@@ -1968,11 +2082,27 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                         className={`space-y-3 ${paginatedPersonalRanking.items.length > PERSONAL_RANKING_SCROLL_THRESHOLD ? 'max-h-[42rem] overflow-y-auto overscroll-contain pr-2' : ''}`}
                       >{paginatedPersonalRanking.items.map(({ song, score, practiceCount, originalRank }) => {
                       const quality = getMatchQuality(Math.round(score));
+                      const isInLatestRoadshow = Boolean(latestRoadshow && prepareLatestRoadshowPerformanceSong([latestRoadshow], song).kind === 'duplicate');
+                      const isSelectedForRoadshow = selectedPersonalRankingSongIds.includes(song.id);
                       return (
-                        <li key={song.id} className="flex items-center gap-4 rounded-2xl border border-white/10 bg-white/[.035] p-4">
+                        <li key={song.id} className={`flex items-center gap-4 rounded-2xl border p-4 transition ${isSelectedForRoadshow ? 'border-orange-200/45 bg-orange-300/[.08] shadow-[0_0_18px_rgba(253,186,116,.08)]' : 'border-white/10 bg-white/[.035]'}`}>
                           <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-full font-serif font-black ${RANKING_MEDAL_CLASSES[getRankingMedalTone(originalRank - 1, personalRankingPodiumSize)]}`}>{originalRank}</span>
                           <button type="button" disabled={!canOpenPracticeDetails} onClick={() => openPracticeSongDetail(song)} title={canOpenPracticeDetails ? '查看我的私人练习档案' : '登录本人私有空间后可查看详情'} className={`min-w-0 flex-1 text-left ${canOpenPracticeDetails ? '' : 'cursor-default'}`}><p className={`truncate font-bold ${canOpenPracticeDetails ? 'hover:text-orange-100' : ''}`}>{song.title}</p><p className="truncate text-xs text-white/40">{canOpenPracticeDetails ? `${song.artist} · 练习 ${practiceCount} 次` : song.artist}</p></button>
                           <span className="flex shrink-0 items-center gap-3">
+                            {canManageFeaturedSongs && personalRankingSelectMode ? (
+                              <button type="button" aria-pressed={isSelectedForRoadshow} aria-label={isSelectedForRoadshow ? `取消选择${song.title}` : `选择${song.title}`} title={isInLatestRoadshow ? '已加入最新路演' : isSelectedForRoadshow ? '取消选择' : '选择后批量加入'} disabled={isInLatestRoadshow || Boolean(roadshowBusyId)} onClick={(event) => {
+                                event.stopPropagation();
+                                setSelectedPersonalRankingSongIds((current) => (
+                                  current.includes(song.id) ? current.filter((songId) => songId !== song.id) : [...current, song.id]
+                                ));
+                              }} className={`grid h-8 w-8 shrink-0 place-items-center rounded-full border transition disabled:cursor-default disabled:opacity-45 ${isInLatestRoadshow ? 'border-orange-200/25 bg-orange-300/15 text-orange-100' : isSelectedForRoadshow ? 'border-orange-200/55 bg-orange-300 text-black' : 'border-orange-200/20 bg-orange-300/10 text-orange-100 hover:bg-orange-300/20'}`}>
+                                {isInLatestRoadshow || isSelectedForRoadshow ? <Check className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
+                              </button>
+                            ) : canManageFeaturedSongs && (
+                              <button type="button" aria-label={`将${song.title}加入最新路演`} title={isInLatestRoadshow ? '已加入最新路演' : latestRoadshow ? '加入最新路演' : '尚未创建路演'} disabled={!latestRoadshow || isInLatestRoadshow || Boolean(roadshowBusyId)} onClick={(event) => { event.stopPropagation(); void addSongToLatestRoadshowPerformance(song); }} className={`grid h-8 w-8 shrink-0 place-items-center rounded-full border transition disabled:cursor-default disabled:opacity-45 ${isInLatestRoadshow ? 'border-orange-200/25 bg-orange-300/15 text-orange-100' : 'border-orange-200/20 bg-orange-300/10 text-orange-100 hover:bg-orange-300/20'}`}>
+                                {isInLatestRoadshow ? <Check className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
+                              </button>
+                            )}
                             <em className={`practice-quality ${quality?.tone ?? 'white'}`}>{quality?.label ?? '—'}</em>
                             <strong className="font-serif text-xl text-orange-200">{score}<small className="ml-1 font-sans text-[10px] font-normal text-white/30">匹配度</small></strong>
                           </span>
@@ -1987,6 +2117,25 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                             <strong className="min-w-14 text-center font-bold text-white/70">{paginatedPersonalRanking.page} / {paginatedPersonalRanking.pageCount}</strong>
                             <button type="button" aria-label="下一页练习榜" disabled={paginatedPersonalRanking.page === paginatedPersonalRanking.pageCount} onClick={() => setPersonalRankingPage((current) => Math.min(paginatedPersonalRanking.pageCount, current + 1))} className="grid h-8 w-8 place-items-center rounded-full text-white/60 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-20"><ChevronRight className="h-4 w-4" /></button>
                           </span>
+                          {canManageFeaturedSongs && (
+                            <span className="flex items-center gap-2 rounded-full border border-orange-200/15 bg-orange-300/10 p-1">
+                              {personalRankingSelectMode && (
+                                <>
+                                  <button type="button" aria-label="退出练习榜多选" onClick={() => { setPersonalRankingSelectMode(false); setSelectedPersonalRankingSongIds([]); }} className="grid h-8 w-8 place-items-center rounded-full text-white/55 transition hover:bg-white/10 hover:text-white"><X className="h-3.5 w-3.5" /></button>
+                                  <strong className="min-w-6 text-center text-[11px] font-black tabular-nums text-orange-100">{selectedPersonalRankingSongIds.length}</strong>
+                                </>
+                              )}
+                              <button type="button" aria-pressed={personalRankingSelectMode} aria-label={personalRankingSelectMode ? '将选中的练习榜歌曲加入最新路演' : '练习榜多选加入最新路演'} title={personalRankingSelectMode ? '加入所选歌曲' : latestRoadshow ? '多选加入最新路演' : '尚未创建路演'} disabled={!latestRoadshow || Boolean(roadshowBusyId)} onClick={() => {
+                                if (!personalRankingSelectMode) {
+                                  setPersonalRankingSelectMode(true);
+                                  return;
+                                }
+                                void addSelectedPersonalRankingSongsToLatestRoadshow();
+                              }} className={`grid h-8 w-8 place-items-center rounded-full border transition disabled:cursor-not-allowed disabled:opacity-35 ${personalRankingSelectMode ? 'border-orange-200/55 bg-orange-300 text-black hover:bg-orange-200' : 'border-orange-200/20 bg-black/25 text-orange-100 hover:bg-orange-300/20'}`}>
+                                {personalRankingSelectMode ? <Plus className="h-3.5 w-3.5" /> : <ListOrdered className="h-3.5 w-3.5" />}
+                              </button>
+                            </span>
+                          )}
                         </nav>
                       )}
                     </> : <div className="grid min-h-64 place-items-center text-center text-white/40"><div><Target className="mx-auto h-9 w-9 opacity-40" /><p className="mt-3">{songRecordSession ? personalRankingArtist ? `${personalRankingArtist}还没有练习记录` : '还没有练习记录' : publicRankingStatus || (personalRankingArtist ? `${personalRankingArtist}暂无公开排行` : '暂无公开排行')}</p></div></div>

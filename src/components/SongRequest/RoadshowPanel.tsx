@@ -727,6 +727,93 @@ const RECOGNITION_LEVEL_STYLES: Record<QuizLevel, string> = {
   hell: 'border-rose-300/20 bg-rose-400/[.045] text-rose-100',
 };
 
+const RECOGNITION_PARTICIPATION_DRAFT_KEY = 'jieyou-recognition-participation-draft-v1';
+
+interface RecognitionParticipationDraft {
+  participating: boolean;
+  joining: boolean;
+  participantInput: string;
+  participantName: string;
+  selectedSongIds: string[];
+  attemptIds: Record<string, string>;
+  answers: Record<string, boolean>;
+  quizPages: Record<QuizLevel, number>;
+}
+
+const createEmptyRecognitionParticipationDraft = (): RecognitionParticipationDraft => ({
+  participating: false,
+  joining: false,
+  participantInput: '',
+  participantName: '',
+  selectedSongIds: [],
+  attemptIds: {},
+  answers: {},
+  quizPages: { warmup: 1, standard: 1, hard: 1, hell: 1 },
+});
+
+const getRecognitionParticipationDraftKey = (recordId: string) => `${RECOGNITION_PARTICIPATION_DRAFT_KEY}:${recordId}`;
+
+const readStringArray = (value: unknown): string[] => (
+  Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+);
+
+const readStringMap = (value: unknown): Record<string, string> => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === 'string'));
+};
+
+const readBooleanMap = (value: unknown): Record<string, boolean> => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, boolean] => typeof entry[1] === 'boolean'));
+};
+
+const readQuizPages = (value: unknown): Record<QuizLevel, number> => {
+  const fallback = createEmptyRecognitionParticipationDraft().quizPages;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return fallback;
+  return QUIZ_LEVELS.reduce((pages, level) => {
+    const raw = (value as Record<string, unknown>)[level.id];
+    pages[level.id] = typeof raw === 'number' && Number.isFinite(raw) && raw >= 1 ? Math.floor(raw) : 1;
+    return pages;
+  }, { ...fallback });
+};
+
+const readRecognitionParticipationDraft = (recordId: string): RecognitionParticipationDraft => {
+  if (typeof window === 'undefined') return createEmptyRecognitionParticipationDraft();
+  try {
+    const raw = window.sessionStorage.getItem(getRecognitionParticipationDraftKey(recordId));
+    if (!raw) return createEmptyRecognitionParticipationDraft();
+    const parsed = JSON.parse(raw) as Partial<RecognitionParticipationDraft>;
+    return {
+      participating: parsed.participating === true,
+      joining: parsed.joining === true,
+      participantInput: typeof parsed.participantInput === 'string' ? parsed.participantInput : '',
+      participantName: typeof parsed.participantName === 'string' ? parsed.participantName : '',
+      selectedSongIds: readStringArray(parsed.selectedSongIds),
+      attemptIds: readStringMap(parsed.attemptIds),
+      answers: readBooleanMap(parsed.answers),
+      quizPages: readQuizPages(parsed.quizPages),
+    };
+  } catch {
+    return createEmptyRecognitionParticipationDraft();
+  }
+};
+
+const saveRecognitionParticipationDraft = (recordId: string, draft: RecognitionParticipationDraft) => {
+  if (typeof window === 'undefined') return;
+  const empty = !draft.participating
+    && !draft.joining
+    && !draft.selectedSongIds.length
+    && Object.keys(draft.attemptIds).length === 0
+    && Object.keys(draft.answers).length === 0
+    && !draft.participantInput
+    && !draft.participantName;
+  try {
+    const key = getRecognitionParticipationDraftKey(recordId);
+    if (empty) window.sessionStorage.removeItem(key);
+    else window.sessionStorage.setItem(key, JSON.stringify(draft));
+  } catch {}
+};
+
 const RecognitionSongListEditor = ({ record, assignments, allRecords, catalogSongs, busy, onSave, onRecordAttempt, onOpenSongDetail }: {
   record: RoadshowRecord;
   assignments: QuizAssignments;
@@ -738,17 +825,18 @@ const RecognitionSongListEditor = ({ record, assignments, allRecords, catalogSon
   onOpenSongDetail: (song: RoadshowSong) => void;
 }) => {
   const songs = record.recognitionSongs;
+  const initialParticipationDraft = readRecognitionParticipationDraft(record.id);
   const [inheritanceMessage, setInheritanceMessage] = useState('');
   const [songEditMode, setSongEditMode] = useState(false);
-  const [participating, setParticipating] = useState(false);
-  const [joining, setJoining] = useState(false);
-  const [participantInput, setParticipantInput] = useState('');
-  const [participantName, setParticipantName] = useState('');
+  const [participating, setParticipating] = useState(initialParticipationDraft.participating);
+  const [joining, setJoining] = useState(initialParticipationDraft.joining);
+  const [participantInput, setParticipantInput] = useState(initialParticipationDraft.participantInput);
+  const [participantName, setParticipantName] = useState(initialParticipationDraft.participantName);
   const [deletingParticipants, setDeletingParticipants] = useState(false);
-  const [selectedSongIds, setSelectedSongIds] = useState<string[]>([]);
-  const [attemptIds, setAttemptIds] = useState<Record<string, string>>({});
-  const [answers, setAnswers] = useState<Record<string, boolean>>({});
-  const [quizPages, setQuizPages] = useState<Record<QuizLevel, number>>({ warmup: 1, standard: 1, hard: 1, hell: 1 });
+  const [selectedSongIds, setSelectedSongIds] = useState<string[]>(initialParticipationDraft.selectedSongIds);
+  const [attemptIds, setAttemptIds] = useState<Record<string, string>>(initialParticipationDraft.attemptIds);
+  const [answers, setAnswers] = useState<Record<string, boolean>>(initialParticipationDraft.answers);
+  const [quizPages, setQuizPages] = useState<Record<QuizLevel, number>>(initialParticipationDraft.quizPages);
   const groups = groupRoadshowRecognitionSongs(songs, assignments);
   const selectedSongs = selectedSongIds.flatMap((songId) => {
     const song = songs.find((item) => item.id === songId);
@@ -760,18 +848,32 @@ const RecognitionSongListEditor = ({ record, assignments, allRecords, catalogSon
   const previousQuizSongs = summarizePreviousQuizSongs(record.recognitionAttempts ?? [], Object.values(attemptIds));
 
   useEffect(() => {
+    const draft = readRecognitionParticipationDraft(record.id);
     setInheritanceMessage('');
     setSongEditMode(false);
-    setParticipating(false);
-    setJoining(false);
-    setParticipantInput('');
-    setParticipantName('');
+    setParticipating(draft.participating);
+    setJoining(draft.joining);
+    setParticipantInput(draft.participantInput);
+    setParticipantName(draft.participantName);
     setDeletingParticipants(false);
-    setSelectedSongIds([]);
-    setAttemptIds({});
-    setAnswers({});
-    setQuizPages({ warmup: 1, standard: 1, hard: 1, hell: 1 });
+    setSelectedSongIds(draft.selectedSongIds);
+    setAttemptIds(draft.attemptIds);
+    setAnswers(draft.answers);
+    setQuizPages(draft.quizPages);
   }, [record.id]);
+
+  useEffect(() => {
+    saveRecognitionParticipationDraft(record.id, {
+      participating,
+      joining,
+      participantInput,
+      participantName,
+      selectedSongIds,
+      attemptIds,
+      answers,
+      quizPages,
+    });
+  }, [answers, attemptIds, joining, participantInput, participantName, participating, quizPages, record.id, selectedSongIds]);
 
   const resetRound = () => {
     setSelectedSongIds([]);
@@ -812,6 +914,7 @@ const RecognitionSongListEditor = ({ record, assignments, allRecords, catalogSon
     setJoining(false);
     setSongEditMode(false);
     setDeletingParticipants(false);
+    setSelectedSongIds([]);
     setAttemptIds({});
     setAnswers({});
   };
@@ -876,7 +979,29 @@ const RecognitionSongListEditor = ({ record, assignments, allRecords, catalogSon
         </div>
       );
     }
-    return <button key={song.id} type="button" aria-label={participating ? `选择${song.title}` : `查看${song.title}详情和谱子`} aria-pressed={participating ? selected : undefined} disabled={participating && !selected && selectedSongIds.length === 4} onClick={() => participating ? toggleSong(song) : onOpenSongDetail(song)} className={`group flex w-full items-center gap-3 rounded-xl border p-3 text-left transition disabled:cursor-default ${selected ? 'border-orange-200/50 bg-orange-300/15 shadow-[0_0_20px_rgba(251,146,60,.08)]' : 'border-white/10 bg-black/25 enabled:hover:border-white/25'}`}><span className="min-w-0 flex-1"><strong className="block truncate text-sm text-white/90">{song.title}</strong><small className="block truncate text-white/35">{song.artist || '未填写歌手'}</small></span><SongAppearanceBadge appearances={appearances} activity="实际答题" />{attemptCount > 0 && <span title="本场实际答题次数" aria-label={`本场实际答题 ${attemptCount} 次`} className="shrink-0 rounded-full border border-white/10 bg-white/[.055] px-2 py-1 text-[10px] font-black tabular-nums text-white/45">{attemptCount}次</span>}{selected && <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-orange-300 text-xs font-black text-black">{selectedSongIds.indexOf(song.id) + 1}</span>}</button>;
+    const selectionDisabled = participating && !selected && selectedSongIds.length === 4;
+    return (
+      <div key={song.id} className={`group flex w-full items-center gap-3 rounded-xl border p-3 text-left transition ${selected ? 'border-orange-200/50 bg-orange-300/15 shadow-[0_0_20px_rgba(251,146,60,.08)]' : 'border-white/10 bg-black/25 hover:border-white/25'}`}>
+        <button type="button" aria-label={`查看${song.title}详情和谱子`} onClick={() => onOpenSongDetail(song)} className="min-w-0 flex-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-orange-300/50">
+          <strong className="block truncate text-sm text-white/90 transition group-hover:text-orange-100">{song.title}</strong>
+          <small className="block truncate text-white/35">{song.artist || '未填写歌手'}</small>
+        </button>
+        <SongAppearanceBadge appearances={appearances} activity="实际答题" />
+        {attemptCount > 0 && <span title="本场实际答题次数" aria-label={`本场实际答题 ${attemptCount} 次`} className="shrink-0 rounded-full border border-white/10 bg-white/[.055] px-2 py-1 text-[10px] font-black tabular-nums text-white/45">{attemptCount}次</span>}
+        {participating && (
+          <button
+            type="button"
+            aria-label={selected ? `取消选择${song.title}` : `选择${song.title}`}
+            aria-pressed={selected}
+            disabled={selectionDisabled}
+            onClick={() => toggleSong(song)}
+            className={`grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs font-black transition disabled:cursor-default disabled:opacity-30 ${selected ? 'bg-orange-300 text-black' : 'border border-orange-200/20 bg-orange-300/10 text-orange-100 hover:bg-orange-300/20'}`}
+          >
+            {selected ? selectedSongIds.indexOf(song.id) + 1 : '+'}
+          </button>
+        )}
+      </div>
+    );
   };
 
   return (

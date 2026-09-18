@@ -179,6 +179,18 @@ test('点歌台首页入口在未登录时先提供用户登录和游客浏览',
   assert.match(entrySource, /registerRoadshowWorkspace\(next, invitationCode\)/)
 })
 
+test('点歌台右上角账号区收纳为菜单并提供抽卡入口', () => {
+  const stationSource = readFileSync(stationUrl, 'utf8')
+
+  assert.match(stationSource, /<Menu className="h-6 w-6" \/>/)
+  assert.match(stationSource, /当前账号/)
+  assert.match(stationSource, /抽卡/)
+  assert.match(stationSource, /退出登录/)
+  assert.match(stationSource, /CARD_DRAW_PROJECT_URL = 'https:\/\/github\.com\/feibo123132\/Mingxinpian'/)
+  assert.match(stationSource, /mt-3 w-56 overflow-hidden/)
+  assert.doesNotMatch(stationSource, /当前：<b/)
+})
+
 test('游客能读取脱敏个人练习榜但不能进入私人歌曲档案', async () => {
   const { parsePublicPracticeRanking } = await import(songRecordsModuleUrl.href)
   const source = readFileSync(stationUrl, 'utf8')
@@ -1140,6 +1152,28 @@ test('个人练习榜在平均匹配值旁显示对应品质', () => {
   assert.match(source, /quality\?\.label \?\? '—'/)
 })
 
+test('个人练习榜每首歌可一键加入最新一次路演', () => {
+  const source = readFileSync(stationUrl, 'utf8')
+
+  assert.match(source, /paginatedPersonalRanking\.items\.map/)
+  assert.match(source, /prepareLatestRoadshowPerformanceSong\(\[latestRoadshow\], song\)\.kind === 'duplicate'/)
+  assert.match(source, /aria-label=\{`将\$\{song\.title\}加入最新路演`\}/)
+  assert.match(source, /addSongToLatestRoadshowPerformance\(song\)/)
+  assert.match(source, /isInLatestRoadshow \? <Check/)
+})
+
+test('个人练习榜支持多选加入最新一次路演', () => {
+  const source = readFileSync(stationUrl, 'utf8')
+
+  assert.match(source, /const \[personalRankingSelectMode, setPersonalRankingSelectMode\] = useState\(false\)/)
+  assert.match(source, /const \[selectedPersonalRankingSongIds, setSelectedPersonalRankingSongIds\] = useState<string\[\]>\(\[\]\)/)
+  assert.match(source, /const selectedPersonalRankingSongs = useMemo/)
+  assert.match(source, /addSelectedPersonalRankingSongsToLatestRoadshow/)
+  assert.match(source, /selectedPersonalRankingSongs\.map\(createRoadshowSong\)/)
+  assert.match(source, /aria-label=\{personalRankingSelectMode \? '将选中的练习榜歌曲加入最新路演' : '练习榜多选加入最新路演'\}/)
+  assert.match(source, /setSelectedPersonalRankingSongIds\(\(current\) =>/)
+})
+
 test('歌手页支持持久排序及上传头像后继续微调', () => {
   const source = readFileSync(stationUrl, 'utf8')
 
@@ -1504,17 +1538,33 @@ test('可按用户名删除本场参与者的全部作答记录', async () => {
   assert.match(recognitionEditor, /确定删除参与用户/)
 })
 
-test('路演听歌识曲歌曲在非答题状态可打开对应详情和谱子', () => {
+test('路演听歌识曲歌曲在答题状态也可打开对应详情和谱子', () => {
   const roadshowPanel = readFileSync(roadshowPanelUrl, 'utf8')
   const station = readFileSync(stationUrl, 'utf8')
   const recognitionEditor = roadshowPanel.slice(roadshowPanel.indexOf('const RecognitionSongListEditor'))
 
   assert.match(roadshowPanel, /onOpenSongDetail\?: \(song: Song\) => void/)
   assert.match(roadshowPanel, /resolveRoadshowSong\(songs, song\)/)
-  assert.match(recognitionEditor, /onClick=\{\(\) => participating \? toggleSong\(song\) : onOpenSongDetail\(song\)\}/)
-  assert.match(recognitionEditor, /disabled=\{participating && !selected && selectedSongIds\.length === 4\}/)
+  assert.match(recognitionEditor, /aria-label=\{`查看\$\{song\.title\}详情和谱子`\}/)
+  assert.match(recognitionEditor, /onClick=\{\(\) => onOpenSongDetail\(song\)\}/)
+  assert.match(recognitionEditor, /aria-label=\{selected \? `取消选择\$\{song\.title\}` : `选择\$\{song\.title\}`\}/)
+  assert.match(recognitionEditor, /onClick=\{\(\) => toggleSong\(song\)\}/)
+  assert.match(recognitionEditor, /const selectionDisabled = participating && !selected && selectedSongIds\.length === 4/)
   assert.match(recognitionEditor, /查看\$\{song\.title\}详情和谱子/)
   assert.match(station, /onOpenSongDetail=\{openSongDetail\}/)
+})
+
+test('路演听歌识曲参与状态在打开谱子详情后可恢复', () => {
+  const source = readFileSync(roadshowPanelUrl, 'utf8')
+  const recognitionEditor = source.slice(source.indexOf('const RecognitionSongListEditor'))
+
+  assert.match(source, /RECOGNITION_PARTICIPATION_DRAFT_KEY = 'jieyou-recognition-participation-draft-v1'/)
+  assert.match(source, /window\.sessionStorage\.getItem\(getRecognitionParticipationDraftKey\(recordId\)\)/)
+  assert.match(source, /saveRecognitionParticipationDraft\(record\.id, \{/)
+  assert.match(recognitionEditor, /const initialParticipationDraft = readRecognitionParticipationDraft\(record\.id\)/)
+  assert.match(recognitionEditor, /setParticipating\(draft\.participating\)/)
+  assert.match(recognitionEditor, /setSelectedSongIds\(draft\.selectedSongIds\)/)
+  assert.match(recognitionEditor, /setSelectedSongIds\(\[\]\);\s*setAttemptIds\(\{\}\);\s*setAnswers\(\{\}\);/)
 })
 
 test('热门歌曲点击后先弹出点歌或查看详情的双操作弹窗', () => {
@@ -1534,13 +1584,13 @@ test('路演识曲面板以参与模式选择四首并在固定判定区记录�
   const source = readFileSync(roadshowPanelUrl, 'utf8')
   const recognitionEditor = source.slice(source.indexOf('const RecognitionSongListEditor'))
 
-  assert.doesNotMatch(recognitionEditor, /<X className=/)
   assert.doesNotMatch(recognitionEditor, /\{songs\.length\} 首/)
   assert.match(recognitionEditor, />参与</)
   assert.match(recognitionEditor, /participantName/)
   assert.match(recognitionEditor, /maxLength=\{24\}/)
   assert.match(recognitionEditor, />开始答题</)
   assert.match(recognitionEditor, /selectedSongIds\.length === 4/)
+  assert.match(recognitionEditor, /aria-label=\{selected \? `取消选择\$\{song\.title\}` : `选择\$\{song\.title\}`\}/)
   assert.match(recognitionEditor, /aria-label=\{`将\$\{song\.title\}标记为答错`\}/)
   assert.match(recognitionEditor, /aria-label=\{`将\$\{song\.title\}标记为答对`\}/)
   assert.match(recognitionEditor, /❌/)
