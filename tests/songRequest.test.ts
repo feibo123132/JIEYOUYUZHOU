@@ -2075,7 +2075,11 @@ test('歌曲详情页在路演右侧用谱子标签承载上传与翻谱功能',
   assert.doesNotMatch(panel, /打开翻谱器/)
   assert.doesNotMatch(panel, /添加页面/)
   assert.match(panel, /<FileText className="h-4 w-4" \/>歌词/)
+  assert.match(panel, /const \[lyricsEditorOpen, setLyricsEditorOpen\] = useState\(false\)/)
+  assert.match(panel, /const \[lyricsDraft, setLyricsDraft\] = useState\(score\?\.lyrics \?\? ''\)/)
+  assert.match(panel, /const next = withSongLyrics\(song, score, lyricsDraft\)/)
   assert.match(panel, /保存歌词/)
+  assert.match(panel, /placeholder="在这里输入歌词，可以分段换行……"/)
 })
 
 test('谱子经已认证云函数上传并只把文件引用写入云端记录', () => {
@@ -2126,7 +2130,13 @@ test('歌曲详情返回时恢复进入前的榜单歌手热门或识曲来源�
   const source = readFileSync(stationUrl, 'utf8')
   const goBackBody = source.match(/const goBack = \(\) => \{([\s\S]*?)\n  \};/)?.[1] ?? ''
 
-  assert.match(goBackBody, /if \(selectedSong\) \{\s*setSelectedSong\(null\);\s*return;/)
+  assert.match(source, /const songDetailReturnScrollRef = useRef<number \| null>\(null\)/)
+  assert.match(source, /songDetailReturnScrollRef\.current = typeof window === 'undefined' \? null : window\.scrollY/)
+  assert.match(goBackBody, /if \(selectedSong\) \{/)
+  assert.match(goBackBody, /const returnScrollY = songDetailReturnScrollRef\.current/)
+  assert.match(goBackBody, /setSelectedSong\(null\)/)
+  assert.match(goBackBody, /window\.requestAnimationFrame\(\(\) => \{/)
+  assert.match(goBackBody, /window\.scrollTo\(\{ top: returnScrollY, left: 0, behavior: 'auto' \}\)/)
   assert.doesNotMatch(goBackBody, /setActiveSection\('artists'\)/)
   assert.doesNotMatch(goBackBody, /setSelectedArtist\(song\.artist\)/)
   assert.match(source, /const detailBackLabel = selectedSong/)

@@ -229,6 +229,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   const [rankingArtistQuery, setRankingArtistQuery] = useState('');
   const [selectedArtist, setSelectedArtist] = useState<string | null>(null);
   const [selectedSong, setSelectedSong] = useState<Song | null>(null);
+  const songDetailReturnScrollRef = useRef<number | null>(null);
   // Keep the source tab while the archive panel is unmounted for song details.
   const [roadshowEditorTab, setRoadshowEditorTab] = useState<RoadshowEditorTab>('performance');
   const [popularActionSong, setPopularActionSong] = useState<Song | null>(null);
@@ -1010,6 +1011,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
 
   const openSongDetail = (song: Song) => {
     if (isFeaturedSongManager(songRecordSession?.alias)) { try { setRoadshowArchives(parseRoadshowCache(window.localStorage.getItem(ROADSHOW_CACHE_KEY))); } catch {} }
+    songDetailReturnScrollRef.current = typeof window === 'undefined' ? null : window.scrollY;
     setSelectedSong(song);
   };
   const canOpenPracticeDetails = Boolean(songRecordSession);
@@ -1237,7 +1239,14 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
 
   const goBack = () => {
     if (selectedSong) {
+      const returnScrollY = songDetailReturnScrollRef.current;
       setSelectedSong(null);
+      songDetailReturnScrollRef.current = null;
+      if (typeof window !== 'undefined' && returnScrollY !== null) {
+        window.requestAnimationFrame(() => {
+          window.requestAnimationFrame(() => window.scrollTo({ top: returnScrollY, left: 0, behavior: 'auto' }));
+        });
+      }
       return;
     }
     if (activeSection === null) return onBack();

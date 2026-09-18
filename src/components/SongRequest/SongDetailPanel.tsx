@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from 'react';
-import { CalendarDays, ChevronDown, ChevronUp, Cloud, Disc3, Guitar, MessageCircle, Music4, Save, Target, Trash2, Upload } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { CalendarDays, ChevronDown, ChevronUp, Cloud, Disc3, FileText, Guitar, MessageCircle, Music4, Save, Target, Trash2, Upload } from 'lucide-react';
 import { isFeaturedSongManager } from './songRequest';
 import type { Song } from './songCatalog';
 import { findSongRoadshowHistory, type RoadshowRecord } from './roadshow';
@@ -7,7 +7,7 @@ import { QUIZ_LEVELS, type QuizLevel } from './songQuizLibrary';
 import ScoreViewer from './ScoreViewer';
 import {
   appendSongScorePages, compressScoreImage, getSongScoreDisplayPages, moveSongScorePage,
-  removeSongScorePage, SCORE_PAGE_LIMIT, SCORE_PAGES_TOTAL_LIMIT, type SongScore,
+  removeSongScorePage, SCORE_PAGE_LIMIT, SCORE_PAGES_TOTAL_LIMIT, withSongLyrics, type SongScore,
 } from './songScores';
 import { useResolvedScorePages } from './useResolvedScorePages';
 import {
@@ -102,6 +102,8 @@ const SongDetailPanel = ({
   const [message, setMessage] = useState('');
   const [quizMenuOpen, setQuizMenuOpen] = useState(false);
   const [scoreViewerOpen, setScoreViewerOpen] = useState(false);
+  const [lyricsEditorOpen, setLyricsEditorOpen] = useState(false);
+  const [lyricsDraft, setLyricsDraft] = useState(score?.lyrics ?? '');
   const [scoreBusyLocal, setScoreBusyLocal] = useState('');
   const scoreFileRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLDivElement>(null);
@@ -112,6 +114,10 @@ const SongDetailPanel = ({
     score?.pages ?? [],
     score ? getSongScoreDisplayPages(score) : [],
   );
+
+  useEffect(() => {
+    setLyricsDraft(score?.lyrics ?? '');
+  }, [score?.lyrics, song.id]);
 
   const commitSaved = (saved: SongRecord) => {
     const next = sortSongRecords([...records.filter((record) => record.id !== saved.id), saved]);
@@ -252,6 +258,14 @@ const SongDetailPanel = ({
     onScoreChange(song.id, score?.lyrics?.trim() ? { ...score, pages: [], pageUrls: [], pendingSync: true, updatedAt: new Date().toISOString() } : null);
   };
 
+  const saveLyrics = () => {
+    const next = withSongLyrics(song, score, lyricsDraft);
+    onScoreChange(song.id, next);
+    setLyricsDraft(next?.lyrics ?? '');
+    setLyricsEditorOpen(Boolean(next?.lyrics?.trim()));
+    setMessage(next?.lyrics?.trim() ? '歌词已保存，正在同步到云端' : '歌词已清空');
+  };
+
   const copyOwnerScore = async () => {
     if (!session || isOwner || scoreBusy || scoreBusyLocal || scorePages.length || score?.lyrics?.trim()) return;
     setScoreBusyLocal('正在复制站主谱子…');
@@ -362,6 +376,16 @@ const SongDetailPanel = ({
                 <Music4 className="h-4 w-4" />打开谱子
               </button>
             )}
+            {(session || score?.lyrics?.trim()) && (
+              <button
+                type="button"
+                aria-pressed={lyricsEditorOpen}
+                onClick={() => setLyricsEditorOpen((open) => !open)}
+                className={`inline-flex h-11 items-center gap-2 rounded-full border px-5 text-sm font-black transition ${lyricsEditorOpen ? 'border-orange-300/45 bg-orange-300 text-black' : 'border-white/10 bg-black/25 text-white/70 hover:border-orange-200/30 hover:text-white'}`}
+              >
+                <FileText className="h-4 w-4" />歌词
+              </button>
+            )}
             {session && !isOwner && <button type="button" disabled={Boolean(scoreBusy || scoreBusyLocal || scorePages.length || score?.lyrics?.trim())} onClick={() => void copyOwnerScore()} className="inline-flex h-11 items-center gap-2 rounded-full border border-orange-200/30 bg-orange-300/10 px-5 text-sm font-black text-orange-100 disabled:opacity-40">一键扒谱</button>}
             {session && <><label
               className={`inline-flex h-11 cursor-pointer items-center gap-2 rounded-full border px-5 text-sm font-black transition ${scorePages.length ? 'border-white/10 bg-black/25 text-white/70 hover:border-orange-200/30 hover:text-white' : 'border-orange-300/45 bg-orange-300 text-black hover:bg-orange-300/90'}`}
@@ -379,6 +403,29 @@ const SongDetailPanel = ({
           </div>
         </div>
         {(scoreWorking || scorePending) && <p aria-live="polite" className="mt-3 text-[11px] font-bold text-orange-100/55">{scoreWorking || '仅保存在本机，等待同步'}</p>}
+        {lyricsEditorOpen && (
+          <div className="mt-5 rounded-2xl border border-orange-200/15 bg-orange-300/[.045] p-4">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="font-serif text-xl font-black">专属歌词</h3>
+                <p className="mt-1 text-xs text-white/35">{session ? '可以只给需要的歌曲补歌词，支持分段换行。' : '当前歌词仅供查看。'}</p>
+              </div>
+              {session && <button type="button" disabled={Boolean(scoreBusy || scoreBusyLocal)} onClick={saveLyrics} className="inline-flex h-10 items-center gap-2 rounded-full bg-orange-300 px-4 text-xs font-black text-black transition hover:bg-orange-200 disabled:cursor-not-allowed disabled:opacity-40"><Save className="h-3.5 w-3.5" />保存歌词</button>}
+            </div>
+            {session ? (
+              <textarea
+                value={lyricsDraft}
+                onChange={(event) => setLyricsDraft(event.target.value)}
+                maxLength={12_000}
+                placeholder="在这里输入歌词，可以分段换行……"
+                className="min-h-56 w-full resize-y rounded-2xl border border-white/10 bg-black/35 p-4 text-sm leading-7 text-white outline-none transition placeholder:text-white/20 focus:border-orange-300/45"
+              />
+            ) : (
+              <pre className="max-h-[32rem] overflow-y-auto whitespace-pre-wrap rounded-2xl border border-white/10 bg-black/35 p-4 text-sm leading-7 text-white/75">{score?.lyrics}</pre>
+            )}
+            {session && <p className="mt-2 text-right text-[10px] font-bold text-white/30">{lyricsDraft.length} / 12000</p>}
+          </div>
+        )}
         {scorePages.length ? (
           <>
             <ol className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
