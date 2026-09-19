@@ -7,6 +7,7 @@ export interface SongScore {
   songArtist: string;
   pages: string[];
   lyrics?: string;
+  scoreNote?: string;
   pageUrls?: string[];
   pendingSync?: boolean;
   updatedAt: string;
@@ -54,7 +55,8 @@ export const isValidSongScore = (value: unknown): value is SongScore => {
     && score.pages.every(isScorePage)
     && score.pages.join('').length <= SCORE_PAGES_TOTAL_LIMIT
     && (score.lyrics === undefined || (typeof score.lyrics === 'string' && score.lyrics.length <= 12_000))
-    && (score.pages.length >= 1 || Boolean(score.lyrics?.trim()))
+    && (score.scoreNote === undefined || (typeof score.scoreNote === 'string' && score.scoreNote.length <= 500))
+    && (score.pages.length >= 1 || Boolean(score.lyrics?.trim()) || Boolean(score.scoreNote?.trim()))
     && (score.pageUrls === undefined || (
       Array.isArray(score.pageUrls)
       && score.pageUrls.length === score.pages.length
@@ -79,7 +81,7 @@ export const buildSongScore = (song: Song, pages: string[]): SongScore => ({
 
 export const withSongLyrics = (song: Song, score: SongScore | null | undefined, lyrics: string): SongScore | null => {
   const normalized = lyrics.trim();
-  if (!normalized && !(score?.pages.length)) return null;
+  if (!normalized && !(score?.pages.length) && !score?.scoreNote?.trim()) return null;
   return {
     ...(score ?? buildSongScore(song, [])),
     id: `score-${song.id}`,
@@ -87,6 +89,20 @@ export const withSongLyrics = (song: Song, score: SongScore | null | undefined, 
     songTitle: song.title,
     songArtist: song.artist,
     lyrics: normalized || undefined,
+    updatedAt: new Date().toISOString(),
+  };
+};
+
+export const withSongScoreNote = (song: Song, score: SongScore | null | undefined, scoreNote: string): SongScore | null => {
+  const normalized = scoreNote.trim();
+  if (!normalized && !(score?.pages.length) && !score?.lyrics?.trim()) return null;
+  return {
+    ...(score ?? buildSongScore(song, [])),
+    id: `score-${song.id}`,
+    songId: song.id,
+    songTitle: song.title,
+    songArtist: song.artist,
+    scoreNote: normalized || undefined,
     updatedAt: new Date().toISOString(),
   };
 };
@@ -145,6 +161,7 @@ export const toStoredSongScore = (score: SongScore): StoredSongScore => ({
   songArtist: score.songArtist,
   pages: score.pages,
   ...(score.lyrics?.trim() ? { lyrics: score.lyrics.trim() } : {}),
+  ...(score.scoreNote?.trim() ? { scoreNote: score.scoreNote.trim() } : {}),
   updatedAt: score.updatedAt,
 });
 

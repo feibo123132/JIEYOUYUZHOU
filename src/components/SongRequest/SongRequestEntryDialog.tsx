@@ -59,8 +59,8 @@ const SongRequestEntryDialog = ({
 
         <div className="relative">
           <div className="grid h-14 w-14 place-items-center rounded-2xl border border-orange-200/20 bg-orange-300/10 text-orange-200"><Lock className="h-6 w-6" /></div>
-          <h2 id="song-request-entry-title" className="mt-5 font-serif text-3xl font-black">进入点歌台</h2>
-          <p className="mt-2 text-sm leading-7 text-white/45">登录后会进入你的私人记录；也可以先用游客身份浏览点歌榜、歌单和公开谱子。</p>
+          <h2 id="song-request-entry-title" className="mt-5 font-serif text-3xl font-black">点歌台</h2>
+          <p className="mt-2 text-sm leading-7 text-white/45">用户登录后进入私人点歌台，也可以用游客身份浏览公开吉他谱等。</p>
 
           <div className="mt-6 grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-black/30 p-1">
             <button type="button" onClick={() => setMessage('')} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-orange-300 text-sm font-black text-black transition">
@@ -79,7 +79,7 @@ const SongRequestEntryDialog = ({
             </div>
             <p className="mt-2 text-xs text-white/45">新账号须先向站主申请邀请码；已有账号直接进入。</p>
             <div className="mt-5 grid gap-3 sm:grid-cols-2">
-              <button type="submit" disabled={busy} className="h-12 rounded-xl bg-orange-400 font-black text-black transition hover:bg-orange-300 disabled:opacity-50">进入我的档案</button>
+              <button type="submit" disabled={busy} className="h-12 rounded-xl bg-orange-400 font-black text-black transition hover:bg-orange-300 disabled:opacity-50">进入我的点歌台</button>
               <button type="button" disabled={busy} onClick={() => void authenticate('register')} className="h-12 rounded-xl border border-white/15 bg-white/5 font-bold text-white/75 transition hover:bg-white/10 disabled:opacity-50">首次启用</button>
             </div>
           </form>

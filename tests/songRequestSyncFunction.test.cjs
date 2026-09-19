@@ -346,8 +346,12 @@ test('谱子云函数逐页接收压缩图片，并只用云存储引用保存�
   assert.deepEqual(validateRequest({ action: 'songScores:save', ...auth, score: { ...storedScore, pages: [], lyrics: '第一句\n第二句' } }).score, {
     ...storedScore, pages: [], lyrics: '第一句\n第二句',
   });
+  assert.deepEqual(validateRequest({ action: 'songScores:save', ...auth, score: { ...storedScore, pages: [], scoreNote: '夹三品，副歌轻一点' } }).score, {
+    ...storedScore, pages: [], scoreNote: '夹三品，副歌轻一点',
+  });
   assert.throws(() => validateRequest({ action: 'songScores:save', ...auth, score: { ...storedScore, pages: [], lyrics: '' } }), /INVALID_SONG_SCORE/);
   assert.throws(() => validateRequest({ action: 'songScores:save', ...auth, score: { ...storedScore, lyrics: 'x'.repeat(12001) } }), /INVALID_SONG_SCORE/);
+  assert.throws(() => validateRequest({ action: 'songScores:save', ...auth, score: { ...storedScore, scoreNote: 'x'.repeat(501) } }), /INVALID_SONG_SCORE/);
 });
 
 test('已认证谱子图片由云函数上传，浏览器不再直传云存储', async () => {

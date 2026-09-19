@@ -460,7 +460,7 @@ test('热评仅替换歌曲副标题，不覆盖分类数据', async () => {
 test('可编辑曲库支持增删歌手和歌曲并本地持久化', async () => {
   const {
     addCatalogArtist, addCatalogSong, createEditableCatalog, loadEditableCatalog,
-    insertCatalogArtist, moveCatalogArtist, removeCatalogArtist, removeCatalogSong, saveEditableCatalog,
+    insertCatalogArtist, moveCatalogArtist, removeCatalogArtist, removeCatalogSong, saveEditableCatalog, updateCatalogSong,
   } = await loadModule()
   const storageValues = new Map<string, string>()
   const storage = {
@@ -473,6 +473,12 @@ test('可编辑曲库支持增删歌手和歌曲并本地持久化', async () =>
   catalog = addCatalogSong(catalog, { id: 'custom:1', title: '新歌', artist: '新歌手', category: '华语流行', featured: false, hotComment: '新热评' })
   assert.deepEqual(catalog.artists, ['周杰伦', 'Coldplay', '新歌手'])
   assert.equal(catalog.songs.at(-1)?.title, '新歌')
+
+  catalog = updateCatalogSong(catalog, 'custom:1', { title: '新歌改名', hotComment: '新的歌名下方文字' })
+  assert.equal(catalog.songs.find((song: { id: string }) => song.id === 'custom:1')?.title, '新歌改名')
+  assert.equal(catalog.songs.find((song: { id: string }) => song.id === 'custom:1')?.hotComment, '新的歌名下方文字')
+  catalog = updateCatalogSong(catalog, 'custom:1', { hotComment: '' })
+  assert.equal(catalog.songs.find((song: { id: string }) => song.id === 'custom:1')?.hotComment, undefined)
 
   catalog = moveCatalogArtist(catalog, 'Coldplay', '周杰伦')
   assert.deepEqual(catalog.artists, ['Coldplay', '周杰伦', '新歌手'])
@@ -2077,6 +2083,19 @@ test('歌曲详情页在路演右侧用谱子标签承载上传与翻谱功能',
   assert.match(panel, /<FileText className="h-4 w-4" \/>歌词/)
   assert.match(panel, /const \[lyricsEditorOpen, setLyricsEditorOpen\] = useState\(false\)/)
   assert.match(panel, /const \[lyricsDraft, setLyricsDraft\] = useState\(score\?\.lyrics \?\? ''\)/)
+  assert.match(panel, /const \[scoreNoteDraft, setScoreNoteDraft\] = useState\(score\?\.scoreNote \?\? ''\)/)
+  assert.match(panel, /const \[scoreNoteDirty, setScoreNoteDirty\] = useState\(false\)/)
+  assert.match(panel, /if \(!scoreNoteDirty\) setScoreNoteDraft\(score\?\.scoreNote \?\? ''\)/)
+  assert.match(panel, /setScoreNoteDirty\(true\); setScoreNoteDraft\(event\.target\.value\)/)
+  assert.match(panel, /setScoreNoteDirty\(false\)/)
+  assert.match(panel, /const next = withSongScoreNote\(song, score, scoreNoteDraft\)/)
+  assert.match(panel, /aria-label="谱子说明"/)
+  assert.match(panel, /placeholder="输入任意谱子说明/)
+  assert.match(panel, /disabled=\{!scoreNoteDirty \|\| Boolean\(scoreBusy \|\| scoreBusyLocal\)\}/)
+  assert.match(panel, /onClick=\{saveScoreNote\}/)
+  assert.match(panel, /<Save className="h-3\.5 w-3\.5" \/>保存/)
+  assert.doesNotMatch(panel, /onBlur=\{saveScoreNote\}/)
+  assert.match(panel, /isOwner \? \(/)
   assert.match(panel, /const next = withSongLyrics\(song, score, lyricsDraft\)/)
   assert.match(panel, /保存歌词/)
   assert.match(panel, /placeholder="在这里输入歌词，可以分段换行……"/)
@@ -2094,6 +2113,9 @@ test('谱子经已认证云函数上传并只把文件引用写入云端记录',
   assert.match(cloud, /tcbApp\.deleteFile\(\{ fileList:/)
   assert.match(cloud, /toStoredSongScore\(uploadedScore\)/)
   assert.match(cloud, /parseSongScores\(\[saved\]\)\[0\]/)
+  assert.match(cloud, /const localOnlyText = \{/)
+  assert.match(cloud, /score\.scoreNote\?\.trim\(\) && !synced\.scoreNote\?\.trim\(\)/)
+  assert.match(cloud, /synced = \{ \.\.\.synced, \.\.\.localOnlyText, pendingSync: true \}/)
   assert.match(cloud, /code === 'CLOUD_TIMEOUT'/)
   assert.doesNotMatch(cloud, /callSync<\{ score: SongScore \}>\(\{ action: 'songScores:save', \.\.\.credentials, score \}\)/)
 })
@@ -2107,6 +2129,9 @@ test('谱子界面区分本机待同步与云端成功并自动迁移旧缓存',
   assert.match(station, /syncSongScoreToCloud\(songRecordSession, pendingScore\)/)
   assert.match(station, /\(!previous \|\| previous\.pendingSync\) && !hasCloudSongScore\(previous\)/)
   assert.match(station, /setScoreSyncStatus\('已同步到云端'\)/)
+  assert.match(station, /if \(syncedScore\.pendingSync\) nextSyncStatus = '文字已保存在本机，等待云端更新'/)
+  assert.match(station, /mergedScores\.some\(isPendingSongScore\) \? '文字已保存在本机，等待云端更新'/)
+  assert.match(station, /setScoreSyncStatus\(nextSyncStatus\)/)
   assert.match(station, /setScoreSyncStatus\('云端暂时未连接，谱子仅保存在本机'\)/)
   assert.match(station, /scoreSyncStatus=\{scoreSyncStatus\}/)
   assert.match(panel, /getSongScoreDisplayPages\(score\)/)

@@ -96,7 +96,7 @@ test('云端元数据会剥离临时地址和待同步标记', async () => {
 });
 
 test('歌词可在没有谱页时单独保存，清空歌词不会误删已有谱页', async () => {
-  const { buildSongScore, parseSongScores, toStoredSongScore, withSongLyrics } = await import(moduleUrl.href);
+  const { buildSongScore, parseSongScores, toStoredSongScore, withSongLyrics, withSongScoreNote } = await import(moduleUrl.href);
 
   const lyricsOnly = withSongLyrics(song, null, '第一句\n第二句');
   assert.ok(lyricsOnly);
@@ -112,4 +112,18 @@ test('歌词可在没有谱页时单独保存，清空歌词不会误删已有�
   assert.equal(cleared?.lyrics, undefined);
   assert.deepEqual(cleared?.pages, [cloudPage]);
   assert.equal(withSongLyrics(song, null, ''), null);
+
+  const noteOnly = withSongScoreNote(song, null, '夹三品，副歌轻一点');
+  assert.ok(noteOnly);
+  assert.deepEqual(noteOnly.pages, []);
+  assert.equal(parseSongScores([noteOnly])[0].scoreNote, '夹三品，副歌轻一点');
+  assert.deepEqual(toStoredSongScore(noteOnly), {
+    id: 'score-qing-tian', songId: 'qing-tian', songTitle: '晴天', songArtist: '周杰伦',
+    pages: [], scoreNote: '夹三品，副歌轻一点', updatedAt: noteOnly.updatedAt,
+  });
+
+  const clearedNote = withSongScoreNote(song, { ...scoreWithPage, scoreNote: '原说明' }, '');
+  assert.equal(clearedNote?.scoreNote, undefined);
+  assert.deepEqual(clearedNote?.pages, [cloudPage]);
+  assert.equal(withSongScoreNote(song, null, ''), null);
 });

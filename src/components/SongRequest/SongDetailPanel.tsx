@@ -7,7 +7,7 @@ import { QUIZ_LEVELS, type QuizLevel } from './songQuizLibrary';
 import ScoreViewer from './ScoreViewer';
 import {
   appendSongScorePages, compressScoreImage, getSongScoreDisplayPages, moveSongScorePage,
-  removeSongScorePage, SCORE_PAGE_LIMIT, SCORE_PAGES_TOTAL_LIMIT, withSongLyrics, type SongScore,
+  removeSongScorePage, SCORE_PAGE_LIMIT, SCORE_PAGES_TOTAL_LIMIT, withSongLyrics, withSongScoreNote, type SongScore,
 } from './songScores';
 import { useResolvedScorePages } from './useResolvedScorePages';
 import {
@@ -104,6 +104,8 @@ const SongDetailPanel = ({
   const [scoreViewerOpen, setScoreViewerOpen] = useState(false);
   const [lyricsEditorOpen, setLyricsEditorOpen] = useState(false);
   const [lyricsDraft, setLyricsDraft] = useState(score?.lyrics ?? '');
+  const [scoreNoteDraft, setScoreNoteDraft] = useState(score?.scoreNote ?? '');
+  const [scoreNoteDirty, setScoreNoteDirty] = useState(false);
   const [scoreBusyLocal, setScoreBusyLocal] = useState('');
   const scoreFileRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLDivElement>(null);
@@ -118,6 +120,15 @@ const SongDetailPanel = ({
   useEffect(() => {
     setLyricsDraft(score?.lyrics ?? '');
   }, [score?.lyrics, song.id]);
+
+  useEffect(() => {
+    setScoreNoteDirty(false);
+    setScoreNoteDraft(score?.scoreNote ?? '');
+  }, [song.id]);
+
+  useEffect(() => {
+    if (!scoreNoteDirty) setScoreNoteDraft(score?.scoreNote ?? '');
+  }, [score?.scoreNote, scoreNoteDirty]);
 
   const commitSaved = (saved: SongRecord) => {
     const next = sortSongRecords([...records.filter((record) => record.id !== saved.id), saved]);
@@ -244,7 +255,7 @@ const SongDetailPanel = ({
   const removeScorePage = (index: number) => {
     if (!score) return;
     const next = removeSongScorePage(score, index);
-    if (next.pages.length || next.lyrics?.trim()) onScoreChange(song.id, next);
+    if (next.pages.length || next.lyrics?.trim() || next.scoreNote?.trim()) onScoreChange(song.id, next);
     else onScoreChange(song.id, null);
   };
 
@@ -255,7 +266,15 @@ const SongDetailPanel = ({
 
   const removeAllScorePages = () => {
     if (!scorePages.length || !window.confirm('确定删除这首歌的全部谱子吗？')) return;
-    onScoreChange(song.id, score?.lyrics?.trim() ? { ...score, pages: [], pageUrls: [], pendingSync: true, updatedAt: new Date().toISOString() } : null);
+    onScoreChange(song.id, score?.lyrics?.trim() || score?.scoreNote?.trim() ? { ...score, pages: [], pageUrls: [], pendingSync: true, updatedAt: new Date().toISOString() } : null);
+  };
+
+  const saveScoreNote = () => {
+    const next = withSongScoreNote(song, score, scoreNoteDraft);
+    onScoreChange(song.id, next);
+    setScoreNoteDraft(next?.scoreNote ?? '');
+    setScoreNoteDirty(false);
+    setMessage(next?.scoreNote?.trim() ? '谱子说明已保存，正在同步到云端' : '谱子说明已清空');
   };
 
   const saveLyrics = () => {
@@ -267,7 +286,7 @@ const SongDetailPanel = ({
   };
 
   const copyOwnerScore = async () => {
-    if (!session || isOwner || scoreBusy || scoreBusyLocal || scorePages.length || score?.lyrics?.trim()) return;
+    if (!session || isOwner || scoreBusy || scoreBusyLocal || scorePages.length || score?.lyrics?.trim() || score?.scoreNote?.trim()) return;
     setScoreBusyLocal('正在复制站主谱子…');
     try {
       const copied = await copyOwnerSongScore(session, song.id);
@@ -363,7 +382,29 @@ const SongDetailPanel = ({
             <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-orange-200/15 bg-orange-300/10 text-orange-200"><Music4 className="h-5 w-5" /></span>
             <div>
               <h2 className="font-serif text-2xl font-black">专属谱子</h2>
-              <p className="mt-1 text-xs leading-5 text-white/35">{session ? '把谱子拍下来传到这里（支持拼好的长图）。' : '无需登录，打开谱子即可查看。'}</p>
+              {isOwner ? (
+                <span className="mt-1 flex max-w-xl flex-wrap items-center gap-2">
+                  <input
+                    value={scoreNoteDraft}
+                    onChange={(event) => { setScoreNoteDirty(true); setScoreNoteDraft(event.target.value); }}
+                    onKeyDown={(event) => { if (event.key === 'Enter') saveScoreNote(); }}
+                    maxLength={500}
+                    aria-label="谱子说明"
+                    placeholder="输入任意谱子说明，例如：男调夹几、注意哪一段、演唱提醒……"
+                    className="h-8 min-w-[18rem] flex-1 rounded-lg border border-white/10 bg-black/25 px-3 text-xs font-bold leading-5 text-white/65 outline-none transition placeholder:text-white/25 focus:border-orange-300/45"
+                  />
+                  <button
+                    type="button"
+                    disabled={!scoreNoteDirty || Boolean(scoreBusy || scoreBusyLocal)}
+                    onClick={saveScoreNote}
+                    className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-orange-200/25 bg-orange-300/10 px-3 text-xs font-black text-orange-100 transition hover:bg-orange-300/20 disabled:cursor-not-allowed disabled:opacity-35"
+                  >
+                    <Save className="h-3.5 w-3.5" />保存
+                  </button>
+                </span>
+              ) : (
+                <p className="mt-1 text-xs leading-5 text-white/35">{session ? '把谱子拍下来传到这里（支持拼好的长图）。' : '无需登录，打开谱子即可查看。'}</p>
+              )}
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -386,7 +427,7 @@ const SongDetailPanel = ({
                 <FileText className="h-4 w-4" />歌词
               </button>
             )}
-            {session && !isOwner && <button type="button" disabled={Boolean(scoreBusy || scoreBusyLocal || scorePages.length || score?.lyrics?.trim())} onClick={() => void copyOwnerScore()} className="inline-flex h-11 items-center gap-2 rounded-full border border-orange-200/30 bg-orange-300/10 px-5 text-sm font-black text-orange-100 disabled:opacity-40">一键扒谱</button>}
+            {session && !isOwner && <button type="button" disabled={Boolean(scoreBusy || scoreBusyLocal || scorePages.length || score?.lyrics?.trim() || score?.scoreNote?.trim())} onClick={() => void copyOwnerScore()} className="inline-flex h-11 items-center gap-2 rounded-full border border-orange-200/30 bg-orange-300/10 px-5 text-sm font-black text-orange-100 disabled:opacity-40">一键扒谱</button>}
             {session && <><label
               className={`inline-flex h-11 cursor-pointer items-center gap-2 rounded-full border px-5 text-sm font-black transition ${scorePages.length ? 'border-white/10 bg-black/25 text-white/70 hover:border-orange-200/30 hover:text-white' : 'border-orange-300/45 bg-orange-300 text-black hover:bg-orange-300/90'}`}
             >

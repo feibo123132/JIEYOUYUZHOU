@@ -166,6 +166,7 @@ const buildSeededSongScore = (source, workspaceId, pages, updatedAt) => {
     workspaceId: _sourceWorkspaceId,
     deletedAt: _deletedAt,
     pageUrls: _pageUrls,
+    scoreNote: _scoreNote,
     ...score
   } = source;
   return {
@@ -472,7 +473,7 @@ function createHandler(store) {
 
       if (request.action === 'songScores:copyOwner') {
         const existing = (await store.getSongScores(id)).find(score => score.songId === request.songId && !score.deletedAt);
-        if (existing && (existing.pages?.length || existing.lyrics)) throw new Error('SCORE_ALREADY_EXISTS');
+        if (existing && (existing.pages?.length || existing.lyrics || existing.scoreNote)) throw new Error('SCORE_ALREADY_EXISTS');
         const source = (await store.getSongScores(workspaceId(FEATURED_SONGS_OWNER_ALIAS))).find(score => score.songId === request.songId && !score.deletedAt && score.pages?.length);
         if (!source) throw new Error('SCORE_NOT_FOUND');
         const pages = [];
@@ -748,7 +749,7 @@ exports.main = async (event) => {
         let current;
         try { const result = await ref.get(); current = Array.isArray(result.data) ? result.data[0] : result.data; }
         catch (error) { if (!/not found|does not exist/i.test(String(error?.message))) throw error; }
-        if (current && !current.deletedAt && (current.pages?.length || current.lyrics)) throw new Error('SCORE_ALREADY_EXISTS');
+        if (current && !current.deletedAt && (current.pages?.length || current.lyrics || current.scoreNote)) throw new Error('SCORE_ALREADY_EXISTS');
         await ref.set(value);
       }),
       async uploadSongScorePage(workspaceId, songId, pageContent) {

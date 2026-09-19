@@ -267,8 +267,15 @@ export const syncSongScoreToCloud = async (
     const saved = (await callSync<{ score: SongScore }>({
       action: 'songScores:save', ...credentials, score: toStoredSongScore(uploadedScore),
     })).score;
-    const synced = parseSongScores([saved])[0];
+    let synced = parseSongScores([saved])[0];
     if (!synced) throw new Error('INVALID_SONG_SCORE');
+    const localOnlyText = {
+      ...(score.lyrics?.trim() && !synced.lyrics?.trim() ? { lyrics: score.lyrics } : {}),
+      ...(score.scoreNote?.trim() && !synced.scoreNote?.trim() ? { scoreNote: score.scoreNote } : {}),
+    };
+    if (Object.keys(localOnlyText).length) {
+      synced = { ...synced, ...localOnlyText, pendingSync: true };
+    }
     if (retiredFileIds.length) void deleteSongScoreFiles(retiredFileIds).catch(() => undefined);
     return synced;
   } catch (error) {

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent } from 'react';
 import {
   ArrowLeft, ArrowUpDown, CalendarDays, Check, ChevronLeft, ChevronRight, Disc3, Eye, Guitar,
-  GripVertical, Library, ListOrdered, LogOut, Menu, Mic2, PenLine, Plus, RotateCcw, Search, SlidersHorizontal, Sparkles, Target, Trash2, Trophy, Upload, UserRound, X,
+  GripVertical, Library, ListOrdered, LogIn, LogOut, Menu, Mic2, PenLine, Plus, RotateCcw, Search, SlidersHorizontal, Sparkles, Target, Trash2, Trophy, Upload, UserRound, X,
 } from 'lucide-react';
 import useAppStore from '../../store/appStore';
 import { SONGS, type Song } from './songCatalog';
@@ -11,7 +11,7 @@ import {
   insertCatalogArtist, insertCatalogSong, loadEditableCatalog, loadRoadshowSingCounts, loadSungVoteCounts, loadVoteCounts, rankArtistsByVotes, rankSongsByVotes,
   moveCatalogArtist, moveCatalogSong, removeCatalogArtist, removeCatalogSong, saveEditableCatalog, saveRoadshowSingCounts, saveSungVoteCounts, saveVoteCounts,
   orderPersonalRankingItems, paginateRankingItems, sortCatalogByMatchScore, togglePersonalRankingRandom, togglePersonalRankingReverse,
-  upgradeEditableCatalog,
+  updateCatalogSong, upgradeEditableCatalog,
   type EditableCatalog, type RankingDisplayMode, type VoteCounts, type VoteRequesters,
 } from './songRequest';
 import {
@@ -26,6 +26,7 @@ import {
 } from './songRequestCloud';
 import RoadshowPanel, { type RoadshowEditorTab } from './RoadshowPanel';
 import SongDetailPanel from './SongDetailPanel';
+import SongRequestEntryDialog from './SongRequestEntryDialog';
 import PopularSongBarrage from './PopularSongBarrage';
 import { createInitialBarragePreferences, setBarragePreference } from '../StarrySky/barragePreferences';
 import { calculateAvatarCropLayout } from './avatarCrop';
@@ -301,6 +302,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     typeof window === 'undefined' ? null : readBrowserSongRecordSession()
   ));
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [loginDialogOpen, setLoginDialogOpen] = useState(false);
   const logoutSongRecordSession = useCallback(() => {
     if (!songRecordSession || typeof window === 'undefined') return;
     clearSongRecordCache(window.localStorage, songRecordSession.alias);
@@ -341,6 +343,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   const [artistDropTarget, setArtistDropTarget] = useState<{ artist: string; placement: ArtistDropPlacement } | null>(null);
   const [songOrderMode, setSongOrderMode] = useState(false);
   const [songEditMode, setSongEditMode] = useState(false);
+  const [songEditDrafts, setSongEditDrafts] = useState<Record<string, { title: string; hotComment: string }>>({});
   const [artistEditMode, setArtistEditMode] = useState(false);
   const [showPracticeBadges, setShowPracticeBadges] = useState(() => {
     try { return localStorage.getItem('jieyou_show_practice_badges') !== 'false'; } catch { return true; }
@@ -749,7 +752,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
             migrationFailed = true;
           }
         }
-        if (active) setScoreSyncStatus(migrationFailed ? '云端暂时未连接，谱子仅保存在本机' : '已同步到云端');
+        if (active) setScoreSyncStatus(migrationFailed ? '云端暂时未连接，谱子仅保存在本机' : mergedScores.some(isPendingSongScore) ? '文字已保存在本机，等待云端更新' : '已同步到云端');
       } catch {
         if (active) setScoreSyncStatus('云端暂时未连接，谱子仅保存在本机');
       }
@@ -986,15 +989,17 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     const retiredFileIds = previous?.pages.filter((page) => isCloudScorePage(page) && !retainedFileIds.has(page)) ?? [];
     void (async () => {
       try {
+        let nextSyncStatus = '已同步到云端';
         if (pendingScore) {
           const syncedScore = await syncSongScoreToCloud(songRecordSession, pendingScore, retiredFileIds);
           const syncedScores = [syncedScore, ...updated.filter((score) => score.songId !== songId)];
           setSongScores(syncedScores);
           saveSongScoreCache(window.localStorage, songRecordSession.alias, syncedScores);
+          if (syncedScore.pendingSync) nextSyncStatus = '文字已保存在本机，等待云端更新';
         } else {
           await deleteSongScore(songRecordSession, songId, retiredFileIds);
         }
-        setScoreSyncStatus('已同步到云端');
+        setScoreSyncStatus(nextSyncStatus);
       } catch (error) {
         if (!pendingScore && previous) {
           const restored = [previous, ...updated.filter((score) => score.songId !== songId)];
@@ -1072,8 +1077,47 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     if (!window.confirm(`确定要删除歌曲「${song.title}」吗？`)) return;
     const next = removeCatalogSong(catalog, songId);
     commitCatalog(next);
+    setSongEditDrafts((current) => {
+      const copy = { ...current };
+      delete copy[songId];
+      return copy;
+    });
     syncCurrentArtistSettings(next.artists, customArtistAvatars, avatarAdjustments, next.songs.map((s) => s.id));
     showSyncMessage(`已删除「${song.title}」并同步到站内`);
+  };
+
+  const getSongEditDraft = (song: Song) => songEditDrafts[song.id] ?? { title: song.title, hotComment: song.hotComment ?? '' };
+
+  const updateSongEditDraft = (song: Song, patch: Partial<{ title: string; hotComment: string }>) => {
+    setSongEditDrafts((current) => ({
+      ...current,
+      [song.id]: { ...(current[song.id] ?? { title: song.title, hotComment: song.hotComment ?? '' }), ...patch },
+    }));
+  };
+
+  const commitSongTextEdit = (songId: string) => {
+    if (!requireCatalogManager()) return;
+    const song = catalog.songs.find((item) => item.id === songId);
+    if (!song) return;
+    const draft = songEditDrafts[songId];
+    if (!draft) return;
+    const title = draft.title.trim();
+    const hotComment = draft.hotComment.trim();
+    if (!title) {
+      setSongEditDrafts((current) => ({ ...current, [songId]: { title: song.title, hotComment: song.hotComment ?? '' } }));
+      showSyncMessage('歌名不能为空，已恢复原歌名');
+      return;
+    }
+    if (catalog.songs.some((item) => item.id !== songId && item.artist === song.artist && item.title === title)) {
+      setSongEditDrafts((current) => ({ ...current, [songId]: { title: song.title, hotComment: song.hotComment ?? '' } }));
+      showSyncMessage('同一歌手下已经有这首歌，已恢复原内容');
+      return;
+    }
+    const next = updateCatalogSong(catalog, songId, { title, hotComment });
+    if (next === catalog) return;
+    commitCatalog(next);
+    setSongEditDrafts((current) => ({ ...current, [songId]: { title, hotComment } }));
+    showSyncMessage(`已更新「${title}」并同步到站内`);
   };
 
   const moveVisibleArtist = (artist: string, direction: -1 | 1) => {
@@ -1775,11 +1819,13 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     );
   };
 
-  const SongRows = ({ songs }: { songs: Song[] }) => (
+  // Render inline so draft updates preserve the input DOM and active IME composition.
+  const renderSongRows = (songs: Song[]) => (
     <div className="grid gap-3 sm:grid-cols-2">
       {songs.map((song, index) => {
         const isDragged = draggedSongId === song.id;
         const dropPlacement = songDropTarget?.songId === song.id ? songDropTarget.placement : null;
+        const editDraft = getSongEditDraft(song);
         return (
           <article
             key={song.id}
@@ -1800,6 +1846,30 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
               <span className="min-w-0 flex-1 rounded-xl px-2 py-2 text-left">
                 <span className="flex min-w-0 items-center gap-2"><h3 className="truncate font-bold text-orange-50">{song.title}</h3><PracticeBadges song={song} /></span><p title={song.hotComment} className="mt-1 truncate text-xs text-white/40">{getSongSubtitle(song)}</p>
               </span>
+            ) : songEditMode ? (
+              <div className="min-w-0 flex-1 space-y-1 rounded-xl px-2 py-1.5 text-left">
+                <div className="flex min-w-0 items-center gap-2">
+                  <input
+                    aria-label={`编辑${song.title}歌名`}
+                    value={editDraft.title}
+                    onChange={(event) => updateSongEditDraft(song, { title: event.target.value })}
+                    onBlur={() => commitSongTextEdit(song.id)}
+                    onKeyDown={(event) => { if (event.key === 'Enter' && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) event.currentTarget.blur(); }}
+                    className="min-w-0 flex-1 rounded-lg border border-white/10 bg-black/35 px-2.5 py-1.5 text-sm font-bold text-orange-50 outline-none transition placeholder:text-white/25 focus:border-orange-200/45 focus:bg-black/55"
+                    placeholder="输入歌名"
+                  />
+                  <PracticeBadges song={song} />
+                </div>
+                <input
+                  aria-label={`编辑${song.title}说明`}
+                  value={editDraft.hotComment}
+                  onChange={(event) => updateSongEditDraft(song, { hotComment: event.target.value })}
+                  onBlur={() => commitSongTextEdit(song.id)}
+                  onKeyDown={(event) => { if (event.key === 'Enter' && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) event.currentTarget.blur(); }}
+                  className="w-full rounded-lg border border-white/10 bg-black/25 px-2.5 py-1.5 text-xs text-white/55 outline-none transition placeholder:text-white/25 focus:border-orange-200/35 focus:bg-black/45 focus:text-white/80"
+                  placeholder="输入歌名下方的文字"
+                />
+              </div>
             ) : (
               <button type="button" onClick={() => openSongDetail(song)} className="min-w-0 flex-1 rounded-xl px-2 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-orange-300/50">
                 <span className="flex min-w-0 items-center gap-2"><h3 className="truncate font-bold transition group-hover:text-orange-100">{song.title}</h3><PracticeBadges song={song} /></span><p title={song.hotComment} className="mt-1 truncate text-xs text-white/40">{getSongSubtitle(song)}</p>
@@ -1815,7 +1885,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                 <Trash2 className="h-4 w-4" />
               </button>
             ) : (
-              <span className="flex shrink-0 items-center gap-2"><QuizLevelControl song={song} /><FeaturedSongControl song={song} /><RequestButton song={song} /></span>
+              canManageFeaturedSongs && <span className="flex shrink-0 items-center gap-2"><QuizLevelControl song={song} /><FeaturedSongControl song={song} /><RequestButton song={song} /></span>
             )}
           </article>
         );
@@ -1847,6 +1917,13 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   return (
     <main className={`relative z-20 min-h-screen text-white ${popularImmersive ? 'h-screen overflow-hidden bg-transparent' : 'overflow-y-auto bg-[radial-gradient(circle_at_15%_0%,rgba(249,115,22,.14),transparent_30%),radial-gradient(circle_at_88%_18%,rgba(124,58,237,.12),transparent_28%)] px-4 py-5 sm:px-7 lg:px-10 lg:py-8'}`}>
       <div className="pointer-events-none fixed inset-0 opacity-[.16] [background-image:linear-gradient(rgba(255,255,255,.035)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.035)_1px,transparent_1px)] [background-size:42px_42px]" />
+      {loginDialogOpen && (
+        <SongRequestEntryDialog
+          onClose={() => setLoginDialogOpen(false)}
+          onGuest={() => setLoginDialogOpen(false)}
+          onAuthenticated={() => setLoginDialogOpen(false)}
+        />
+      )}
       {popularImmersive && !songAssistantOpen && (
         <button type="button" aria-label="打开歌曲助手" onClick={() => { (window as any).playClickSound?.(); setSongAssistantOpen(true); }} className="fixed right-4 top-4 z-40 bg-transparent text-3xl drop-shadow-[0_0_14px_rgba(251,191,36,.35)]">
           <span role="img" aria-label="cat" className="breath-slow inline-block transition-transform duration-200 hover:scale-125 hover:rotate-12">🐱</span>
@@ -1921,14 +1998,19 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                   </button>
                 </div>
                 <div className="border-t border-slate-900/10 py-1.5">
-                  <button
+                  {songRecordSession ? <button
                     type="button"
-                    disabled={!songRecordSession}
                     onClick={logoutSongRecordSession}
-                    className="flex w-full items-center gap-3 px-5 py-3 text-left text-sm font-bold text-red-500 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent"
+                    className="flex w-full items-center gap-3 px-5 py-3 text-left text-sm font-bold text-red-500 transition hover:bg-red-50"
                   >
                     <LogOut className="h-4 w-4" />退出登录
-                  </button>
+                  </button> : <button
+                    type="button"
+                    onClick={() => { setAccountMenuOpen(false); setLoginDialogOpen(true); }}
+                    className="flex w-full items-center gap-3 px-5 py-3 text-left text-sm font-bold text-orange-700 transition hover:bg-orange-100/80"
+                  >
+                    <LogIn className="h-4 w-4" />登录账号
+                  </button>}
                 </div>
               </div>
             )}
@@ -2380,9 +2462,9 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                           <PenLine className="h-4 w-4" />编辑
                         </button>
                       )}
-                      <button type="button" aria-label={guestRequesterName ? `当前点歌昵称：${guestRequesterName}` : '输入游客点歌昵称'} onClick={() => openRequesterDialog()} className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-xs font-bold transition ${guestRequesterName ? 'border-orange-200/40 bg-orange-300/20 text-orange-100' : 'border-white/10 bg-black/30 text-white/55 hover:text-white'}`}>
+                      {canManageFeaturedSongs && <button type="button" aria-label={guestRequesterName ? `当前点歌昵称：${guestRequesterName}` : '输入游客点歌昵称'} onClick={() => openRequesterDialog()} className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-xs font-bold transition ${guestRequesterName ? 'border-orange-200/40 bg-orange-300/20 text-orange-100' : 'border-white/10 bg-black/30 text-white/55 hover:text-white'}`}>
                         <UserRound className="h-4 w-4" />点歌
-                      </button>
+                      </button>}
                       {!selectedArtist && (
                         <button type="button" onClick={handleSortByMatch} className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/30 px-3.5 py-2 text-xs font-bold text-white/55 transition hover:border-orange-200/35 hover:text-orange-100">
                           <ArrowUpDown className="h-4 w-4" />匹配度
@@ -2434,13 +2516,13 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                         <GripVertical className="h-4 w-4" aria-hidden="true" />拖拽歌曲到任意位置，或使用箭头微调；顺序会自动同步
                       </p>
                     )}
-                    <SongRows songs={catalogSongs.filter((song) => song.artist === selectedArtist)} />
+                    {renderSongRows(catalogSongs.filter((song) => song.artist === selectedArtist))}
                   </>
                 ) : songSearchResults.length > 0 ? (
-                  <SongRows songs={songSearchResults} />
+                  renderSongRows(songSearchResults)
                 ) : showHotSongs ? (
                   <>
-                    <SongRows songs={paginatedHotSongs} />
+                    {renderSongRows(paginatedHotSongs)}
                     {providedSongs.length > HOT_SONGS_PER_PAGE && (
                       <nav aria-label="热门歌曲分页" className="mt-5 flex flex-wrap items-center justify-center gap-3 text-xs text-white/45">
                         <span>共 {providedSongs.length} 首</span>

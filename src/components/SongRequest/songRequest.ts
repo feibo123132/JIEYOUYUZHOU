@@ -114,6 +114,19 @@ export const addCatalogSong = (catalog: EditableCatalog, song: Song): EditableCa
   songs: [...catalog.songs.filter((item) => item.id !== song.id), song],
 });
 
+export const updateCatalogSong = (catalog: EditableCatalog, songId: string, patch: Partial<Pick<Song, 'title' | 'hotComment'>>): EditableCatalog => {
+  const song = catalog.songs.find((item) => item.id === songId);
+  if (!song) return catalog;
+  const nextSong: Song = {
+    ...song,
+    ...(patch.title !== undefined ? { title: patch.title.trim() } : {}),
+    ...(patch.hotComment !== undefined ? { hotComment: patch.hotComment.trim() || undefined } : {}),
+  };
+  if (!nextSong.title) return catalog;
+  if (nextSong.title === song.title && (nextSong.hotComment ?? '') === (song.hotComment ?? '')) return catalog;
+  return { ...catalog, songs: catalog.songs.map((item) => (item.id === songId ? nextSong : item)) };
+};
+
 export const removeCatalogSong = (catalog: EditableCatalog, songId: string): EditableCatalog => ({
   ...catalog,
   songs: catalog.songs.filter((song) => song.id !== songId),
