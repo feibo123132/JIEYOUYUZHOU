@@ -39,6 +39,11 @@ const ACTIONS = new Set([
   'songScores:copyOwner',
   'artistSettings:pull',
   'artistSettings:push',
+  'artistTags:pull',
+  'tags:list',
+  'songTags:pull',
+  'songTags:save',
+  'artistTags:save',
   'featuredSongs:pull',
   'featuredSongs:set',
   'quizLibrary:pull',
@@ -312,9 +317,17 @@ function validateRequest(event) {
     return { action: event.action, songId, ...(requesterName ? { requesterName } : {}), ...optionalRankingLocation(event.location) };
   }
 
+  if (event.action === 'tags:list') return { action: event.action };
+  if (event.action === 'artistTags:pull') return { action: event.action, artist: cleanText(event.artist, 100, 'INVALID_ARTIST_SETTINGS') };
+  if (event.action === 'songTags:pull') return { action: event.action, songId: cleanText(event.songId, 100, 'INVALID_SONG_ID') };
   const alias = cleanText(event.alias, 30, 'INVALID_ALIAS');
   if (typeof event.password !== 'string' || event.password.length < 6 || event.password.length > 64) throw new Error('INVALID_PASSWORD');
   const base = { action: event.action, alias, password: event.password };
+  if (event.action === 'artistTags:save' || event.action === 'songTags:save') {
+    if (!Array.isArray(event.tags) || event.tags.length > 30) throw new Error('INVALID_ARTIST_SETTINGS');
+    const tags = [...new Set(event.tags.map((tag) => cleanText(tag, 40, 'INVALID_ARTIST_SETTINGS')))];
+    return { ...base, ...(event.action === 'songTags:save' ? { songId: cleanText(event.songId, 100, 'INVALID_SONG_ID') } : { artist: cleanText(event.artist, 100, 'INVALID_ARTIST_SETTINGS') }), tags };
+  }
   if (event.action === 'votes:adjustSung') {
     const songId = cleanText(event.songId, 80, 'INVALID_SONG_ID');
     if (!/^[a-z0-9-]+$/i.test(songId) || ![1, -1].includes(event.delta)) throw new Error('INVALID_SONG_ID');

@@ -27,6 +27,9 @@ import {
 import RoadshowPanel, { type RoadshowEditorTab } from './RoadshowPanel';
 import SongDetailPanel from './SongDetailPanel';
 import SongRequestEntryDialog from './SongRequestEntryDialog';
+import ArtistTagsDialog from './ArtistTagsDialog';
+import TagDirectory from './TagDirectory';
+import { Tag } from 'lucide-react';
 import PopularSongBarrage from './PopularSongBarrage';
 import { createInitialBarragePreferences, setBarragePreference } from '../StarrySky/barragePreferences';
 import { calculateAvatarCropLayout } from './avatarCrop';
@@ -72,8 +75,7 @@ const ARTIST_LANGUAGE_FILTERS: { value: ArtistLanguageFilter; label: string }[] 
   { value: 'single', label: '一人一曲' },
 ];
 
-const CARD_DRAW_PROJECT_URL = 'https://github.com/feibo123132/Mingxinpian';
-const CARD_DRAW_PROJECT_PATH = String.raw`D:\0-DeskMove\0829 Banana＆seedream\1204  全栈设计师\4、明信片抽卡 1225`;
+const CARD_DRAW_PROJECT_URL = 'https://feibo123132.github.io/Mingxinpian/';
 const PERSONAL_RANKING_SCROLL_THRESHOLD = 8;
 const REQUEST_RANKING_SCROLL_THRESHOLD = 8;
 const PERSONAL_RANKING_PAGE_SIZE = 50;
@@ -302,6 +304,8 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     typeof window === 'undefined' ? null : readBrowserSongRecordSession()
   ));
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [tagDirectoryOpen, setTagDirectoryOpen] = useState(false);
+  const [tagsArtist, setTagsArtist] = useState<string | null>(null);
   const [loginDialogOpen, setLoginDialogOpen] = useState(false);
   const logoutSongRecordSession = useCallback(() => {
     if (!songRecordSession || typeof window === 'undefined') return;
@@ -1282,6 +1286,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   };
 
   const goBack = () => {
+    if (tagDirectoryOpen) { setTagDirectoryOpen(false); return; }
     if (selectedSong) {
       const returnScrollY = songDetailReturnScrollRef.current;
       setSelectedSong(null);
@@ -1924,6 +1929,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
           onAuthenticated={() => setLoginDialogOpen(false)}
         />
       )}
+      {tagsArtist && <ArtistTagsDialog key={tagsArtist} artist={tagsArtist} session={songRecordSession} onClose={() => setTagsArtist(null)} />}
       {popularImmersive && !songAssistantOpen && (
         <button type="button" aria-label="打开歌曲助手" onClick={() => { (window as any).playClickSound?.(); setSongAssistantOpen(true); }} className="fixed right-4 top-4 z-40 bg-transparent text-3xl drop-shadow-[0_0_14px_rgba(251,191,36,.35)]">
           <span role="img" aria-label="cat" className="breath-slow inline-block transition-transform duration-200 hover:scale-125 hover:rotate-12">🐱</span>
@@ -1968,7 +1974,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
       <div className="relative mx-auto w-full max-w-6xl">
         <header className="mb-8 flex items-center justify-between gap-4">
           <button type="button" onClick={goBack} className="inline-flex h-11 items-center gap-2 rounded-full border border-white/10 bg-black/35 px-4 text-sm font-semibold text-white/70 backdrop-blur-xl transition hover:text-white">
-            <ArrowLeft className="h-4 w-4" /> {selectedSong ? detailBackLabel : activeSection === null ? '宇宙' : selectedArtist ? sectionTitle : '点歌台'}
+            <ArrowLeft className="h-4 w-4" /> {tagDirectoryOpen ? '返回' : selectedSong ? detailBackLabel : activeSection === null ? '宇宙' : selectedArtist ? sectionTitle : '点歌台'}
           </button>
           <div className="relative z-50">
             {accountMenuOpen && <button type="button" aria-label="关闭账户菜单" className="fixed inset-0 z-40 cursor-default bg-transparent" onClick={() => setAccountMenuOpen(false)} />}
@@ -1987,16 +1993,19 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                   <p className="flex items-center gap-2 text-xs font-bold text-slate-500"><UserRound className="h-3.5 w-3.5" />当前账号</p>
                   <p className="mt-2 break-all text-base font-black tracking-tight text-slate-950">{songRecordSession?.alias ?? '游客浏览'}</p>
                 </div>
-                <div className="border-t border-slate-900/10 py-1.5">
+                {canManageFeaturedSongs && <div className="border-t border-slate-900/10 py-1.5">
                   <button
                     type="button"
                     onClick={openCardDrawProject}
-                    title={`打开本机抽卡项目：${CARD_DRAW_PROJECT_PATH}`}
+                    title="打开抽卡网站"
                     className="flex w-full items-center gap-3 px-5 py-3 text-left text-sm font-bold text-slate-700 transition hover:bg-orange-100/80 hover:text-orange-700"
                   >
                     <Sparkles className="h-4 w-4 text-emerald-600" />抽卡
                   </button>
-                </div>
+                  <button type="button" onClick={() => { setAccountMenuOpen(false); setTagDirectoryOpen(true); window.scrollTo(0, 0); }} className="flex w-full items-center gap-3 px-5 py-3 text-left text-sm font-bold text-slate-700 transition hover:bg-orange-100/80 hover:text-orange-700">
+                    <Tag className="h-4 w-4 text-amber-600" />标签
+                  </button>
+                </div>}
                 <div className="border-t border-slate-900/10 py-1.5">
                   {songRecordSession ? <button
                     type="button"
@@ -2017,7 +2026,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
           </div>
         </header>
 
-        {selectedSong ? (
+        {tagDirectoryOpen && canManageFeaturedSongs ? <TagDirectory songs={catalogSongs} session={songRecordSession} /> : selectedSong ? (
           <SongDetailPanel
             song={selectedSong}
             records={songRecords}
@@ -2075,7 +2084,10 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
             {activeSection !== 'roadshows' && (
             <div className="mb-7 flex items-end justify-between gap-4">
               <div><p className="text-[10px] font-black tracking-[0.28em] text-orange-300/65">SONG REQUEST</p>
-                <h1 className="mt-1 font-serif text-4xl font-black sm:text-5xl">{selectedArtist || (activeSection === 'ranking' ? rankingHeading : sectionTitle)}</h1>
+                <div className="flex items-end gap-3">
+                  <h1 className="mt-1 font-serif text-4xl font-black sm:text-5xl">{selectedArtist || (activeSection === 'ranking' ? rankingHeading : sectionTitle)}</h1>
+                  {selectedArtist && <button type="button" aria-label={`查看${selectedArtist}的歌手标签`} title="歌手标签" onClick={() => setTagsArtist(selectedArtist)} className="mb-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-full border border-orange-200/20 bg-orange-300/5 text-orange-200/65 transition hover:bg-orange-300/15 hover:text-orange-100"><Tag className="h-4 w-4" /></button>}
+                </div>
               </div>
               {activeSection === 'ranking' && !nonOwnerSession && (
                 <div role="tablist" aria-label="排行榜切换" className="flex shrink-0 gap-1 rounded-full border border-white/10 bg-black/35 p-1">

@@ -95,6 +95,26 @@ export const pullCloudFeaturedSongIds = async (): Promise<string[] | null> => (
   await callSync<{ songIds: string[] | null }>({ action: 'featuredSongs:pull' })
 ).songIds;
 
+export const pullArtistTags = async (artist: string): Promise<string[]> => (
+  await callSync<{ tags: string[] }>({ action: 'artistTags:pull', artist })
+).tags;
+
+export interface TagDirectoryEntry { kind: 'artist' | 'song'; id: string; title?: string; tags: string[]; }
+export const pullTagDirectory = async (): Promise<TagDirectoryEntry[]> => (
+  await callSync<{ entries: TagDirectoryEntry[] }>({ action: 'tags:list' })
+).entries;
+
+export const pullSongTags = async (songId: string): Promise<string[]> => (
+  await callSync<{ tags: string[] }>({ action: 'songTags:pull', songId })
+).tags;
+export const saveSongTags = async (credentials: Credentials, songId: string, tags: string[]): Promise<string[]> => (
+  await callSync<{ tags: string[] }>({ action: 'songTags:save', ...credentials, songId, tags })
+).tags;
+
+export const saveArtistTags = async (credentials: Credentials, artist: string, tags: string[]): Promise<string[]> => (
+  await callSync<{ tags: string[] }>({ action: 'artistTags:save', ...credentials, artist, tags })
+).tags;
+
 export const saveCloudFeaturedSongIds = async (credentials: Credentials, songIds: string[]): Promise<string[]> => (
   await callSync<{ songIds: string[] }>({ action: 'featuredSongs:set', ...credentials, songIds })
 ).songIds;

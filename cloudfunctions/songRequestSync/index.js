@@ -311,6 +311,22 @@ function createHandler(store) {
         const owner = await store.getWorkspace(workspaceId(FEATURED_SONGS_OWNER_ALIAS));
         return { ok: true, songIds: Array.isArray(owner?.featuredSongIds) ? owner.featuredSongIds : null };
       }
+      if (request.action === 'artistTags:pull') {
+        const saved = await store.getWorkspace(`artist-tags-${workspaceId(request.artist)}`);
+        return { ok: true, tags: saved?.tags ?? [] };
+      }
+      if (request.action === 'tags:list') {
+        const entries = (await store.getTagEntries()).filter((entry) => Array.isArray(entry.tags) && entry.tags.length > 0);
+        const settings = await store.getArtistSettings();
+        const titles = new Map((settings?.catalog?.songs ?? []).map((song) => [song.id, song.title]));
+        return { ok: true, entries: entries.flatMap((entry) => typeof entry.songId === 'string'
+          ? [{ kind: 'song', id: entry.songId, ...(titles.has(entry.songId) ? { title: titles.get(entry.songId) } : {}), tags: entry.tags }]
+          : typeof entry.artist === 'string' ? [{ kind: 'artist', id: entry.artist, tags: entry.tags }] : []) };
+      }
+      if (request.action === 'songTags:pull') {
+        const saved = await store.getWorkspace(`song-tags-${crypto.createHash('sha256').update(request.songId).digest('hex')}`);
+        return { ok: true, tags: saved?.tags ?? [] };
+      }
       if (request.action === 'quizLibrary:pull') {
         const owner = await store.getWorkspace(workspaceId(FEATURED_SONGS_OWNER_ALIAS));
         const assignments = owner?.quizLibraryAssignments;
@@ -360,6 +376,16 @@ function createHandler(store) {
         throw error;
       }
       const { id, workspace } = authenticated;
+      if (request.action === 'songTags:save') {
+        if (id !== workspaceId(FEATURED_SONGS_OWNER_ALIAS)) throw new Error('AUTH_FAILED');
+        await store.setWorkspace(`song-tags-${crypto.createHash('sha256').update(request.songId).digest('hex')}`, { songId: request.songId, tags: request.tags, updatedAt: store.now() });
+        return { ok: true, tags: request.tags };
+      }
+      if (request.action === 'artistTags:save') {
+        if (id !== workspaceId(FEATURED_SONGS_OWNER_ALIAS)) throw new Error('AUTH_FAILED');
+        await store.setWorkspace(`artist-tags-${workspaceId(request.artist)}`, { artist: request.artist, tags: request.tags, updatedAt: store.now() });
+        return { ok: true, tags: request.tags };
+      }
       if (request.action.startsWith('stars:owner')) {
         if (id !== workspaceId(FEATURED_SONGS_OWNER_ALIAS)) throw new Error('AUTH_FAILED');
         return { ok: true, ...await store.ownerStars(request) };
@@ -607,6 +633,15 @@ exports.main = async (event) => {
         }
       },
       setWorkspace: (id, value) => workspaces.doc(id).set(buildWritableWorkspace(value)),
+      async getTagEntries() {
+        const entries = [];
+        for (let offset = 0; ; offset += 100) {
+          const result = await workspaces.where({ tags: db.command.exists(true) }).field({ artist: true, songId: true, tags: true }).orderBy('_id', 'asc').skip(offset).limit(100).get();
+          entries.push(...result.data);
+          if (result.data.length < 100) break;
+        }
+        return entries;
+      },
       saveJournal: (id, revision, entries) => saveJournal(db, id, revision, entries),
       ownerStars: request => ownerStars(db, request),
       registerWithInvitation: (id, account, code, now) => registerWithInvitation(db, id, account, code, now),

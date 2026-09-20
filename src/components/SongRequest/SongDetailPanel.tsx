@@ -5,6 +5,8 @@ import type { Song } from './songCatalog';
 import { findSongRoadshowHistory, type RoadshowRecord } from './roadshow';
 import { QUIZ_LEVELS, type QuizLevel } from './songQuizLibrary';
 import ScoreViewer from './ScoreViewer';
+import ArtistTagsDialog from './ArtistTagsDialog';
+import { Tag } from 'lucide-react';
 import {
   appendSongScorePages, compressScoreImage, getSongScoreDisplayPages, moveSongScorePage,
   removeSongScorePage, SCORE_PAGE_LIMIT, SCORE_PAGES_TOTAL_LIMIT, withSongLyrics, withSongScoreNote, type SongScore,
@@ -101,6 +103,7 @@ const SongDetailPanel = ({
   const [busy, setBusy] = useState('');
   const [message, setMessage] = useState('');
   const [quizMenuOpen, setQuizMenuOpen] = useState(false);
+  const [tagsOpen, setTagsOpen] = useState(false);
   const [scoreViewerOpen, setScoreViewerOpen] = useState(false);
   const [lyricsEditorOpen, setLyricsEditorOpen] = useState(false);
   const [lyricsDraft, setLyricsDraft] = useState(score?.lyrics ?? '');
@@ -305,7 +308,11 @@ const SongDetailPanel = ({
         <div className="relative flex flex-col justify-between gap-7 sm:flex-row sm:items-start">
           <div className="min-w-0">
             <p data-journal-eyebrow className="text-[10px] font-black tracking-[.22em] text-orange-200/65">MY SONG JOURNAL</p>
-            <h1 className="mt-2 font-serif text-4xl font-black tracking-[-.04em] sm:text-6xl">{song.title}</h1>
+            <div className="flex items-end gap-3">
+              <h1 className="mt-2 font-serif text-4xl font-black tracking-[-.04em] sm:text-6xl">{song.title}</h1>
+              <button type="button" aria-label={`查看${song.title}的歌曲标签`} title="歌曲标签" onClick={() => setTagsOpen(true)} className="mb-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-full border border-orange-200/20 bg-orange-300/5 text-orange-200/65 transition hover:bg-orange-300/15 hover:text-orange-100"><Tag className="h-4 w-4" /></button>
+            </div>
+            {tagsOpen && <ArtistTagsDialog key={song.id} artist={song.title} songId={song.id} session={session} onClose={() => setTagsOpen(false)} />}
             <div data-journal-description className="mt-3 flex max-w-2xl flex-wrap items-center gap-x-3 gap-y-1">
               <p className="text-sm leading-7 text-white/45">{song.hotComment || `${song.artist} · ${song.category}`}</p>
               {(syncStatus || message) && <p className="inline-flex shrink-0 items-center gap-1.5 text-[10px] font-black tracking-[.12em] text-orange-100/55" role="status"><Cloud className="h-2.5 w-2.5" />{message || syncStatus}</p>}

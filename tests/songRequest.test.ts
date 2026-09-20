@@ -186,7 +186,7 @@ test('点歌台右上角账号区收纳为菜单并提供抽卡入口', () => {
   assert.match(stationSource, /当前账号/)
   assert.match(stationSource, /抽卡/)
   assert.match(stationSource, /退出登录/)
-  assert.match(stationSource, /CARD_DRAW_PROJECT_URL = 'https:\/\/github\.com\/feibo123132\/Mingxinpian'/)
+  assert.match(stationSource, /CARD_DRAW_PROJECT_URL = 'https:\/\/feibo123132\.github\.io\/Mingxinpian\/'/)
   assert.match(stationSource, /mt-3 w-56 overflow-hidden/)
   assert.doesNotMatch(stationSource, /当前：<b/)
 })
