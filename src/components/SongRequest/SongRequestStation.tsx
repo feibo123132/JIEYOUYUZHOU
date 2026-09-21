@@ -29,6 +29,8 @@ import SongDetailPanel from './SongDetailPanel';
 import SongRequestEntryDialog from './SongRequestEntryDialog';
 import ArtistTagsDialog from './ArtistTagsDialog';
 import TagDirectory from './TagDirectory';
+import InquiryPage from './InquiryPage';
+import { MessageCircle } from 'lucide-react';
 import { Tag } from 'lucide-react';
 import PopularSongBarrage from './PopularSongBarrage';
 import { createInitialBarragePreferences, setBarragePreference } from '../StarrySky/barragePreferences';
@@ -305,6 +307,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   ));
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [tagDirectoryOpen, setTagDirectoryOpen] = useState(false);
+  const [inquiriesOpen, setInquiriesOpen] = useState(false);
   const [tagsArtist, setTagsArtist] = useState<string | null>(null);
   const [loginDialogOpen, setLoginDialogOpen] = useState(false);
   const logoutSongRecordSession = useCallback(() => {
@@ -1286,6 +1289,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   };
 
   const goBack = () => {
+    if (inquiriesOpen) { setInquiriesOpen(false); return; }
     if (tagDirectoryOpen) { setTagDirectoryOpen(false); return; }
     if (selectedSong) {
       const returnScrollY = songDetailReturnScrollRef.current;
@@ -1974,7 +1978,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
       <div className="relative mx-auto w-full max-w-6xl">
         <header className="mb-8 flex items-center justify-between gap-4">
           <button type="button" onClick={goBack} className="inline-flex h-11 items-center gap-2 rounded-full border border-white/10 bg-black/35 px-4 text-sm font-semibold text-white/70 backdrop-blur-xl transition hover:text-white">
-            <ArrowLeft className="h-4 w-4" /> {tagDirectoryOpen ? '返回' : selectedSong ? detailBackLabel : activeSection === null ? '宇宙' : selectedArtist ? sectionTitle : '点歌台'}
+            <ArrowLeft className="h-4 w-4" /> {tagDirectoryOpen || inquiriesOpen ? '返回' : selectedSong ? detailBackLabel : activeSection === null ? '宇宙' : selectedArtist ? sectionTitle : '点歌台'}
           </button>
           <div className="relative z-50">
             {accountMenuOpen && <button type="button" aria-label="关闭账户菜单" className="fixed inset-0 z-40 cursor-default bg-transparent" onClick={() => setAccountMenuOpen(false)} />}
@@ -2002,9 +2006,10 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                   >
                     <Sparkles className="h-4 w-4 text-emerald-600" />抽卡
                   </button>
-                  <button type="button" onClick={() => { setAccountMenuOpen(false); setTagDirectoryOpen(true); window.scrollTo(0, 0); }} className="flex w-full items-center gap-3 px-5 py-3 text-left text-sm font-bold text-slate-700 transition hover:bg-orange-100/80 hover:text-orange-700">
+                  <button type="button" onClick={() => { setAccountMenuOpen(false); setInquiriesOpen(false); setTagDirectoryOpen(true); window.scrollTo(0, 0); }} className="flex w-full items-center gap-3 px-5 py-3 text-left text-sm font-bold text-slate-700 transition hover:bg-orange-100/80 hover:text-orange-700">
                     <Tag className="h-4 w-4 text-amber-600" />标签
                   </button>
+                  <button type="button" onClick={() => { setAccountMenuOpen(false); setInquiriesOpen(true); window.scrollTo(0, 0); }} className="flex w-full items-center gap-3 px-5 py-3 text-left text-sm font-bold text-slate-700 transition hover:bg-orange-100/80 hover:text-orange-700"><MessageCircle className="h-4 w-4 text-sky-600" />请教</button>
                 </div>}
                 <div className="border-t border-slate-900/10 py-1.5">
                   {songRecordSession ? <button
@@ -2026,7 +2031,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
           </div>
         </header>
 
-        {tagDirectoryOpen && canManageFeaturedSongs ? <TagDirectory songs={catalogSongs} session={songRecordSession} /> : selectedSong ? (
+        {inquiriesOpen && canManageFeaturedSongs && songRecordSession ? <InquiryPage session={songRecordSession} /> : tagDirectoryOpen && canManageFeaturedSongs ? <TagDirectory songs={catalogSongs} session={songRecordSession} /> : selectedSong ? (
           <SongDetailPanel
             song={selectedSong}
             records={songRecords}

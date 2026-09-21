@@ -4,7 +4,7 @@ const { validateEntries } = require('./enoughJournal');
 const ACTIONS = new Set([
   'stars:verifyOwner',
   'stars:ownerPull', 'stars:ownerCreate', 'stars:ownerUpdate', 'stars:ownerDelete', 'stars:ownerRestore', 'stars:ownerPurge',
-  'enough:pull', 'enough:save',
+  'enough:pull', 'enough:save', 'inquiries:pull', 'inquiries:save',
   'invitations:create',
   'invitations:revoke',
   'songGroups:pull',
@@ -323,6 +323,10 @@ function validateRequest(event) {
   const alias = cleanText(event.alias, 30, 'INVALID_ALIAS');
   if (typeof event.password !== 'string' || event.password.length < 6 || event.password.length > 64) throw new Error('INVALID_PASSWORD');
   const base = { action: event.action, alias, password: event.password };
+  if (event.action === 'inquiries:save') {
+    if (!Number.isSafeInteger(event.expectedRevision) || event.expectedRevision < 0) throw new Error('INVALID_JOURNAL');
+    return { ...base, expectedRevision: event.expectedRevision, entries: require('./inquiries').validateInquiries(event.entries) };
+  }
   if (event.action === 'artistTags:save' || event.action === 'songTags:save') {
     if (!Array.isArray(event.tags) || event.tags.length > 30) throw new Error('INVALID_ARTIST_SETTINGS');
     const tags = [...new Set(event.tags.map((tag) => cleanText(tag, 40, 'INVALID_ARTIST_SETTINGS')))];

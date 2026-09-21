@@ -18,8 +18,8 @@ const validateEntries = (entries) => {
   return clean;
 };
 
-const saveJournal = (db, ownerId, revision, entries) => db.runTransaction(async transaction => {
-  const ref = transaction.collection('song_request_workspaces').doc(`enough-${ownerId}`);
+const saveJournal = (db, ownerId, revision, entries, prefix = 'enough') => db.runTransaction(async transaction => {
+  const ref = transaction.collection('song_request_workspaces').doc(`${prefix}-${ownerId}`);
   let current;
   try {
     const result = await ref.get();

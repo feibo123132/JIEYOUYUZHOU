@@ -376,6 +376,12 @@ function createHandler(store) {
         throw error;
       }
       const { id, workspace } = authenticated;
+      if (request.action === 'inquiries:pull' || request.action === 'inquiries:save') {
+        if (id !== workspaceId(FEATURED_SONGS_OWNER_ALIAS)) throw new Error('AUTH_FAILED');
+        if (request.action === 'inquiries:save') return { ok: true, snapshot: await store.saveInquiries(id, request.expectedRevision, request.entries) };
+        const saved = await store.getWorkspace(`inquiries-${id}`);
+        return { ok: true, snapshot: { revision: saved?.revision ?? 0, entries: saved?.entries ?? [] } };
+      }
       if (request.action === 'songTags:save') {
         if (id !== workspaceId(FEATURED_SONGS_OWNER_ALIAS)) throw new Error('AUTH_FAILED');
         await store.setWorkspace(`song-tags-${crypto.createHash('sha256').update(request.songId).digest('hex')}`, { songId: request.songId, tags: request.tags, updatedAt: store.now() });
@@ -643,6 +649,7 @@ exports.main = async (event) => {
         return entries;
       },
       saveJournal: (id, revision, entries) => saveJournal(db, id, revision, entries),
+      saveInquiries: (id, revision, entries) => saveJournal(db, id, revision, entries, 'inquiries'),
       ownerStars: request => ownerStars(db, request),
       registerWithInvitation: (id, account, code, now) => registerWithInvitation(db, id, account, code, now),
       revokeInvitation: (code, now) => revokeInvitation(db, code, now),

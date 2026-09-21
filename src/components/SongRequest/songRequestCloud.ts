@@ -26,6 +26,11 @@ export interface Credentials {
   password: string;
 }
 
+export interface InquiryEntry { id: string; topic: 'philosophy' | 'poetry' | 'internet' | 'memes'; question: string; insight: string; }
+export interface InquirySnapshot { revision: number; entries: InquiryEntry[]; }
+export const pullInquiries = async (credentials: Credentials) => (await callSync<{ snapshot: InquirySnapshot }>({ action: 'inquiries:pull', ...credentials })).snapshot;
+export const saveInquiries = async (credentials: Credentials, expectedRevision: number, entries: InquiryEntry[]) => (await callSync<{ snapshot: InquirySnapshot }>({ action: 'inquiries:save', ...credentials, expectedRevision, entries })).snapshot;
+
 export const verifyStarOwner = (credentials: Credentials) => callSync<{ owner: true }>({ action: 'stars:verifyOwner', ...credentials });
 export const callOwnerStars = <T,>(credentials: Credentials, action: string, payload: Record<string, unknown>) => callSync<T>({ ...payload, action, ...credentials });
 
