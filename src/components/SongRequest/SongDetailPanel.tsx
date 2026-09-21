@@ -14,6 +14,7 @@ import {
 import { useResolvedScorePages } from './useResolvedScorePages';
 import {
   bestMatchScore,
+  normalizeSingingMoods,
   getMatchQuality,
   getPracticeReflection,
   isValidSongRecord,
@@ -150,7 +151,7 @@ const SongDetailPanel = ({
       setFemaleKey(record.femaleKey ?? '');
       setNeedsMorePractice(record.needsMorePractice);
       setNeedsImprovement(record.needsImprovement);
-      setSingingMoods(record.singingMoods ?? []);
+      setSingingMoods(normalizeSingingMoods(record.singingMoods ?? []));
     } else {
       setRoadshowAt(localDateTime(record.occurredAt));
       setAudienceName(record.audienceName);
@@ -527,12 +528,12 @@ const SongDetailPanel = ({
               <PracticeMarkerOptions needsMorePractice={needsMorePractice} needsImprovement={needsImprovement} onToggleMorePractice={() => setNeedsMorePractice((value) => !value)} onToggleImprovement={() => setNeedsImprovement((value) => !value)} />
               <div>
                 <span className="mb-2 block text-xs font-bold text-white/45">弹唱感受</span>
-                <details aria-label="弹唱感受" className="group relative w-fit min-w-40">
+                <details aria-label="弹唱感受" className="group relative w-fit min-w-48">
                   <summary className="flex h-10 cursor-pointer list-none items-center justify-between gap-4 rounded-xl border border-orange-200/25 bg-black/20 px-3 text-sm font-bold text-orange-100 hover:border-orange-200/50 [&::-webkit-details-marker]:hidden">
                     <span>{singingMoods.join(' · ') || '未选择'}</span><ChevronDown className="h-4 w-4 transition group-open:rotate-180" />
                   </summary>
-                  <div className="absolute right-0 top-full z-20 mt-1 w-full min-w-40 rounded-xl border border-orange-200/20 bg-[#17110d] p-1 shadow-xl">
-                    {(['快乐', '感动', '想哭', '爽歌', '舒服'] as const).map((mood) => <label key={mood} className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-orange-100 hover:bg-white/10"><input type="checkbox" checked={singingMoods.includes(mood)} onChange={() => setSingingMoods((current) => current.includes(mood) ? current.filter((item) => item !== mood) : [...current, mood])} className="accent-orange-300" />{mood}</label>)}
+                  <div className="absolute right-0 top-full z-20 mt-1 grid w-full min-w-48 grid-cols-2 rounded-xl border border-orange-200/20 bg-[#17110d] p-1 shadow-xl">
+                    {(['欢快', '感动', '想哭', '爽歌', '音色', '歌词'] as const).map((mood) => <label key={mood} className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-orange-100 hover:bg-white/10"><input type="checkbox" checked={singingMoods.includes(mood)} onChange={() => setSingingMoods((current) => current.includes(mood) ? current.filter((item) => item !== mood) : [...current, mood])} className="accent-orange-300" />{mood}</label>)}
                   </div>
                 </details>
               </div>
@@ -582,7 +583,7 @@ const PracticeMarkerOptions = ({ needsMorePractice, needsImprovement, onToggleMo
         <span>{[needsMorePractice && '多练习', needsImprovement && '待提升'].filter(Boolean).join(' · ') || '无标识'}</span>
         <ChevronDown className="h-4 w-4 transition group-open:rotate-180" />
       </summary>
-      <div className="absolute right-0 top-full z-20 mt-1 w-full min-w-40 rounded-xl border border-orange-200/20 bg-[#17110d] p-1 shadow-xl">
+      <div className="absolute right-0 top-full z-20 mt-1 grid w-full min-w-48 grid-cols-2 rounded-xl border border-orange-200/20 bg-[#17110d] p-1 shadow-xl">
         <label className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-orange-100 hover:bg-white/10"><input type="checkbox" checked={needsMorePractice} onChange={onToggleMorePractice} className="accent-orange-300" />多练习</label>
         <label className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-cyan-100 hover:bg-white/10"><input type="checkbox" checked={needsImprovement} onChange={onToggleImprovement} className="accent-cyan-200" />待提升</label>
       </div>
@@ -625,7 +626,7 @@ const PracticeMarkerBadges = ({ record }: { record: PracticeRecord }) => (
     <p className="flex flex-wrap gap-1.5 text-[10px] font-black">
       {record.needsMorePractice && <span className="rounded-full border border-orange-200/25 bg-orange-300/10 px-2 py-1 text-orange-100">多练习</span>}
       {record.needsImprovement && <span className="rounded-full border border-cyan-200/25 bg-cyan-300/10 px-2 py-1 text-cyan-100">待提升</span>}
-      {record.singingMoods?.map((mood) => <span key={mood} className="rounded-full border border-rose-200/25 bg-rose-300/10 px-2 py-1 text-rose-100">{mood}</span>)}
+      {normalizeSingingMoods(record.singingMoods ?? []).map((mood) => <span key={mood} className="rounded-full border border-rose-200/25 bg-rose-300/10 px-2 py-1 text-rose-100">{mood}</span>)}
     </p>
   ) : null
 );

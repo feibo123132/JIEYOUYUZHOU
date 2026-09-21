@@ -21,6 +21,7 @@ export default function SharedSongGroups({ catalogSongs, managing, onOpenSong }:
   const [reload, setReload] = useState(0);
   const [page, setPage] = useState(1);
   const [editing, setEditing] = useState(false);
+  const [dragged, setDragged] = useState<{ groupId: string; songId: string } | null>(null);
   const pageCount = Math.max(1, Math.ceil((snapshot?.groups.length ?? 0) / 6));
   const currentPage = Math.min(page, pageCount);
   const visibleGroups = snapshot?.groups.slice((currentPage - 1) * 6, currentPage * 6) ?? [];
@@ -56,6 +57,17 @@ export default function SharedSongGroups({ catalogSongs, managing, onOpenSong }:
         : '保存失败，草稿已保留，请重试并确认云函数已更新。');
     } finally { saving.current = false; setBusy(false); }
   };
+  const moveSong = (groupId: string, songId: string, targetIndex: number) => {
+    if (!managing || !editing || !snapshot || saving.current || draft) return;
+    const group = snapshot.groups.find(item => item.id === groupId);
+    if (!group) return;
+    const from = group.songIds.indexOf(songId);
+    if (from < 0 || targetIndex < 0 || targetIndex >= group.songIds.length || from === targetIndex) return;
+    const songIds = [...group.songIds];
+    songIds.splice(from, 1);
+    songIds.splice(targetIndex, 0, songId);
+    void persist(snapshot.groups.map(item => item.id === groupId ? { ...item, songIds } : item));
+  };
   const keyword = query.trim().toLocaleLowerCase();
   const results = keyword ? catalogSongs.filter(song => `${song.title} ${song.artist}`.toLocaleLowerCase().includes(keyword)).slice(0, 20) : [];
 
@@ -82,8 +94,19 @@ export default function SharedSongGroups({ catalogSongs, managing, onOpenSong }:
     <div className="mt-4 grid gap-3 lg:grid-cols-2">{visibleGroups.map(group => <article key={group.id} className="min-w-0 rounded-xl border border-white/10 bg-black/25 p-4">
       <header className="flex items-center justify-between gap-2"><h5 className="min-w-0 break-words font-bold text-teal-50">{group.name}<small className="ml-2 text-xs font-normal text-white/35">{group.songIds.length} 首</small></h5>{managing && editing && <div className="flex shrink-0 gap-2"><button type="button" disabled={busy || Boolean(draft)} aria-label={`编辑${group.name}`} onClick={() => { setDraft({ ...group, songIds: [...group.songIds] }); setQuery(''); }} className="p-1 text-white/40 hover:text-teal-100 disabled:opacity-30"><Pencil size={15} /></button><button type="button" disabled={busy || Boolean(draft)} aria-label={`删除${group.name}`} onClick={() => { if (window.confirm(`删除“${group.name}”歌组？所有路演中都会移除该组，但不会删除歌曲。`)) void persist(snapshot!.groups.filter(item => item.id !== group.id)); }} className="p-1 text-white/40 hover:text-red-200 disabled:opacity-30"><Trash2 size={15} /></button></div>}</header>
       {group.description && <p className="mt-2 whitespace-pre-wrap break-words text-xs leading-6 text-white/45">{group.description}</p>}
-      <div className="mt-3 flex flex-wrap gap-2">{group.songIds.map(id => {
+      <div className="mt-3 flex flex-wrap gap-2">{group.songIds.map((id, index) => {
         const song = catalogSongs.find(item => item.id === id);
+        if (managing && editing) return <span key={id}
+          draggable={!busy && !draft}
+          onDragStart={(event) => { setDragged({ groupId: group.id, songId: id }); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', id); }}
+          onDragEnd={() => setDragged(null)}
+          onDragOver={(event) => { if (!busy && !draft && dragged?.groupId === group.id) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; } }}
+          onDrop={(event) => { event.preventDefault(); if (dragged?.groupId === group.id) moveSong(group.id, dragged.songId, index); setDragged(null); }}
+          className={`inline-flex max-w-full items-center gap-1 rounded-full border border-teal-200/25 px-2 py-1 text-xs font-bold text-teal-100 ${!busy && !draft ? 'cursor-grab active:cursor-grabbing' : 'opacity-50'} ${dragged?.groupId === group.id && dragged.songId === id ? 'bg-teal-200/20' : ''}`}>
+          <button type="button" aria-label={`${song?.title ?? id}前移`} disabled={busy || Boolean(draft) || index === 0} onClick={() => moveSong(group.id, id, index - 1)} className="rounded-full p-1.5 hover:bg-teal-200/10 disabled:opacity-25"><ChevronLeft size={14} /></button>
+          <span className="truncate">{song?.title ?? '歌库中已移除的歌曲'}</span>
+          <button type="button" aria-label={`${song?.title ?? id}后移`} disabled={busy || Boolean(draft) || index === group.songIds.length - 1} onClick={() => moveSong(group.id, id, index + 1)} className="rounded-full p-1.5 hover:bg-teal-200/10 disabled:opacity-25"><ChevronRight size={14} /></button>
+        </span>;
         return <button key={id} type="button" disabled={!song} title={song?.artist} onClick={() => song && onOpenSong(song)} className={`${button} max-w-full text-left disabled:opacity-35`}><span className="truncate">{song?.title ?? '歌库中已移除的歌曲'}</span></button>;
       })}</div>
     </article>)}</div>

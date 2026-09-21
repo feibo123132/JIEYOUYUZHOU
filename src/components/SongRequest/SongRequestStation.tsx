@@ -1102,9 +1102,16 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     }));
   };
 
+  const getVisibleEditableCatalog = (): EditableCatalog => ({
+    ...catalog,
+    artists: [...new Set([...catalog.artists, ...catalogSongs.map(song => song.artist)])],
+    songs: catalogSongs,
+  });
+
   const commitSongTextEdit = (songId: string) => {
     if (!requireCatalogManager()) return;
-    const song = catalog.songs.find((item) => item.id === songId);
+    const editable = getVisibleEditableCatalog();
+    const song = editable.songs.find((item) => item.id === songId);
     if (!song) return;
     const draft = songEditDrafts[songId];
     if (!draft) return;
@@ -1115,13 +1122,13 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
       showSyncMessage('歌名不能为空，已恢复原歌名');
       return;
     }
-    if (catalog.songs.some((item) => item.id !== songId && item.artist === song.artist && item.title === title)) {
+    if (editable.songs.some((item) => item.id !== songId && item.artist === song.artist && item.title === title)) {
       setSongEditDrafts((current) => ({ ...current, [songId]: { title: song.title, hotComment: song.hotComment ?? '' } }));
       showSyncMessage('同一歌手下已经有这首歌，已恢复原内容');
       return;
     }
-    const next = updateCatalogSong(catalog, songId, { title, hotComment });
-    if (next === catalog) return;
+    const next = updateCatalogSong(editable, songId, { title, hotComment });
+    if (next === editable) return;
     commitCatalog(next);
     setSongEditDrafts((current) => ({ ...current, [songId]: { title, hotComment } }));
     showSyncMessage(`已更新「${title}」并同步到站内`);
@@ -1197,11 +1204,12 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   const moveVisibleSong = (songId: string, direction: -1 | 1) => {
     if (!requireCatalogManager()) return;
     if (!selectedArtist) return;
-    const songs = catalog.songs.filter((song) => song.artist === selectedArtist);
+    const editable = getVisibleEditableCatalog();
+    const songs = editable.songs.filter((song) => song.artist === selectedArtist);
     const currentIndex = songs.findIndex((song) => song.id === songId);
     const targetSong = songs[currentIndex + direction];
     if (!targetSong) return;
-    commitSongOrder(moveCatalogSong(catalog, songId, targetSong.id));
+    commitSongOrder(moveCatalogSong(editable, songId, targetSong.id));
   };
 
   const handleSongDragStart = (event: DragEvent<HTMLElement>, songId: string) => {
@@ -1234,7 +1242,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
       ? songDropTarget.placement
       : getSongDropPlacement(event);
     if (sourceSongId && sourceSongId !== targetSongId) {
-      commitSongOrder(insertCatalogSong(catalog, sourceSongId, targetSongId, placement));
+      commitSongOrder(insertCatalogSong(getVisibleEditableCatalog(), sourceSongId, targetSongId, placement));
     }
     clearSongDragState();
   };
