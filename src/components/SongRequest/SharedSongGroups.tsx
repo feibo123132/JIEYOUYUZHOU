@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Layers3, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Layers3, Pencil, Plus, Trash2, X } from 'lucide-react';
 import type { Song } from './songCatalog';
 import type { SongGroup, SongGroupsSnapshot } from './songGroups';
 import { pullSongGroups, saveSongGroups } from './songRequestCloud';
@@ -19,6 +19,12 @@ export default function SharedSongGroups({ catalogSongs, managing, onOpenSong }:
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
   const [reload, setReload] = useState(0);
+  const [page, setPage] = useState(1);
+  const [editing, setEditing] = useState(false);
+  const pageCount = Math.max(1, Math.ceil((snapshot?.groups.length ?? 0) / 6));
+  const currentPage = Math.min(page, pageCount);
+  const visibleGroups = snapshot?.groups.slice((currentPage - 1) * 6, currentPage * 6) ?? [];
+  useEffect(() => { setPage(value => Math.min(value, pageCount)); }, [pageCount]);
   const saving = useRef(false);
   useEffect(() => {
     let active = true;
@@ -37,6 +43,7 @@ export default function SharedSongGroups({ catalogSongs, managing, onOpenSong }:
     try {
       const saved = await saveSongGroups(credentials, { ...snapshot, groups });
       setSnapshot(saved);
+      if (draft && !snapshot.groups.some(group => group.id === draft.id)) setPage(Math.max(1, Math.ceil(saved.groups.length / 6)));
       setDraft(null);
       setStatus('已同步，所有路演共用。');
     } catch (error) {
@@ -55,7 +62,7 @@ export default function SharedSongGroups({ catalogSongs, managing, onOpenSong }:
   return <section className="mt-5 rounded-2xl border border-teal-200/20 bg-teal-300/[.035] p-4 sm:p-5">
     <header className="flex flex-wrap items-center justify-between gap-3">
       <div><h4 className="flex items-center gap-2 font-serif text-lg font-black text-teal-100"><Layers3 size={18} />趣味歌组<small className="font-sans text-xs font-normal text-white/40">所有路演共用</small></h4><p className="mt-1 text-xs text-white/40">同名系列、和弦串烧，收藏歌曲之间的巧妙联系。</p></div>
-      {managing && <button type="button" disabled={!snapshot || busy || Boolean(draft) || snapshot.groups.length >= 50} onClick={() => { setDraft({ id: crypto.randomUUID(), name: '', description: '', songIds: [] }); setQuery(''); }} className={button}><Plus size={14} />新建歌组</button>}
+      {managing && <div className="flex items-center gap-2"><button type="button" disabled={!snapshot || busy || Boolean(draft) || snapshot.groups.length >= 50} onClick={() => { setDraft({ id: crypto.randomUUID(), name: '', description: '', songIds: [] }); setQuery(''); }} className={button}><Plus size={14} />新建</button><button type="button" aria-pressed={editing} disabled={busy || Boolean(draft)} onClick={() => setEditing(value => !value)} className={`${button} ${editing ? 'bg-teal-200/15 border-teal-200/50' : ''}`}><Pencil size={14} />{editing ? '完成' : '编辑'}</button></div>}
     </header>
     {status && <p role="status" className="mt-3 text-xs text-teal-100/70">{status}</p>}
     {!snapshot && <button type="button" onClick={() => setReload(value => value + 1)} className={`${button} mt-3`}>重新加载</button>}
@@ -72,14 +79,19 @@ export default function SharedSongGroups({ catalogSongs, managing, onOpenSong }:
         <div className="flex flex-wrap items-center gap-2"><button type="submit" disabled={!snapshot || !draft.name.trim() || !draft.songIds.length} className={`${button} bg-teal-200/10`}>{busy ? '保存中…' : '保存歌组'}</button><button type="button" onClick={() => setDraft(null)} className={button}>取消</button><span className="text-xs text-white/35">已选 {draft.songIds.length}/50 首 · 不影响其他板块</span></div>
       </fieldset>
     </form>}
-    <div className="mt-4 grid gap-3 lg:grid-cols-2">{snapshot?.groups.map(group => <article key={group.id} className="min-w-0 rounded-xl border border-white/10 bg-black/25 p-4">
-      <header className="flex items-center justify-between gap-2"><h5 className="min-w-0 break-words font-bold text-teal-50">{group.name}<small className="ml-2 text-xs font-normal text-white/35">{group.songIds.length} 首</small></h5>{managing && <div className="flex shrink-0 gap-2"><button type="button" disabled={busy || Boolean(draft)} aria-label={`编辑${group.name}`} onClick={() => { setDraft({ ...group, songIds: [...group.songIds] }); setQuery(''); }} className="p-1 text-white/40 hover:text-teal-100 disabled:opacity-30"><Pencil size={15} /></button><button type="button" disabled={busy || Boolean(draft)} aria-label={`删除${group.name}`} onClick={() => { if (window.confirm(`删除“${group.name}”歌组？所有路演中都会移除该组，但不会删除歌曲。`)) void persist(snapshot.groups.filter(item => item.id !== group.id)); }} className="p-1 text-white/40 hover:text-red-200 disabled:opacity-30"><Trash2 size={15} /></button></div>}</header>
+    <div className="mt-4 grid gap-3 lg:grid-cols-2">{visibleGroups.map(group => <article key={group.id} className="min-w-0 rounded-xl border border-white/10 bg-black/25 p-4">
+      <header className="flex items-center justify-between gap-2"><h5 className="min-w-0 break-words font-bold text-teal-50">{group.name}<small className="ml-2 text-xs font-normal text-white/35">{group.songIds.length} 首</small></h5>{managing && editing && <div className="flex shrink-0 gap-2"><button type="button" disabled={busy || Boolean(draft)} aria-label={`编辑${group.name}`} onClick={() => { setDraft({ ...group, songIds: [...group.songIds] }); setQuery(''); }} className="p-1 text-white/40 hover:text-teal-100 disabled:opacity-30"><Pencil size={15} /></button><button type="button" disabled={busy || Boolean(draft)} aria-label={`删除${group.name}`} onClick={() => { if (window.confirm(`删除“${group.name}”歌组？所有路演中都会移除该组，但不会删除歌曲。`)) void persist(snapshot!.groups.filter(item => item.id !== group.id)); }} className="p-1 text-white/40 hover:text-red-200 disabled:opacity-30"><Trash2 size={15} /></button></div>}</header>
       {group.description && <p className="mt-2 whitespace-pre-wrap break-words text-xs leading-6 text-white/45">{group.description}</p>}
       <div className="mt-3 flex flex-wrap gap-2">{group.songIds.map(id => {
         const song = catalogSongs.find(item => item.id === id);
         return <button key={id} type="button" disabled={!song} title={song?.artist} onClick={() => song && onOpenSong(song)} className={`${button} max-w-full text-left disabled:opacity-35`}><span className="truncate">{song?.title ?? '歌库中已移除的歌曲'}</span></button>;
       })}</div>
     </article>)}</div>
+    {pageCount > 1 && <nav aria-label="趣味歌组分页" className="mt-5 flex items-center justify-center gap-3 text-xs text-white/45">
+      <button type="button" aria-label="上一页歌组" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)} className="grid h-8 w-8 place-items-center rounded-full border border-white/10 hover:bg-white/10 disabled:opacity-25"><ChevronLeft size={14} /></button>
+      <span aria-live="polite">{currentPage} / {pageCount}</span>
+      <button type="button" aria-label="下一页歌组" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)} className="grid h-8 w-8 place-items-center rounded-full border border-white/10 hover:bg-white/10 disabled:opacity-25"><ChevronRight size={14} /></button>
+    </nav>}
     {snapshot && !snapshot.groups.length && !draft && <p className="py-5 text-center text-xs text-white/35">还没有歌组，试试创建“如果”系列，或记录一组相同和弦的串烧歌曲。</p>}
   </section>;
 }
