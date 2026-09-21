@@ -1,3 +1,6 @@
+import { Download } from 'lucide-react';
+import { downloadScorePages } from './scoreDownload';
+import { refreshSongScorePageUrls } from './songRequestCloud';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { CalendarDays, ChevronDown, ChevronUp, Cloud, Disc3, FileText, Guitar, MessageCircle, Music4, Save, Target, Trash2, Upload } from 'lucide-react';
 import { isFeaturedSongManager } from './songRequest';
@@ -111,6 +114,9 @@ const SongDetailPanel = ({
   const [scoreNoteDraft, setScoreNoteDraft] = useState(score?.scoreNote ?? '');
   const [scoreNoteDirty, setScoreNoteDirty] = useState(false);
   const [scoreBusyLocal, setScoreBusyLocal] = useState('');
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState('');
+  const downloadLock = useRef(false);
   const scoreFileRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLDivElement>(null);
   const matchQuality = getMatchQuality(Number(matchScore));
@@ -120,6 +126,18 @@ const SongDetailPanel = ({
     score?.pages ?? [],
     score ? getSongScoreDisplayPages(score) : [],
   );
+
+  const downloadScore = async () => {
+    if (downloadLock.current || !scorePages.length) return;
+    downloadLock.current = true;
+    setDownloading(true);
+    setDownloadError('');
+    try {
+      const pages = await refreshSongScorePageUrls(score?.pages?.length ? score.pages : scorePages);
+      await downloadScorePages(song.title, pages);
+    } catch { setDownloadError('下载失败，请稍后重试；也可打开谱子后长按图片保存。'); }
+    finally { downloadLock.current = false; setDownloading(false); }
+  };
 
   useEffect(() => {
     setLyricsDraft(score?.lyrics ?? '');
@@ -425,6 +443,8 @@ const SongDetailPanel = ({
                 <Music4 className="h-4 w-4" />打开谱子
               </button>
             )}
+            {scorePages.length > 0 && <button type="button" onClick={() => void downloadScore()} disabled={downloading} className="inline-flex h-11 items-center gap-2 rounded-full border border-orange-200/30 bg-orange-300/10 px-5 text-sm font-black text-orange-100 transition hover:bg-orange-300/20 disabled:opacity-40"><Download className="h-4 w-4" />{downloading ? '下载中…' : '下载谱子'}</button>}
+            {downloadError && <p role="alert" className="w-full text-sm text-amber-200">{downloadError}</p>}
             {(session || score?.lyrics?.trim()) && (
               <button
                 type="button"
