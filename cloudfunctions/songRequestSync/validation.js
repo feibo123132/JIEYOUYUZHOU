@@ -169,7 +169,7 @@ const validateSongRecord = (value) => {
     const femaleKey = value.femaleKey === undefined ? '' : cleanOptionalText(value.femaleKey, 80, 'INVALID_SONG_RECORD');
     if (value.needsMorePractice !== undefined && typeof value.needsMorePractice !== 'boolean') throw new Error('INVALID_SONG_RECORD');
     if (value.needsImprovement !== undefined && typeof value.needsImprovement !== 'boolean') throw new Error('INVALID_SONG_RECORD');
-    if (value.singingMoods !== undefined && (!Array.isArray(value.singingMoods) || value.singingMoods.length > 8 || !value.singingMoods.every((mood) => ['快乐', '感动', '想哭', '爽歌', '舒服', '欢快', '音色', '歌词'].includes(mood)))) throw new Error('INVALID_SONG_RECORD');
+    if (value.singingMoods !== undefined && (!Array.isArray(value.singingMoods) || value.singingMoods.length > 9 || !value.singingMoods.every((mood) => ['快乐', '感动', '想哭', '爽歌', '舒服', '欢快', '音色', '歌词', '爆款'].includes(mood)))) throw new Error('INVALID_SONG_RECORD');
     return {
       ...base,
       kind: 'practice',
@@ -179,7 +179,7 @@ const validateSongRecord = (value) => {
       improvements,
       needsMorePractice: Boolean(value.needsMorePractice),
       needsImprovement: Boolean(value.needsImprovement),
-      singingMoods: [...new Set((value.singingMoods ?? []).map(mood => mood === '快乐' ? '欢快' : mood === '舒服' ? '音色' : mood))],
+      singingMoods: [...new Set((value.singingMoods ?? []).map(mood => mood === '快乐' ? '欢快' : mood === '舒服' ? '音色' : mood === '想哭' ? '爆款' : mood))],
       ...(femaleKey ? { femaleKey } : {}),
     };
   }

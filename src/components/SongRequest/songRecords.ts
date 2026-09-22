@@ -25,7 +25,7 @@ export interface PracticeRecord extends SongRecordBase {
   improvements: string;
   needsMorePractice: boolean;
   needsImprovement: boolean;
-  singingMoods?: Array<'快乐' | '感动' | '想哭' | '爽歌' | '舒服' | '欢快' | '音色' | '歌词'>;
+  singingMoods?: Array<'快乐' | '感动' | '想哭' | '爽歌' | '舒服' | '欢快' | '音色' | '歌词' | '爆款'>;
   femaleKey?: string;
 }
 
@@ -70,7 +70,7 @@ export const isValidSongRecord = (value: unknown): value is SongRecord => {
       && (record.needsMorePractice === undefined || typeof record.needsMorePractice === 'boolean')
       && (record.needsImprovement === undefined || typeof record.needsImprovement === 'boolean')
       && (record.femaleKey === undefined || isText(record.femaleKey, 80, false))
-      && (record.singingMoods === undefined || (Array.isArray(record.singingMoods) && record.singingMoods.length <= 8 && record.singingMoods.every((mood) => ['快乐', '感动', '想哭', '爽歌', '舒服', '欢快', '音色', '歌词'].includes(mood))));
+      && (record.singingMoods === undefined || (Array.isArray(record.singingMoods) && record.singingMoods.length <= 9 && record.singingMoods.every((mood) => ['快乐', '感动', '想哭', '爽歌', '舒服', '欢快', '音色', '歌词', '爆款'].includes(mood))));
   }
   return record.kind === 'roadshow'
     && isText(record.audienceName, 100, false)
@@ -307,4 +307,4 @@ export const recoverSongsFromRecords = (records: SongRecord[], knownSongs: Song[
   return [...recovered.values()];
 };
 
-export const normalizeSingingMoods = (moods: NonNullable<PracticeRecord['singingMoods']>) => [...new Set(moods.map(mood => mood === '快乐' ? '欢快' as const : mood === '舒服' ? '音色' as const : mood))];
+export const normalizeSingingMoods = (moods: NonNullable<PracticeRecord['singingMoods']>) => [...new Set(moods.map(mood => mood === '快乐' ? '欢快' as const : mood === '舒服' ? '音色' as const : mood === '想哭' ? '爆款' as const : mood))];

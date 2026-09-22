@@ -553,7 +553,7 @@ const SongDetailPanel = ({
                     <span>{singingMoods.join(' · ') || '未选择'}</span><ChevronDown className="h-4 w-4 transition group-open:rotate-180" />
                   </summary>
                   <div className="absolute right-0 top-full z-20 mt-1 grid w-full min-w-48 grid-cols-2 rounded-xl border border-orange-200/20 bg-[#17110d] p-1 shadow-xl">
-                    {(['欢快', '感动', '想哭', '爽歌', '音色', '歌词'] as const).map((mood) => <label key={mood} className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-orange-100 hover:bg-white/10"><input type="checkbox" checked={singingMoods.includes(mood)} onChange={() => setSingingMoods((current) => current.includes(mood) ? current.filter((item) => item !== mood) : [...current, mood])} className="accent-orange-300" />{mood}</label>)}
+                    {(['欢快', '感动', '爆款', '爽歌', '音色', '歌词'] as const).map((mood) => <label key={mood} className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-orange-100 hover:bg-white/10"><input type="checkbox" checked={singingMoods.includes(mood)} onChange={() => setSingingMoods((current) => current.includes(mood) ? current.filter((item) => item !== mood) : [...current, mood])} className="accent-orange-300" />{mood}</label>)}
                   </div>
                 </details>
               </div>
