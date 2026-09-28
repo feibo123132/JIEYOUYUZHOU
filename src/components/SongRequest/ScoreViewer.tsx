@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, ChevronLeft, ChevronRight, Minus, Plus, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Minus, Plus, X } from 'lucide-react';
 import { readScorePage, saveScorePage } from './songScores';
 import {
   getFittedScoreSize,
@@ -22,18 +22,22 @@ interface ScoreViewerProps {
   onClose: () => void;
 }
 
-type AutoScrollSpeed = 0 | 1 | 2 | 3;
+type AutoScrollSpeed = 0 | 1 | 2 | 3 | 4 | 5;
 
 const AUTO_SCROLL_SPEED_LABELS: Record<AutoScrollSpeed, string> = {
   0: '自动',
-  1: '慢',
-  2: '中',
-  3: '快',
+  1: '很慢',
+  2: '慢',
+  3: '中',
+  4: '快',
+  5: '很快',
 };
 const AUTO_SCROLL_PIXELS_PER_SECOND: Record<Exclude<AutoScrollSpeed, 0>, number> = {
-  1: 5,
-  2: 8,
-  3: 11,
+  1: 10,
+  2: 13,
+  3: 16,
+  4: 19,
+  5: 22,
 };
 
 const ScoreViewer = ({ songId, songTitle, pages, onPagesStale, onClose }: ScoreViewerProps) => {
@@ -44,6 +48,9 @@ const ScoreViewer = ({ songId, songTitle, pages, onPagesStale, onClose }: ScoreV
   const [viewportSize, setViewportSize] = useState<ScoreSize>({ width: 0, height: 0 });
   const [imageSize, setImageSize] = useState<ScoreSize>({ width: 0, height: 0 });
   const [autoScrollSpeed, setAutoScrollSpeed] = useState<AutoScrollSpeed>(0);
+  const [autoScrollMenuOpen, setAutoScrollMenuOpen] = useState(false);
+  const autoScrollControlRef = useRef<HTMLDivElement | null>(null);
+  const autoScrollButtonRef = useRef<HTMLButtonElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const zoomRef = useRef(SCORE_ZOOM_MIN);
   const autoScrollSpeedRef = useRef<AutoScrollSpeed>(0);
@@ -99,6 +106,7 @@ const ScoreViewer = ({ songId, songTitle, pages, onPagesStale, onClose }: ScoreV
     zoomRef.current = SCORE_ZOOM_MIN;
     setZoom(SCORE_ZOOM_MIN);
     setAutoScrollSpeed(0);
+    setAutoScrollMenuOpen(false);
     setImageSize({ width: 0, height: 0 });
     setPageError(false);
     stageRef.current?.scrollTo({ left: 0, top: 0 });
@@ -138,7 +146,7 @@ const ScoreViewer = ({ songId, songTitle, pages, onPagesStale, onClose }: ScoreV
         return false;
       }
       const elapsed = Math.min(250, Math.max(0, time - lastTime));
-      const distance = autoScrollRemainderRef.current + (AUTO_SCROLL_PIXELS_PER_SECOND[speed] * zoomRef.current * elapsed) / 1000;
+      const distance = autoScrollRemainderRef.current + (AUTO_SCROLL_PIXELS_PER_SECOND[speed] * elapsed) / 1000;
       const wholePixels = Math.trunc(distance);
       autoScrollRemainderRef.current = distance - wholePixels;
       if (wholePixels > 0) stage.scrollTop = Math.min(maxTop, stage.scrollTop + wholePixels);
@@ -217,12 +225,32 @@ const ScoreViewer = ({ songId, songTitle, pages, onPagesStale, onClose }: ScoreV
       : getReadingScoreZoom(viewportSize, imageSize));
   }, [applyZoom, viewportSize, imageSize]);
 
-  const cycleAutoScrollSpeed = () => {
-    setAutoScrollSpeed((current) => ((current + 1) % 4) as AutoScrollSpeed);
+  const selectAutoScrollSpeed = (speed: AutoScrollSpeed) => {
+    setAutoScrollSpeed(speed);
+    setAutoScrollMenuOpen(false);
+    autoScrollButtonRef.current?.focus();
   };
 
   useEffect(() => {
+    if (!autoScrollMenuOpen) return;
+    autoScrollControlRef.current?.querySelector<HTMLButtonElement>('[role="menuitemradio"][aria-checked="true"]')?.focus();
+    const dismiss = (event: PointerEvent) => {
+      if (!autoScrollControlRef.current?.contains(event.target as Node)) setAutoScrollMenuOpen(false);
+    };
+    window.addEventListener('pointerdown', dismiss);
+    return () => window.removeEventListener('pointerdown', dismiss);
+  }, [autoScrollMenuOpen]);
+
+  useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      if (autoScrollMenuOpen) {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          setAutoScrollMenuOpen(false);
+          autoScrollButtonRef.current?.focus();
+        }
+        return;
+      }
       if (event.key === 'ArrowLeft') setPage((current) => {
         const next = Math.max(0, current - 1);
         if (next !== current) saveScorePage(window.localStorage, songId, next);
@@ -237,7 +265,7 @@ const ScoreViewer = ({ songId, songTitle, pages, onPagesStale, onClose }: ScoreV
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [total, songId, onClose]);
+  }, [total, songId, onClose, autoScrollMenuOpen]);
 
   const touchDistance = (touches: React.TouchList) => Math.hypot(
     touches[0].clientX - touches[1].clientX,
@@ -296,17 +324,43 @@ const ScoreViewer = ({ songId, songTitle, pages, onPagesStale, onClose }: ScoreV
       aria-label={`${songTitle} 谱子翻页器`}
       style={{ overscrollBehavior: 'none' }}
     >
-      <div className="absolute left-3 top-3 z-20 flex shrink-0 items-center text-white/85 sm:left-4 sm:top-4">
+      <div ref={autoScrollControlRef} className="absolute left-3 top-3 z-20 flex shrink-0 items-center text-white/85 sm:left-4 sm:top-4">
         <button
+          ref={autoScrollButtonRef}
           type="button"
-          onClick={cycleAutoScrollSpeed}
-          aria-label={autoScrollSpeed === 0 ? '开启自动下滑' : `自动下滑速度：${AUTO_SCROLL_SPEED_LABELS[autoScrollSpeed]}，点击切换`}
-          aria-pressed={autoScrollSpeed > 0}
+          onClick={() => setAutoScrollMenuOpen((current) => !current)}
+          aria-label={autoScrollSpeed === 0 ? '自动滑谱：关闭，选择速度' : `自动滑谱：${AUTO_SCROLL_SPEED_LABELS[autoScrollSpeed]}，选择速度`}
+          aria-haspopup="menu"
+          aria-expanded={autoScrollMenuOpen}
+          aria-controls="score-auto-scroll-menu"
           className={`inline-flex h-9 items-center gap-1.5 rounded-full border px-3 text-xs font-bold backdrop-blur-md transition ${autoScrollSpeed > 0 ? 'border-orange-200/35 bg-orange-300 text-black shadow-[0_8px_30px_rgba(251,146,60,.22)]' : 'border-white/10 bg-black/50 text-white/75 hover:bg-white/15 hover:text-white'}`}
         >
-          <ChevronDown className="h-4 w-4" />
+          <ChevronDown className={`h-4 w-4 transition ${autoScrollMenuOpen ? 'rotate-180' : ''}`} />
           {AUTO_SCROLL_SPEED_LABELS[autoScrollSpeed]}
         </button>
+        {autoScrollMenuOpen && (
+          <div id="score-auto-scroll-menu" role="menu" aria-label="自动滑谱速度"
+            className="absolute left-0 top-full mt-2 grid w-52 gap-1 rounded-2xl border border-white/15 bg-[#100d16]/95 p-2 shadow-2xl backdrop-blur-xl"
+            onKeyDown={(event) => {
+              if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+              event.preventDefault();
+              const options = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]'));
+              const index = options.indexOf(document.activeElement as HTMLButtonElement);
+              const next = event.key === 'Home' ? 0 : event.key === 'End' ? options.length - 1
+                : (index + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length;
+              options[next]?.focus();
+            }}>
+            {([1, 2, 3, 4, 5, 0] as AutoScrollSpeed[]).map((speed) => (
+              <button key={speed} type="button" role="menuitemradio" aria-checked={autoScrollSpeed === speed}
+                onClick={() => selectAutoScrollSpeed(speed)}
+                className={`flex min-h-10 items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-bold transition ${autoScrollSpeed === speed ? 'bg-orange-300/15 text-orange-100' : 'text-white/70 hover:bg-white/10 hover:text-white'} ${speed === 0 ? 'mt-1 border-t border-white/10' : ''}`}>
+                <span className="w-4 shrink-0">{autoScrollSpeed === speed && <Check className="h-4 w-4" />}</span>
+                <span className="flex-1">{speed === 0 ? '关闭自动滑谱' : AUTO_SCROLL_SPEED_LABELS[speed]}</span>
+                {speed !== 0 && <span className="text-[10px] font-normal text-white/40">{AUTO_SCROLL_PIXELS_PER_SECOND[speed]} 像素/秒</span>}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="absolute right-3 top-3 z-20 flex shrink-0 items-center gap-2 text-white/85 sm:right-4 sm:top-4">
