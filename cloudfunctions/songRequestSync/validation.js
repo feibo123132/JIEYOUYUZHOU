@@ -329,7 +329,7 @@ function validateRequest(event) {
   }
   if (event.action === 'artistTags:save' || event.action === 'songTags:save') {
     if (!Array.isArray(event.tags) || event.tags.length > 30) throw new Error('INVALID_ARTIST_SETTINGS');
-    const tags = [...new Set(event.tags.map((tag) => cleanText(tag, 40, 'INVALID_ARTIST_SETTINGS')))];
+    const tags = [...new Set(event.tags.map((tag) => cleanText(tag, 500, 'INVALID_ARTIST_SETTINGS')))];
     return { ...base, ...(event.action === 'songTags:save' ? { songId: cleanText(event.songId, 100, 'INVALID_SONG_ID') } : { artist: cleanText(event.artist, 100, 'INVALID_ARTIST_SETTINGS') }), tags };
   }
   if (event.action === 'votes:adjustSung') {

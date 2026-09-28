@@ -404,20 +404,21 @@ const SongDetailPanel = ({
       {activeJournal === 'score' && (
       <section data-song-score-panel className="rounded-[1.75rem] border border-white/10 bg-[#09090d]/80 p-5 backdrop-blur-xl sm:p-7">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-start gap-3">
+          <div className="flex min-w-0 max-w-full items-start gap-3">
             <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-orange-200/15 bg-orange-300/10 text-orange-200"><Music4 className="h-5 w-5" /></span>
-            <div>
+            <div className="min-w-0">
               <h2 className="font-serif text-2xl font-black">专属谱子</h2>
               {isOwner ? (
-                <span className="mt-1 flex max-w-xl flex-wrap items-center gap-2">
-                  <input
+                <span className="mt-1 flex max-w-[38rem] flex-wrap items-center gap-2">
+                  <textarea
                     value={scoreNoteDraft}
                     onChange={(event) => { setScoreNoteDirty(true); setScoreNoteDraft(event.target.value); }}
-                    onKeyDown={(event) => { if (event.key === 'Enter') saveScoreNote(); }}
+                    onKeyDown={(event) => { if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !event.nativeEvent.isComposing) { event.preventDefault(); saveScoreNote(); } }}
+                    rows={2}
                     maxLength={500}
                     aria-label="谱子说明"
                     placeholder="输入任意谱子说明，例如：男调夹几、注意哪一段、演唱提醒……"
-                    className="h-8 min-w-[18rem] flex-1 rounded-lg border border-white/10 bg-black/25 px-3 text-xs font-bold leading-5 text-white/65 outline-none transition placeholder:text-white/25 focus:border-orange-300/45"
+                    className="h-14 w-[32.4rem] max-w-full resize-none rounded-lg border border-white/10 bg-black/25 px-3 py-1.5 text-xs font-bold leading-5 text-white/65 outline-none transition placeholder:text-white/25 focus:border-orange-300/45"
                   />
                   <button
                     type="button"

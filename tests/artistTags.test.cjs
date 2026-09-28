@@ -52,7 +52,7 @@ test('song tags: reject unauthorized writes and invalid tags without losing save
   for (const credentials of [user, {}, { ...owner, password: 'incorrect' }]) {
     assert.equal((await handler({ ...request, ...credentials, tags: ['覆盖'] })).ok, false);
   }
-  for (const tags of [[''], ['x'.repeat(41)], [12], Array(31).fill('标签')]) {
+  for (const tags of [[''], ['x'.repeat(501)], [12], Array(31).fill('标签')]) {
     assert.equal((await handler({ ...request, ...owner, tags })).ok, false);
   }
   assert.deepEqual(await handler({ action: 'songTags:pull', songId: 'song-1' }), { ok: true, tags: ['原标签'] });
@@ -79,8 +79,23 @@ test('artist tags: invalid payloads cannot overwrite existing tags', async () =>
   const { handler, owner } = setup();
   const request = { action: 'artistTags:save', ...owner, artist: '李荣浩' };
   await handler({ ...request, tags: ['歌手'] });
-  for (const tags of [[''], ['x'.repeat(41)], [12], Array(31).fill('标签'), '标签']) {
+  for (const tags of [[''], ['x'.repeat(501)], [12], Array(31).fill('标签'), '标签']) {
     assert.equal((await handler({ ...request, tags })).ok, false);
   }
   assert.deepEqual(await handler({ action: 'artistTags:pull', artist: '李荣浩' }), { ok: true, tags: ['歌手'] });
+});
+
+test('song and artist tags preserve a full pasted sentence and support up to 500 characters', async () => {
+  const { handler, owner } = setup();
+  const sentence = '你可能喜欢了很多、幻想了很多、内心已经演完一整部戏，但真正属于你的关系可能连“一半”都没有。';
+  assert.ok(sentence.length > 40);
+  for (const kind of ['song', 'artist']) {
+    const target = kind === 'song' ? { songId: 'song-1' } : { artist: '陈绮贞' };
+    for (const text of [sentence, '字'.repeat(500), '第一行\n第二行']) {
+      assert.deepEqual(await handler({ action: `${kind}Tags:save`, ...owner, ...target, tags: [text] }), { ok: true, tags: [text] });
+      assert.deepEqual(await handler({ action: `${kind}Tags:pull`, ...target }), { ok: true, tags: [text] });
+    }
+    assert.equal((await handler({ action: `${kind}Tags:save`, ...owner, ...target, tags: ['字'.repeat(501)] })).ok, false);
+    assert.deepEqual(await handler({ action: `${kind}Tags:pull`, ...target }), { ok: true, tags: ['第一行\n第二行'] });
+  }
 });

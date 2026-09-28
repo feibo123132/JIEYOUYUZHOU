@@ -35,6 +35,7 @@ import { Tag } from 'lucide-react';
 import PopularSongBarrage from './PopularSongBarrage';
 import { createInitialBarragePreferences, setBarragePreference } from '../StarrySky/barragePreferences';
 import { calculateAvatarCropLayout } from './avatarCrop';
+import { artistSettingsStorageError, openArtistSettingsStorage, type ArtistSettingsStorage } from './artistSettingsStorage';
 import {
   hasCloudSongScore, isCloudScorePage, isPendingSongScore, loadSongScoreCache, parseSongScores, saveSongScoreCache,
   type SongScore,
@@ -211,13 +212,8 @@ const resizeArtistAvatar = (file: File): Promise<string> => new Promise((resolve
 const PENDING_SING_COUNTS_KEY = 'jieyou-pending-sing-counts-v1';
 const REQUESTER_NAME_STORAGE_KEY = 'jieyou-song-request-requester-name-v1';
 
-const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
+const SongRequestStation = ({ onBack, settingsStorage }: SongRequestStationProps & { settingsStorage: ArtistSettingsStorage }) => {
   const accountAlias = readBrowserSongRecordSession()?.alias.trim().toLowerCase() || '';
-  const settingsStorage = useMemo(() => ({
-    getItem: (key: string) => window.localStorage.getItem(accountAlias && !isFeaturedSongManager(accountAlias) ? key + ':account:' + accountAlias : key),
-    setItem: (key: string, value: string) => window.localStorage.setItem(accountAlias && !isFeaturedSongManager(accountAlias) ? key + ':account:' + accountAlias : key, value),
-    removeItem: (key: string) => window.localStorage.removeItem(accountAlias && !isFeaturedSongManager(accountAlias) ? key + ':account:' + accountAlias : key),
-  }), [accountAlias]);
   const [catalogReady, setCatalogReady] = useState(false);
   const nickname = useAppStore((state) => state.user?.nickname || '');
   const [activeSection, setActiveSection] = useState<SectionId | null>(null);
@@ -376,6 +372,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
   );
   const artistSettingsSessionRef = useRef<SongRecordSession | null>(songRecordSession);
   const artistSettingsPushRef = useRef<Promise<void> | null>(null);
+  const avatarUploadBusyRef = useRef(false);
 
   useEffect(() => {
     if (canManageCatalog) return;
@@ -411,6 +408,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
         );
       }
       try { saveEditableCatalog(settingsStorage, next); } catch {}
+      void settingsStorage.flush().catch((error) => showSyncMessage(artistSettingsStorageError(error)));
       return next;
     });
     setCustomArtistAvatars(snapshot.customAvatars);
@@ -420,6 +418,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
       settingsStorage.setItem(ARTIST_AVATAR_ADJUSTMENTS_KEY, JSON.stringify(snapshot.avatarAdjustments));
       saveArtistSettingsCache(settingsStorage, snapshot);
     } catch {}
+    void settingsStorage.flush().catch((error) => showSyncMessage(artistSettingsStorageError(error)));
     if (upgradedPayload && artistSettingsSessionRef.current) queueArtistSettings(upgradedPayload);
   };
 
@@ -428,11 +427,16 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     const worker = (async () => {
       let conflictRetries = 0;
       while (true) {
+        try { await settingsStorage.flush(); }
+        catch (error) { showSyncMessage(artistSettingsStorageError(error)); return; }
         const draft = loadArtistSettingsDraft(settingsStorage);
         const session = artistSettingsSessionRef.current;
         if (!draft || !session) {
           return;
         }
+        // Edits can arrive while the previous flush is pending.
+        try { await settingsStorage.flush(); }
+        catch (error) { showSyncMessage(artistSettingsStorageError(error)); return; }
         try {
           const serverSnapshot = parseArtistSettingsSnapshot(await pushArtistSettings(session, draft.baseRevision, draft.snapshot));
           if (!serverSnapshot) throw new Error('INVALID_ARTIST_SETTINGS');
@@ -443,6 +447,8 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
           const nextDraft = resolveSuccessfulArtistSettingsPush(latestDraft, draft.changeId, serverSnapshot);
           if (nextDraft) saveArtistSettingsDraft(settingsStorage, nextDraft);
           else clearArtistSettingsDraft(settingsStorage);
+          try { await settingsStorage.flush(); }
+          catch (error) { showSyncMessage(artistSettingsStorageError(error)); return; }
           showSyncMessage('');
           if (!nextDraft) return;
         } catch (error) {
@@ -459,6 +465,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                 settingsStorage,
                 rebaseArtistSettingsDraft(latestDraft, artistSettingsRevisionRef.current),
               );
+              await settingsStorage.flush();
               continue;
             } catch (refreshError) {
               showSyncMessage(mapArtistSettingsSyncError(refreshError));
@@ -474,16 +481,19 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     return worker;
   };
 
-  const queueArtistSettings = (snapshot: ArtistSettingsPayload) => {
+  const queueArtistSettings = async (snapshot: ArtistSettingsPayload) => {
     const session = artistSettingsSessionRef.current;
     if (!session) {
       showSyncMessage('请登录后修改自己的歌单设置。');
-      return;
+      return false;
     }
     const previous = loadArtistSettingsDraft(settingsStorage);
     const draft = createArtistSettingsDraft(previous, previous?.baseRevision ?? artistSettingsRevisionRef.current, snapshot);
     saveArtistSettingsDraft(settingsStorage, draft);
+    try { await settingsStorage.flush(); }
+    catch (error) { showSyncMessage(artistSettingsStorageError(error)); return false; }
     void runArtistSettingsPush();
+    return true;
   };
 
   useEffect(() => {
@@ -878,7 +888,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
         || (artistLanguageFilter === 'chinese' ? chineseArtist : !chineseArtist);
       const matchesQuery = !needle || artist.toLowerCase().includes(needle)
         || songs.some((song) => song.title.toLowerCase().includes(needle));
-      return matchesCatalogGroup && matchesLanguage && matchesQuery;
+      return matchesQuery && (Boolean(needle) || (matchesCatalogGroup && matchesLanguage));
     });
   }, [artistLanguageFilter, catalog.artists, catalogSongs, query, recoveredSongs, songRecordSession]);
   const artistPageCount = Math.max(1, Math.ceil(artistGroups.length / ARTISTS_PER_PAGE));
@@ -1265,6 +1275,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
     setAvatarAdjustments((current) => {
       const next = { ...current, [artist]: { ...(current[artist] ?? getDefaultAvatarAdjustment(avatar)), ...patch } };
       try { settingsStorage.setItem(ARTIST_AVATAR_ADJUSTMENTS_KEY, JSON.stringify(next)); } catch {}
+      void settingsStorage.flush().catch((error) => showSyncMessage(artistSettingsStorageError(error)));
       return next;
     });
   };
@@ -1275,12 +1286,15 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
       const next = { ...current };
       delete next[artist];
       try { settingsStorage.setItem(ARTIST_AVATAR_ADJUSTMENTS_KEY, JSON.stringify(next)); } catch {}
+      void settingsStorage.flush().catch((error) => showSyncMessage(artistSettingsStorageError(error)));
       return next;
     });
   };
 
   const handleArtistAvatarUpload = async (artist: string, file: File) => {
     if (!requireCatalogManager()) return;
+    if (avatarUploadBusyRef.current) { showSyncMessage('正在保存头像，请稍候。'); return; }
+    avatarUploadBusyRef.current = true;
     try {
       const src = await resizeArtistAvatar(file);
       const nextAvatars = { ...customArtistAvatars, [artist]: src };
@@ -1288,12 +1302,15 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
       delete nextAdjustments[artist];
       settingsStorage.setItem(CUSTOM_ARTIST_AVATARS_KEY, JSON.stringify(nextAvatars));
       settingsStorage.setItem(ARTIST_AVATAR_ADJUSTMENTS_KEY, JSON.stringify(nextAdjustments));
+      const saved = await queueArtistSettings(createArtistSettingsPayload(
+        catalog.artists, nextAvatars, nextAdjustments, catalog.songs.map((song) => song.id), catalog,
+      ));
+      if (!saved) return;
       setCustomArtistAvatars(nextAvatars);
       setAvatarAdjustments(nextAdjustments);
-      syncCurrentArtistSettings(catalog.artists, nextAvatars, nextAdjustments);
     } catch (error) {
       window.alert(error instanceof Error ? error.message : '头像保存失败，请换一张图片重试。');
-    }
+    } finally { avatarUploadBusyRef.current = false; }
   };
 
   const goBack = () => {
@@ -2545,7 +2562,7 @@ const SongRequestStation = ({ onBack }: SongRequestStationProps) => {
                   </>
                 ) : songSearchResults.length > 0 ? (
                   renderSongRows(songSearchResults)
-                ) : showHotSongs ? (
+                ) : showHotSongs && !query.trim() ? (
                   <>
                     {renderSongRows(paginatedHotSongs)}
                     {providedSongs.length > HOT_SONGS_PER_PAGE && (
@@ -2900,12 +2917,33 @@ const SearchBox = ({ query, setQuery }: { query: string; setQuery: (value: strin
 
 const AccountSongRequestStation = (props: SongRequestStationProps) => {
   const [account, setAccount] = useState(() => readBrowserSongRecordSession()?.alias.trim().toLowerCase() || '');
+  const [loaded, setLoaded] = useState<{ account: string; storage: ArtistSettingsStorage } | null>(null);
+  const [storageError, setStorageError] = useState('');
+  const [storageRetry, setStorageRetry] = useState(0);
   useEffect(() => {
     const refresh = () => setAccount(readBrowserSongRecordSession()?.alias.trim().toLowerCase() || '');
     window.addEventListener(SONG_REQUEST_SESSION_EVENT, refresh);
     return () => window.removeEventListener(SONG_REQUEST_SESSION_EVENT, refresh);
   }, []);
-  return <SongRequestStation key={account} {...props} />;
+  useEffect(() => {
+    let active = true;
+    setStorageError('');
+    const scope = account && !isFeaturedSongManager(account) ? `account:${account}` : 'shared';
+    openArtistSettingsStorage(scope, window.localStorage).then((storage) => {
+      if (active) setLoaded({ account, storage });
+    }).catch((error) => { if (active) setStorageError(artistSettingsStorageError(error)); });
+    return () => { active = false; };
+  }, [account, storageRetry]);
+  if (storageError || !loaded || loaded.account !== account) {
+    return <div className="grid min-h-screen place-items-center bg-black px-6 text-center text-white/70">
+      <div>
+        <p role={storageError ? 'alert' : 'status'}>{storageError || '正在读取歌单和头像…'}</p>
+        {storageError && <button type="button" onClick={() => setStorageRetry((value) => value + 1)} className="mt-4 rounded-full border border-orange-200/30 px-5 py-2 text-orange-100">重试</button>}
+        <button type="button" onClick={props.onBack} className="ml-3 mt-4 rounded-full border border-white/20 px-5 py-2">宇宙</button>
+      </div>
+    </div>;
+  }
+  return <SongRequestStation key={account} {...props} settingsStorage={loaded.storage} />;
 };
 export default AccountSongRequestStation;
 

@@ -38,7 +38,7 @@ export default function TagDirectory({ songs, session }: { songs: Song[]; sessio
                 <span className="min-w-0 break-words font-semibold">{name(entry)}{kind === 'song' && catalog.get(entry.id)?.artist && <small className="ml-2 font-normal text-white/35">{catalog.get(entry.id)?.artist}</small>}</span>
                 <ChevronDown className="h-4 w-4 shrink-0 text-white/40 transition group-open:rotate-180" />
               </summary>
-              <div className="flex flex-wrap gap-2 border-t border-white/5 px-5 py-4">{entry.tags.map((tag) => <button type="button" key={tag} aria-label={`管理${name(entry)}的标签：${tag}`} onClick={() => setSelectedEntry(entry)} className="max-w-full break-all rounded-2xl border border-orange-200/15 bg-orange-300/10 px-3 py-2 text-left text-sm text-orange-100/85 transition hover:border-orange-200/40 hover:bg-orange-300/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-200">{tag}</button>)}</div>
+              <div className="flex flex-wrap gap-2 border-t border-white/5 px-5 py-4">{entry.tags.map((tag) => <button type="button" key={tag} aria-label={`管理${name(entry)}的标签：${tag}`} onClick={() => setSelectedEntry(entry)} className="max-w-full whitespace-pre-wrap break-all rounded-2xl border border-orange-200/15 bg-orange-300/10 px-3 py-2 text-left text-sm text-orange-100/85 transition hover:border-orange-200/40 hover:bg-orange-300/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-200">{tag}</button>)}</div>
             </details>)}</div>
             {!group.length && <p className="rounded-2xl border border-dashed border-white/10 px-5 py-7 text-sm text-white/35">暂无有标签的{kind === 'artist' ? '歌手' : '歌曲'}</p>}
           </section>;
