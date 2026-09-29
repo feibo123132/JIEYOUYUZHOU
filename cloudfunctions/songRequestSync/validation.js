@@ -19,12 +19,18 @@ const ACTIONS = new Set([
   'votes:clearSung',
   'roadshowSings:pull',
   'roadshowSings:adjust',
+  'roadshowSings:clear',
   'roadshowSings:migrateLegacy',
+  'roadshowQuiz:pull',
+  'roadshowQuiz:start',
+  'roadshowQuiz:judge',
+  'roadshowQuiz:undo',
   'roadshows:register',
   'roadshows:pull',
   'roadshows:save',
   'roadshows:delete',
   'roadshows:publicQuizRanking',
+  'roadshows:clearQuizRanking',
   'songRecords:pull',
   'songRecords:publicRanking',
   'songRecords:save',
@@ -223,10 +229,10 @@ const validateAdjustment = (value) => {
   return { x: value.x, y: value.y, scale: value.scale, rotation: value.rotation };
 };
 
-const EDITABLE_CATALOG_VERSION = 10;
+const EDITABLE_CATALOG_VERSION = 11;
 
 const validateCatalog = (value) => {
-  if (!value || value.version !== EDITABLE_CATALOG_VERSION || !Array.isArray(value.artists) || value.artists.length > 200 || !Array.isArray(value.songs) || value.songs.length > 2000) throw new Error('INVALID_ARTIST_SETTINGS');
+  if (!value || ![10, EDITABLE_CATALOG_VERSION].includes(value.version) || !Array.isArray(value.artists) || value.artists.length > 200 || !Array.isArray(value.songs) || value.songs.length > 2000) throw new Error('INVALID_ARTIST_SETTINGS');
   const artists = value.artists.map(validateArtistName);
   const songs = value.songs.map(song => ({
     id: cleanText(song.id, 100, 'INVALID_ARTIST_SETTINGS'), title: cleanText(song.title, 100, 'INVALID_ARTIST_SETTINGS'),
@@ -234,7 +240,7 @@ const validateCatalog = (value) => {
     featured: Boolean(song.featured), ...(song.hotComment ? { hotComment: cleanText(song.hotComment, 2000, 'INVALID_ARTIST_SETTINGS') } : {}),
   }));
   if (new Set(artists).size !== artists.length || new Set(songs.map(s => s.id)).size !== songs.length || songs.some(s => !artists.includes(s.artist))) throw new Error('INVALID_ARTIST_SETTINGS');
-  return { version: EDITABLE_CATALOG_VERSION, artists, songs };
+  return { version: value.version, artists, songs };
 };
 
 const validateArtistSettings = (value) => {
@@ -338,10 +344,21 @@ function validateRequest(event) {
     return { ...base, songId, delta: event.delta, ...optionalRankingLocation(event.location) };
   }
   if (event.action === 'roadshowSings:pull' || event.action === 'roadshowSings:migrateLegacy') return base;
+  if (event.action === 'roadshowSings:clear') return { ...base, ...optionalRankingLocation(event.location) };
   if (event.action === 'roadshowSings:adjust') {
     const songId = cleanText(event.songId, 80, 'INVALID_SONG_ID');
     if (!/^[a-z0-9-]+$/i.test(songId) || ![1, -1].includes(event.delta)) throw new Error('INVALID_SONG_ID');
-    return { ...base, songId, delta: event.delta };
+    return { ...base, songId, delta: event.delta, ...optionalRankingLocation(event.location), ...(event.legacy === true ? { legacy: true } : {}), ...(event.latest === true ? { latest: true } : {}), ...(event.eventId === undefined ? {} : { eventId: cleanText(event.eventId, 100, 'INVALID_RECORD') }) };
+  }
+  if (event.action === 'roadshowQuiz:pull') return { ...base, songId: cleanText(event.songId, 80, 'INVALID_SONG_ID') };
+  if (event.action === 'roadshowQuiz:undo') return { ...base, eventId: cleanText(event.eventId, 100, 'INVALID_RECORD') };
+  if (event.action === 'roadshowQuiz:start') return {
+    ...base, eventId: cleanText(event.eventId, 100, 'INVALID_RECORD'), songId: cleanText(event.songId, 80, 'INVALID_SONG_ID'),
+    title: cleanText(event.title, 100, 'INVALID_SONG'), artist: cleanOptionalText(event.artist, 100, 'INVALID_SONG'),
+  };
+  if (event.action === 'roadshowQuiz:judge') {
+    if (typeof event.correct !== 'boolean') throw new Error('INVALID_RECORD');
+    return { ...base, eventId: cleanText(event.eventId, 100, 'INVALID_RECORD'), correct: event.correct };
   }
   if (event.action.startsWith('stars:owner')) return { ...base, themeId: event.themeId, id: event.id, star: event.star };
   if (event.action === 'enough:save') {
@@ -388,6 +405,7 @@ function validateRequest(event) {
     return { ...base, expectedRevision, snapshot: validateArtistSettings(event.snapshot) };
   }
   if (event.action === 'roadshows:save') return { ...base, record: validateRecord(event.record) };
+  if (event.action === 'roadshows:clearQuizRanking') return { ...base, ...optionalRankingLocation(event.location) };
   if (event.action === 'roadshows:delete') return { ...base, id: cleanText(event.id, 80, 'INVALID_RECORD') };
   if (event.action === 'songRecords:save') return { ...base, record: validateSongRecord(event.record) };
   if (event.action === 'songRecords:saveBatch') {

@@ -2,7 +2,7 @@ import type { Song } from './songCatalog.ts';
 
 export type VoteCounts = Record<string, number>;
 export type VoteRequesters = Record<string, string[]>;
-export const CATALOG_VERSION = 10;
+export const CATALOG_VERSION = 11;
 export interface EditableCatalog { version: number; artists: string[]; songs: Song[]; }
 
 interface ReadableStorage {
@@ -29,6 +29,15 @@ const V9_DEFAULT_SONG_ADDITION_IDS = [
 const V10_DEFAULT_SONG_ADDITION_IDS = [
   'yrz-you-xie',
   ...V9_DEFAULT_SONG_ADDITION_IDS,
+];
+
+const V11_DEFAULT_SONG_ADDITION_IDS = [
+  'yi-dian-dian', 'shuo-hao-bu-ku', 'as-yi-zhi-hen-an-jing', 'zzh-ke-bu-ke-yi',
+  'nqmm-xia-yu-tian', 'ol-zhi-wo', 'dzq-pao-mo', 'dzq-hua', 'tank-san-guo-lian',
+  'she-ni-ceng-shi-shao-nian', 'xl-huai-nv-hai', 'cmz-leng-ye', 'yyg-su-gong-di',
+  'df-mi-ren-de-wei-xian', 'hl-ru-hua-jiang-nan', 'jxn-gei-ni-ya', 'ssx-shao-yi-dian-tian-fen',
+  'ldr-young-and-beautiful', 'dyc-xiang-ni-shi-feng-qi', 'klk-wo-duo-xiang-shuo-zai-jian-a',
+  'jdh-wu-lan-ba-tuo-de-ye', 'hita-chi-ling', 'hailun-you-jing', 'lyl-zhi-shao-hai-you-ni',
 ];
 
 export const paginateRankingItems = <T>(items: T[], requestedPage: number, pageSize: number) => {
@@ -224,12 +233,12 @@ export const upgradeEditableCatalog = (catalog: EditableCatalog, fallbackSongs: 
   if (catalog.version >= CATALOG_VERSION) {
     return catalog;
   }
-  const additionIds = catalog.version >= 9
-    ? V10_DEFAULT_SONG_ADDITION_IDS
-    : catalog.version === 8
-      ? V10_DEFAULT_SONG_ADDITION_IDS
+  const additionIds = catalog.version === 10
+    ? V11_DEFAULT_SONG_ADDITION_IDS
+    : catalog.version >= 8
+      ? [...V10_DEFAULT_SONG_ADDITION_IDS, ...V11_DEFAULT_SONG_ADDITION_IDS]
       : catalog.version === 7
-        ? ['xs-huan-ting', 'xs-ban-cheng-yan-sha', 'xs-nan-shan-yi', ...V10_DEFAULT_SONG_ADDITION_IDS]
+        ? ['xs-huan-ting', 'xs-ban-cheng-yan-sha', 'xs-nan-shan-yi', ...V10_DEFAULT_SONG_ADDITION_IDS, ...V11_DEFAULT_SONG_ADDITION_IDS]
         : [];
   return additionIds.length
     ? mergeDefaultSongAdditions(catalog.artists, catalog.songs, fallbackSongs, additionIds)
@@ -248,6 +257,9 @@ export const loadEditableCatalog = (storage: ReadableStorage, fallbackSongs: Son
     const catalogSongs = parsed.songs as Song[];
     if (parsed.version === CATALOG_VERSION) {
       return { version: CATALOG_VERSION, artists: [...new Set(catalogArtists)], songs: catalogSongs };
+    }
+    if (parsed.version === 10) {
+      return upgradeEditableCatalog({ version: 10, artists: catalogArtists, songs: catalogSongs }, fallbackSongs);
     }
     if (parsed.version === 9) {
       return upgradeEditableCatalog({ version: 9, artists: catalogArtists, songs: catalogSongs }, fallbackSongs);

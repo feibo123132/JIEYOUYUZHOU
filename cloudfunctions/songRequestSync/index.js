@@ -17,13 +17,40 @@ const PUBLIC_ERRORS = new Set([
   'INVALID_QUIZ_LIBRARY',
   'INVALID_SONG_SCORE',
   'SCORE_UPLOAD_FAILED', 'SCORE_NOT_FOUND', 'SCORE_ALREADY_EXISTS',
-  'INVALID_LOCATION',
+  'INVALID_LOCATION', 'NO_LATEST_ROADSHOW',
   'INVALID_NOTEBOOK',
   'INVALID_SONG_GROUPS',
 ]);
 
 const FEATURED_SONGS_OWNER_ALIAS = '2421415030@qq.com';
 const OWNER_SONG_SCORE_SEED_VERSION = 1;
+const quizSongPlaysId = (ownerId) => `quiz-song-plays-${ownerId}`;
+const quizRankingResetId = (ownerId) => `quiz-ranking-reset-${ownerId}`;
+const latestClearTime = (current, incoming) => Date.parse(current) > Date.parse(incoming) ? current : incoming;
+const clearQuizRankingAtomically = (db, ownerId, location, clearedAt) => db.runTransaction(async (transaction) => {
+  // 独立保存清空标记，避免其他设备保存旧路演时覆盖标记。
+  const ref = transaction.collection('song_request_workspaces').doc(quizRankingResetId(ownerId));
+  let result;
+  try { result = await ref.get(); }
+  catch (error) {
+    if (!/not found|does not exist/i.test(String(error?.message))) throw error;
+  }
+  const current = (Array.isArray(result?.data) ? result.data[0] : result?.data) || {};
+  const next = buildWritableWorkspace({ ...current, updatedAt: clearedAt });
+  if (location) {
+    next.clearedAtByLocation = {
+      ...(current.clearedAtByLocation || {}),
+      [location]: latestClearTime(current.clearedAtByLocation?.[location], clearedAt),
+    };
+  } else next.clearedAt = latestClearTime(current.clearedAt, clearedAt);
+  await ref.set(next);
+  return next;
+});
+const filterQuizRankingRoadshows = (roadshows, reset) => roadshows.map((record) => {
+  const clearedAt = Math.max(Date.parse(reset?.clearedAt) || 0, Date.parse(reset?.clearedAtByLocation?.[record.location]) || 0);
+  if (!clearedAt) return record;
+  return { ...record, recognitionAttempts: (record.recognitionAttempts || []).filter((attempt) => Date.parse(attempt?.answeredAt) > clearedAt) };
+});
 const incrementVoteAtomically = (db, songId, location, requesterName) => db.runTransaction(async (transaction) => {
   const ref = transaction.collection('song_request_votes').doc(songId);
   let data;
@@ -86,18 +113,136 @@ const adjustSungVoteAtomically = (db, ownerWorkspaceId, songId, delta, location)
   await workspaceRef.set(buildWritableWorkspace({ ...workspace, sungVoteCounts, sungVoteCountsByLocation, updatedAt: new Date().toISOString() }));
   return sungVoteCounts;
 });
-const adjustRoadshowSingCountAtomically = (db, ownerWorkspaceId, songId, delta) => db.runTransaction(async (transaction) => {
+const roadshowSingState = (workspace) => ({
+  roadshowSingCounts: cleanVoteCounts(workspace.roadshowSingCounts),
+  ...(workspace.roadshowSingCountsByLocation ? {
+    roadshowSingCountsByLocation: Object.fromEntries(Object.entries(ROADSHOW_LOCATION_KEYS).map(([location, key]) => [location, cleanVoteCounts(workspace.roadshowSingCountsByLocation[key])])),
+  } : {}),
+  ...(workspace.roadshowSingCountsClearedAt ? { roadshowSingCountsClearedAt: workspace.roadshowSingCountsClearedAt } : {}),
+});
+const adjustRoadshowSingCountAtomically = (db, ownerWorkspaceId, songId, delta, location, legacy = false, latest = false, eventId) => db.runTransaction(async (transaction) => {
   const workspaceRef = transaction.collection('song_request_workspaces').doc(ownerWorkspaceId);
   const result = await workspaceRef.get();
   const workspace = Array.isArray(result.data) ? result.data[0] : result.data;
   if (!workspace) throw new Error('AUTH_FAILED');
+  if (legacy && workspace.roadshowSingCountsClearedAt) return roadshowSingState(workspace);
+  const events = { ...(workspace.roadshowSingEvents || {}) };
+  if (latest && eventId && events[eventId]) {
+    if (events[eventId].songId !== songId || (events[eventId].delta ?? 1) !== delta) throw new Error('INVALID_RECORD');
+    return { ...roadshowSingState(workspace), location: events[eventId].location };
+  }
+  if (latest) location = requireLatestRoadshow(workspace).location;
   const roadshowSingCounts = cleanVoteCounts(workspace.roadshowSingCounts);
+  const roadshowSingCountsByLocation = cleanLocationVoteCounts(workspace.roadshowSingCountsByLocation);
+  const locationKey = ROADSHOW_LOCATION_KEYS[location];
   const current = roadshowSingCounts[songId] || 0;
-  const next = Math.max(0, current + delta);
+  const localCurrent = locationKey ? roadshowSingCountsByLocation[locationKey][songId] || 0 : current;
+  // 一个地点减到零之后，不能继续扣掉别的地点的演唱次数。
+  const change = delta < 0 ? -Math.min(current, localCurrent, 1) : 1;
+  const next = current + change;
   if (next) roadshowSingCounts[songId] = next;
   else delete roadshowSingCounts[songId];
-  await workspaceRef.set(buildWritableWorkspace({ ...workspace, roadshowSingCounts, updatedAt: new Date().toISOString() }));
-  return roadshowSingCounts;
+  if (locationKey) {
+    const localNext = localCurrent + change;
+    if (localNext) roadshowSingCountsByLocation[locationKey][songId] = localNext;
+    else delete roadshowSingCountsByLocation[locationKey][songId];
+  }
+  if (latest && eventId) {
+    if (Object.keys(events).length >= 10000) throw new Error('INVALID_RECORD');
+    events[eventId] = { songId, location, delta };
+  }
+  const saved = { ...workspace, roadshowSingCounts, roadshowSingCountsByLocation, ...(latest && eventId ? { roadshowSingEvents: events } : {}), updatedAt: new Date().toISOString() };
+  await workspaceRef.set(buildWritableWorkspace(saved));
+  return { ...roadshowSingState(saved), ...(latest ? { location } : {}) };
+});
+// 单独保存详情页的识曲演唱，避免保存路演档案时覆盖现场记录。
+const recordRoadshowQuizAtomically = (db, ownerId, request, now) => db.runTransaction(async transaction => {
+  const ref = transaction.collection('song_request_workspaces').doc(quizSongPlaysId(ownerId));
+  let result;
+  try { result = await ref.get(); }
+  catch (error) { if (!/not found|does not exist/i.test(String(error?.message))) throw error; }
+  const current = (Array.isArray(result?.data) ? result.data[0] : result?.data) || {};
+  const events = [...(current.events || [])];
+  const index = events.findIndex(event => event.id === request.eventId);
+  let event;
+  if (request.action === 'roadshowQuiz:start') {
+    if (index >= 0) {
+      if (events[index].catalogId !== request.songId) throw new Error('INVALID_RECORD');
+      if (events[index].deletedAt) throw new Error('NOT_FOUND');
+      return events[index];
+    }
+    const account = await transaction.collection('song_request_workspaces').doc(ownerId).get();
+    const roadshow = requireLatestRoadshow(Array.isArray(account.data) ? account.data[0] : account.data);
+    if (events.length >= 10000) throw new Error('INVALID_RECORD');
+    event = { id: request.eventId, catalogId: request.songId, title: request.title, artist: request.artist,
+      roadshowId: roadshow.id, location: roadshow.location, playedAt: now };
+    events.push(event);
+  } else {
+    if (index < 0) throw new Error('NOT_FOUND');
+    if (request.action === 'roadshowQuiz:undo') {
+      if (events[index].deletedAt) return events[index];
+      event = { ...events[index], deletedAt: now };
+    } else {
+      if (events[index].deletedAt) throw new Error('NOT_FOUND');
+      event = { ...events[index], correct: request.correct, answeredAt: now };
+    }
+    events[index] = event;
+  }
+  await ref.set(buildWritableWorkspace({ ...current, events, updatedAt: now }));
+  return event;
+});
+const quizPlayRoadshows = (saved, location) => (saved?.events || [])
+  .filter(event => !event.deletedAt && (!location || event.location === location))
+  .map(event => ({ location: event.location, recognitionAttempts: [{ ...event, answeredAt: event.playedAt }] }));
+const songQuizState = async (store, ownerId, songId) => {
+  const [saved, reset, roadshows] = await Promise.all([
+    store.getWorkspace(quizSongPlaysId(ownerId)),
+    store.getWorkspace(quizRankingResetId(ownerId)),
+    store.getAllRoadshows(),
+  ]);
+  const plays = filterQuizRankingRoadshows(quizPlayRoadshows(saved), reset);
+  const visible = filterQuizRankingRoadshows([...roadshows, ...quizPlayRoadshows(saved)], reset)
+    .map(record => ({ ...record, recognitionAttempts: (record.recognitionAttempts || []).filter(attempt => attempt?.catalogId === songId) }));
+  const statistics = (records) => {
+    const entry = buildPublicQuizRanking(records)[0];
+    return {
+      playCount: entry?.playCount ?? entry?.answerCount ?? 0,
+      answerCount: entry?.answerCount ?? 0,
+      correctCount: entry?.correctCount ?? 0,
+      accuracy: entry?.answerCount ? entry.accuracy : null,
+    };
+  };
+  return {
+    event: plays.flatMap(record => record.recognitionAttempts).filter(event => event.catalogId === songId).at(-1) || null,
+    stats: statistics(visible),
+    statsByLocation: Object.fromEntries(Object.keys(ROADSHOW_LOCATION_KEYS).map(location => [location, statistics(visible.filter(record => record.location === location))])),
+  };
+};
+const clearRoadshowSingCountsAtomically = (db, ownerWorkspaceId, location, clearedAt) => db.runTransaction(async (transaction) => {
+  const ref = transaction.collection('song_request_workspaces').doc(ownerWorkspaceId);
+  const result = await ref.get();
+  const workspace = Array.isArray(result.data) ? result.data[0] : result.data;
+  if (!workspace) throw new Error('AUTH_FAILED');
+  const counts = cleanVoteCounts(workspace.roadshowSingCounts);
+  const byLocation = cleanLocationVoteCounts(workspace.roadshowSingCountsByLocation);
+  const key = ROADSHOW_LOCATION_KEYS[location];
+  if (key) {
+    for (const [songId, count] of Object.entries(byLocation[key])) {
+      const remaining = Math.max(0, (counts[songId] || 0) - count);
+      if (remaining) counts[songId] = remaining;
+      else delete counts[songId];
+    }
+    byLocation[key] = {};
+  }
+  const saved = {
+    ...workspace,
+    roadshowSingCounts: key ? counts : {},
+    roadshowSingCountsByLocation: key ? byLocation : {},
+    roadshowSingCountsClearedAt: clearedAt,
+    updatedAt: clearedAt,
+  };
+  await ref.set(buildWritableWorkspace(saved));
+  return roadshowSingState(saved);
 });
 const migrateLegacyRoadshowSingCountsAtomically = (db, ownerWorkspaceId) => db.runTransaction(async (transaction) => {
   const workspaceRef = transaction.collection('song_request_workspaces').doc(ownerWorkspaceId);
@@ -106,7 +251,7 @@ const migrateLegacyRoadshowSingCountsAtomically = (db, ownerWorkspaceId) => db.r
   if (!workspace) throw new Error('AUTH_FAILED');
   const roadshowSingCounts = cleanVoteCounts(workspace.roadshowSingCounts);
   const legacySungCounts = cleanVoteCounts(workspace.sungVoteCounts);
-  if (Object.keys(roadshowSingCounts).length || !Object.keys(legacySungCounts).length) {
+  if (workspace.roadshowSingCountsClearedAt || Object.keys(roadshowSingCounts).length || !Object.keys(legacySungCounts).length) {
     return { roadshowSingCounts, sungCounts: legacySungCounts, migrated: false };
   }
   await workspaceRef.set(buildWritableWorkspace({
@@ -141,6 +286,13 @@ const latestRoadshowLocation = (workspace) => {
   const records = Array.isArray(workspace?.roadshows) ? workspace.roadshows.filter((record) => !record.deletedAt && ROADSHOW_LOCATION_KEYS[record.location]) : [];
   records.sort((left, right) => String(right.date || '').localeCompare(String(left.date || '')) || String(right.updatedAt || '').localeCompare(String(left.updatedAt || '')));
   return records[0]?.location;
+};
+const requireLatestRoadshow = (workspace) => {
+  const records = (workspace?.roadshows || []).filter(record => !record.deletedAt);
+  records.sort((left, right) => String(right.date || '').localeCompare(String(left.date || '')) || String(right.updatedAt || '').localeCompare(String(left.updatedAt || '')));
+  const latest = records[0];
+  if (!latest || !ROADSHOW_LOCATION_KEYS[latest.location]) throw new Error('NO_LATEST_ROADSHOW');
+  return latest;
 };
 const workspaceId = (alias) => crypto.createHash('sha256').update(alias.trim().toLocaleLowerCase()).digest('hex');
 const passwordHash = (password, salt) => crypto.scryptSync(password, salt, 32).toString('hex');
@@ -219,7 +371,7 @@ const buildPublicQuizRanking = (roadshows) => {
   const groups = new Map();
   for (const roadshow of roadshows) {
     for (const attempt of roadshow.recognitionAttempts || []) {
-      if (!attempt || typeof attempt.correct !== 'boolean' || !attempt.title) continue;
+      if (!attempt || !attempt.title || (typeof attempt.correct !== 'boolean' && !attempt.playedAt)) continue;
       const songId = attempt.catalogId || `manual:${String(attempt.title).trim().toLocaleLowerCase()}:${String(attempt.artist || '').trim().toLocaleLowerCase()}`;
       const current = groups.get(songId) || {
         songId,
@@ -228,14 +380,17 @@ const buildPublicQuizRanking = (roadshows) => {
         answerCount: 0,
         correctCount: 0,
       };
-      current.answerCount += 1;
-      if (attempt.correct) current.correctCount += 1;
+      if (attempt.playedAt || current.playCount !== undefined) current.playCount = (current.playCount ?? current.answerCount) + 1;
+      if (typeof attempt.correct === 'boolean') {
+        current.answerCount += 1;
+        if (attempt.correct) current.correctCount += 1;
+      }
       groups.set(songId, current);
     }
   }
   return [...groups.values()].map((entry) => ({
     ...entry,
-    accuracy: Math.round((entry.correctCount / entry.answerCount) * 1000) / 10,
+    accuracy: entry.answerCount ? Math.round((entry.correctCount / entry.answerCount) * 1000) / 10 : 0,
   })).sort((left, right) => (
     right.accuracy - left.accuracy
     || right.answerCount - left.answerCount
@@ -302,7 +457,10 @@ function createHandler(store) {
       }
       if (request.action === 'roadshows:publicQuizRanking') {
         const roadshows = (await store.getAllRoadshows()).filter((record) => !request.location || record.location === request.location);
-        return { ok: true, ranking: buildPublicQuizRanking(roadshows), participantRanking: buildPublicQuizParticipantRanking(roadshows) };
+        const plays = await store.getWorkspace(quizSongPlaysId(workspaceId(FEATURED_SONGS_OWNER_ALIAS)));
+        const reset = await store.getWorkspace(quizRankingResetId(workspaceId(FEATURED_SONGS_OWNER_ALIAS)));
+        const rankedRoadshows = filterQuizRankingRoadshows([...roadshows, ...quizPlayRoadshows(plays, request.location)], reset);
+        return { ok: true, ranking: buildPublicQuizRanking(rankedRoadshows), participantRanking: buildPublicQuizParticipantRanking(rankedRoadshows) };
       }
       if (request.action === 'artistSettings:pull') {
         return { ok: true, snapshot: publicArtistSettings(await store.getArtistSettings()) };
@@ -371,11 +529,16 @@ function createHandler(store) {
       try {
         authenticated = await authenticate(store, request.alias, request.password);
       } catch (error) {
-        if ((request.action === 'artistSettings:push' || request.action === 'featuredSongs:set' || request.action === 'quizLibrary:set' || request.action === 'votes:finishAll' || request.action === 'votes:clearPending' || request.action === 'votes:clearSung')
+        if ((request.action === 'artistSettings:push' || request.action === 'featuredSongs:set' || request.action === 'quizLibrary:set' || request.action === 'votes:finishAll' || request.action === 'votes:clearPending' || request.action === 'votes:clearSung' || request.action === 'roadshows:clearQuizRanking')
           && error?.message === 'NOT_REGISTERED') throw new Error('AUTH_FAILED');
         throw error;
       }
       const { id, workspace } = authenticated;
+      if (request.action === 'roadshows:clearQuizRanking') {
+        if (id !== workspaceId(FEATURED_SONGS_OWNER_ALIAS)) throw new Error('AUTH_FAILED');
+        await store.clearQuizRankingAtomically(id, request.location, store.now());
+        return { ok: true };
+      }
       if (request.action === 'inquiries:pull' || request.action === 'inquiries:save') {
         if (id !== workspaceId(FEATURED_SONGS_OWNER_ALIAS)) throw new Error('AUTH_FAILED');
         if (request.action === 'inquiries:save') return { ok: true, snapshot: await store.saveInquiries(id, request.expectedRevision, request.entries) };
@@ -444,15 +607,30 @@ function createHandler(store) {
       }
       if (request.action === 'roadshowSings:pull') {
         if (id !== workspaceId(FEATURED_SONGS_OWNER_ALIAS)) throw new Error('AUTH_FAILED');
-        return { ok: true, roadshowSingCounts: cleanVoteCounts(workspace.roadshowSingCounts) };
+        return { ok: true, ...roadshowSingState(workspace) };
       }
       if (request.action === 'roadshowSings:adjust') {
         if (id !== workspaceId(FEATURED_SONGS_OWNER_ALIAS)) throw new Error('AUTH_FAILED');
-        return { ok: true, roadshowSingCounts: await store.adjustRoadshowSingCountAtomically(id, request.songId, request.delta) };
+        const location = request.location || latestRoadshowLocation(workspace);
+        const state = await store.adjustRoadshowSingCountAtomically(id, request.songId, request.delta, location, request.legacy, request.latest, request.eventId);
+        // 兼容只返回总次数的已有存储适配器。
+        return { ok: true, ...(state.roadshowSingCounts ? state : { roadshowSingCounts: state }) };
+      }
+      if (request.action === 'roadshowSings:clear') {
+        if (id !== workspaceId(FEATURED_SONGS_OWNER_ALIAS)) throw new Error('AUTH_FAILED');
+        return { ok: true, ...await store.clearRoadshowSingCountsAtomically(id, request.location, store.now()) };
       }
       if (request.action === 'roadshowSings:migrateLegacy') {
         if (id !== workspaceId(FEATURED_SONGS_OWNER_ALIAS)) throw new Error('AUTH_FAILED');
         return { ok: true, ...await store.migrateLegacyRoadshowSingCountsAtomically(id) };
+      }
+      if (request.action.startsWith('roadshowQuiz:')) {
+        if (id !== workspaceId(FEATURED_SONGS_OWNER_ALIAS)) throw new Error('AUTH_FAILED');
+        if (request.action === 'roadshowQuiz:pull') {
+          return { ok: true, ...await songQuizState(store, id, request.songId) };
+        }
+        const event = await store.recordRoadshowQuizAtomically(id, request, store.now());
+        return { ok: true, ...await songQuizState(store, id, event.catalogId), ...(request.action === 'roadshowQuiz:undo' ? { location: event.location } : {}) };
       }
       if (request.action === 'featuredSongs:set') {
         if (id !== workspaceId(FEATURED_SONGS_OWNER_ALIAS)) throw new Error('AUTH_FAILED');
@@ -659,6 +837,7 @@ exports.main = async (event) => {
       setQuizLibraryAssignments: (id, assignments, updatedAt) => workspaces.doc(id).update({ quizLibraryAssignments: assignments, updatedAt }),
       getVotes: readVoteCounts,
       getVoteRequesters: readVoteRequesters,
+      clearQuizRankingAtomically: (id, location, clearedAt) => clearQuizRankingAtomically(db, id, location, clearedAt),
       async clearVotesAtomically(ownerWorkspaceId, kind) {
         const songIds = kind === 'pending' ? Object.keys(await readVoteCounts()) : [];
         const sungCounts = await clearVoteStateAtomically(db, ownerWorkspaceId, kind, songIds);
@@ -699,7 +878,9 @@ exports.main = async (event) => {
         return { counts: await readVoteCounts(), sungCounts };
       },
       adjustSungVoteAtomically: (ownerWorkspaceId, songId, delta, location) => adjustSungVoteAtomically(db, ownerWorkspaceId, songId, delta, location),
-      adjustRoadshowSingCountAtomically: (ownerWorkspaceId, songId, delta) => adjustRoadshowSingCountAtomically(db, ownerWorkspaceId, songId, delta),
+      adjustRoadshowSingCountAtomically: (ownerWorkspaceId, songId, delta, location, legacy, latest, eventId) => adjustRoadshowSingCountAtomically(db, ownerWorkspaceId, songId, delta, location, legacy, latest, eventId),
+      recordRoadshowQuizAtomically: (ownerId, request, now) => recordRoadshowQuizAtomically(db, ownerId, request, now),
+      clearRoadshowSingCountsAtomically: (ownerWorkspaceId, location, clearedAt) => clearRoadshowSingCountsAtomically(db, ownerWorkspaceId, location, clearedAt),
       migrateLegacyRoadshowSingCountsAtomically: (ownerWorkspaceId) => migrateLegacyRoadshowSingCountsAtomically(db, ownerWorkspaceId),
       async getSongRecords(workspaceId) {
         const pageSize = 1000;
@@ -891,6 +1072,12 @@ exports.main = async (event) => {
 
 exports.createHandler = createHandler;
 exports.clearVoteStateAtomically = clearVoteStateAtomically;
+exports.adjustRoadshowSingCountAtomically = adjustRoadshowSingCountAtomically;
+exports.recordRoadshowQuizAtomically = recordRoadshowQuizAtomically;
+exports.clearRoadshowSingCountsAtomically = clearRoadshowSingCountsAtomically;
+exports.migrateLegacyRoadshowSingCountsAtomically = migrateLegacyRoadshowSingCountsAtomically;
+exports.clearQuizRankingAtomically = clearQuizRankingAtomically;
+exports.filterQuizRankingRoadshows = filterQuizRankingRoadshows;
 exports.incrementVoteAtomically = incrementVoteAtomically;
 exports.buildWritableWorkspace = buildWritableWorkspace;
 exports.buildSoftDeletedSongRecord = buildSoftDeletedSongRecord;

@@ -8,6 +8,9 @@ import type { Song } from './songCatalog';
 import { findSongRoadshowHistory, type RoadshowRecord } from './roadshow';
 import { QUIZ_LEVELS, type QuizLevel } from './songQuizLibrary';
 import ScoreViewer from './ScoreViewer';
+import SongPerformanceControls from './SongPerformanceControls';
+import type { CloudRoadshowSingState } from './songRequestCloud';
+import { getLatestRoadshow } from './roadshow';
 import ArtistTagsDialog from './ArtistTagsDialog';
 import { Tag } from 'lucide-react';
 import {
@@ -47,6 +50,9 @@ interface SongDetailPanelProps {
   onRecordsChange: (records: SongRecord[]) => void;
   onScoreChange: (songId: string, score: SongScore | null, alreadySynced?: boolean) => void;
   onOpenPrivateSpace: () => void;
+  roadshowSingState: CloudRoadshowSingState;
+  roadshowSingCountsReady: boolean;
+  onRoadshowRecorded: (state: CloudRoadshowSingState) => void;
 }
 
 type JournalKind = 'practice' | 'roadshow' | 'score';
@@ -82,7 +88,7 @@ const displayRoadshowDate = (value: string) => value.replace(/-/g, '/');
 const SongDetailPanel = ({
   song, records, roadshows = [], session, syncStatus = '', quizLevel, quizCounts,
   canManageQuiz, quizBusy = false, score = null, scoreBusy = false, scoreSyncStatus = '', onQuizLevelChange, onRecordsChange,
-  onScoreChange, onOpenPrivateSpace,
+  onScoreChange, onOpenPrivateSpace, roadshowSingState, roadshowSingCountsReady, onRoadshowRecorded,
 }: SongDetailPanelProps) => {
   const songRecords = useMemo(() => sortSongRecords(records.filter((record) => record.songId === song.id)), [records, song.id]);
   const practices = songRecords.filter((record): record is PracticeRecord => record.kind === 'practice');
@@ -473,6 +479,7 @@ const SongDetailPanel = ({
           </div>
         </div>
         {(scoreWorking || scorePending) && <p aria-live="polite" className="mt-3 text-[11px] font-bold text-orange-100/55">{scoreWorking || '仅保存在本机，等待同步'}</p>}
+        {isOwner && session && <SongPerformanceControls key={song.id} song={song} session={session} latestRoadshow={getLatestRoadshow(roadshows) ?? null} singState={roadshowSingState} ready={roadshowSingCountsReady} onRoadshowRecorded={onRoadshowRecorded} />}
         {lyricsEditorOpen && (
           <div className="mt-5 rounded-2xl border border-orange-200/15 bg-orange-300/[.045] p-4">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-3">

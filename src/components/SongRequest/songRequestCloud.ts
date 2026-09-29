@@ -82,9 +82,62 @@ export const pullCloudRoadshowSingCounts = async (credentials: Credentials): Pro
   await callSync<{ roadshowSingCounts: VoteCounts }>({ action: 'roadshowSings:pull', ...credentials })
 ).roadshowSingCounts;
 
-export const adjustCloudRoadshowSingCount = async (credentials: Credentials, songId: string, delta: 1 | -1): Promise<VoteCounts> => (
-  await callSync<{ roadshowSingCounts: VoteCounts }>({ action: 'roadshowSings:adjust', ...credentials, songId, delta })
-).roadshowSingCounts;
+export interface CloudRoadshowSingState {
+  roadshowSingCounts: VoteCounts;
+  roadshowSingCountsByLocation?: Partial<Record<RoadshowLocation, VoteCounts>>;
+  roadshowSingCountsClearedAt?: string;
+  location?: RoadshowLocation;
+}
+
+export interface SongQuizPlay {
+  id: string;
+  catalogId: string;
+  title: string;
+  artist: string;
+  roadshowId: string;
+  location: RoadshowLocation;
+  playedAt: string;
+  correct?: boolean;
+}
+
+export interface SongQuizStats {
+  playCount: number;
+  answerCount: number;
+  correctCount: number;
+  accuracy: number | null;
+}
+
+export interface CloudSongQuizState {
+  event: SongQuizPlay | null;
+  stats: SongQuizStats;
+  statsByLocation: Record<RoadshowLocation, SongQuizStats>;
+}
+
+export const recordCloudLatestRoadshowSing = (credentials: Credentials, songId: string, eventId: string, delta: 1 | -1 = 1): Promise<CloudRoadshowSingState> =>
+  callSync<CloudRoadshowSingState>({ action: 'roadshowSings:adjust', ...credentials, songId, delta, latest: true, eventId });
+
+export const pullCloudSongQuizPlay = (credentials: Credentials, songId: string): Promise<CloudSongQuizState> =>
+  callSync<CloudSongQuizState>({ action: 'roadshowQuiz:pull', ...credentials, songId });
+
+export const startCloudSongQuizPlay = (credentials: Credentials, song: { id: string; title: string; artist: string }, eventId: string): Promise<CloudSongQuizState> =>
+  callSync<CloudSongQuizState>({ action: 'roadshowQuiz:start', ...credentials, eventId, songId: song.id, title: song.title, artist: song.artist });
+
+export const judgeCloudSongQuizPlay = (credentials: Credentials, eventId: string, correct: boolean): Promise<CloudSongQuizState> =>
+  callSync<CloudSongQuizState>({ action: 'roadshowQuiz:judge', ...credentials, eventId, correct });
+
+export const undoCloudSongQuizPlay = (credentials: Credentials, eventId: string): Promise<CloudSongQuizState & { location: RoadshowLocation }> =>
+  callSync<CloudSongQuizState & { location: RoadshowLocation }>({ action: 'roadshowQuiz:undo', ...credentials, eventId });
+
+export const pullCloudRoadshowSingState = (credentials: Credentials): Promise<CloudRoadshowSingState> =>
+  callSync<CloudRoadshowSingState>({ action: 'roadshowSings:pull', ...credentials });
+
+export const adjustCloudRoadshowSingCount = (
+  credentials: Credentials, songId: string, delta: 1 | -1, location?: RoadshowLocation, legacy = false,
+): Promise<CloudRoadshowSingState> =>
+  callSync<CloudRoadshowSingState>({ action: 'roadshowSings:adjust', ...credentials, songId, delta, ...(location ? { location } : {}), ...(legacy ? { legacy: true } : {}) });
+
+export const clearCloudRoadshowSingCounts = (credentials: Credentials, location?: RoadshowLocation): Promise<CloudRoadshowSingState> =>
+  callSync<CloudRoadshowSingState>({ action: 'roadshowSings:clear', ...credentials, ...(location ? { location } : {}) });
 
 export const migrateLegacyCloudRoadshowSingCounts = async (credentials: Credentials): Promise<{ roadshowSingCounts: VoteCounts; sungCounts: VoteCounts; migrated: boolean }> => {
   const result = await callSync<{ roadshowSingCounts: VoteCounts; sungCounts: VoteCounts; migrated: boolean }>({ action: 'roadshowSings:migrateLegacy', ...credentials });
@@ -176,6 +229,10 @@ export const pullPublicQuizRanking = async (location?: RoadshowLocation): Promis
     ranking: Array.isArray(result.ranking) ? result.ranking : [],
     participantRanking: Array.isArray(result.participantRanking) ? result.participantRanking : [],
   };
+};
+
+export const clearCloudQuizRanking = async (credentials: Credentials, location?: RoadshowLocation): Promise<void> => {
+  await callSync<Record<string, never>>({ action: 'roadshows:clearQuizRanking', ...credentials, ...(location ? { location } : {}) });
 };
 
 export const saveRoadshow = async (credentials: Credentials, record: RoadshowRecord): Promise<RoadshowRecord> => (

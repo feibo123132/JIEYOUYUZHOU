@@ -207,7 +207,7 @@ test('游客能读取脱敏个人练习榜但不能进入私人歌曲档案', as
   assert.doesNotMatch(source, /请先进入私有空间查看个人练习榜/)
 })
 
-test('周杰伦歌单按指定顺序包含 30 首歌', async () => {
+test('周杰伦歌单按指定顺序包含 32 首歌', async () => {
   const { SONGS } = await import(catalogModuleUrl.href)
   const titles = SONGS
     .filter((song: { artist: string }) => song.artist === '周杰伦')
@@ -216,7 +216,7 @@ test('周杰伦歌单按指定顺序包含 30 首歌', async () => {
   assert.deepEqual(titles, [
     '晴天', '青花瓷', '等你下课', '红尘客栈', '告白气球', '一路向北', '花海', '蒲公英的约定', '明明就', '枫',
     '不能说的秘密', '搁浅', '兰亭序', '手写的从前', '半岛铁盒', '我落泪情绪零碎', '那天下雨了', '简单爱', '园游会', '夏天的风',
-    '最长的电影', '龙卷风', '烟花易冷', '退后', '倒带', '安静', '彩虹', '哪里都是你', '轨迹', '说好的幸福呢',
+    '最长的电影', '龙卷风', '烟花易冷', '退后', '倒带', '安静', '彩虹', '哪里都是你', '轨迹', '说好的幸福呢', '一点点', '说好不哭',
   ])
 })
 
@@ -284,10 +284,10 @@ test('曲库按指定歌手与歌曲顺序保存，且每首歌均有独立文�
   const { SONGS } = await import(catalogModuleUrl.href)
   const catalogSource = readFileSync(catalogModuleUrl, 'utf8')
   const expectedByArtist: Record<string, string[]> = {
-    周杰伦: ['晴天', '青花瓷', '等你下课', '红尘客栈', '告白气球', '一路向北', '花海', '蒲公英的约定', '明明就', '枫', '不能说的秘密', '搁浅', '兰亭序', '手写的从前', '半岛铁盒', '我落泪情绪零碎', '那天下雨了', '简单爱', '园游会', '夏天的风', '最长的电影', '龙卷风', '烟花易冷', '退后', '倒带', '安静', '彩虹', '哪里都是你', '轨迹', '说好的幸福呢'],
+    周杰伦: ['晴天', '青花瓷', '等你下课', '红尘客栈', '告白气球', '一路向北', '花海', '蒲公英的约定', '明明就', '枫', '不能说的秘密', '搁浅', '兰亭序', '手写的从前', '半岛铁盒', '我落泪情绪零碎', '那天下雨了', '简单爱', '园游会', '夏天的风', '最长的电影', '龙卷风', '烟花易冷', '退后', '倒带', '安静', '彩虹', '哪里都是你', '轨迹', '说好的幸福呢', '一点点', '说好不哭'],
     林俊杰: ['江南', '心墙', '当你', '修炼爱情', '不潮不用花钱', '我还想她', '背对背拥抱', 'Always on line', '小酒窝', '醉赤壁', '裹着心的光', '愿与愁', '黑夜问白天', '一千年以后', '交换余生', '裂缝中的阳光', '她说', '那些你很冒险的梦'],
     孙燕姿: ['我怀念的', '开始懂了', '遇见', '我不难过', '第一天', '半句再见', '逆光', '天黑黑', '雨天', '当冬夜渐暖'],
-    邓紫棋: ['多远都要在一起', '唯一', '喜欢你', '来自天堂的魔鬼', '光年之外', '句号', '倒数', '龙卷风'],
+    邓紫棋: ['多远都要在一起', '唯一', '喜欢你', '来自天堂的魔鬼', '光年之外', '句号', '倒数', '龙卷风', '泡沫', '画'],
     薛之谦: ['刚刚好', '演员', '你还要我怎样', '意外', '方圆几里', '其实', '陪你去流浪', '天外来物', '绅士', '像风一样', '我好像在哪见过你', '暧昧', '天份', '哑巴'],
     汪苏泷: ['一笑倾城', '就让这大雨全都落下', '万有引力', '如果爱忘了', '如果可以', '忽而今夏', '我想念', '年轮'],
     梁静茹: ['勇气', '会呼吸的痛', '情歌', '大手拉小手', '可惜不是你', '给未来的自己', '暖暖', '分手快乐', '崇拜', '宁夏'],
@@ -334,8 +334,28 @@ test('曲库按指定歌手与歌曲顺序保存，且每首歌均有独立文�
     张震岳: ['爱我别走', '小宇'],
     沈以诚: ['白羊', '形容'],
     原神: ['回家的路', '如果突然想起我', '我不曾忘记'],
+    阿桑: ['一直很安静'],
+    张紫豪: ['可不可以'],
+    南拳妈妈: ['下雨天'],
+    哦漏: ['知我'],
+    TANK: ['三国恋'],
+    'S.H.E': ['你曾是少年'],
+    '徐良、小凌': ['坏女孩'],
+    陈默之: ['冷夜'],
+    杨一歌: ['苏公堤'],
+    'Dance Flow': ['迷人的危险'],
+    黄龄: ['入画江南'],
+    蒋小呢: ['给你呀'],
+    孙盛希: ['少一点天分'],
+    单依纯: ['想你时风起'],
+    柯立可: ['我多想说再见啊'],
+    蒋敦豪: ['乌兰巴托的夜'],
+    HITA: ['赤伶'],
+    海伦: ['游京'],
+    林忆莲: ['至少还有你'],
     'Taylor Swift': ['Love story', 'Exile'],
     'Justin Bieber': ['Baby', '10000 hours'],
+    'Lana Del Rey': ['Young and Beautiful'],
     五月天: ['知足', '温柔', '倔强', '步步', '突然好想你', '我不愿让你一个人', '后来的我们', '拥抱'],
     赵雷: ['成都', '鼓楼', '程艾影', '我记得', '少年锦时', '玛丽', '南方姑娘'],
     Alin: ['天若有情', '有一种悲伤', '给我一个理由忘记', '忘记拥抱'],
@@ -361,7 +381,7 @@ test('曲库按指定歌手与歌曲顺序保存，且每首歌均有独立文�
   }
   assert.equal(new Set(SONGS.map((song: { id: string }) => song.id)).size, SONGS.length)
   assert.deepEqual([...new Set(SONGS.map((song: { category: string }) => song.category))], ['华语流行', '欧美流行'])
-  assert.equal(SONGS.filter((song: { category: string }) => song.category === '欧美流行').length, 4)
+  assert.equal(SONGS.filter((song: { category: string }) => song.category === '欧美流行').length, 5)
   assert.ok(SONGS.every((song: { hotComment?: string }) => Boolean(song.hotComment?.trim())))
   assert.deepEqual(SONGS.filter((song: { featured: boolean }) => song.featured).map((song: { title: string }) => song.title).sort(), [...requestedPopularSongTitles].sort())
   assert.doesNotMatch(catalogSource, /POPULAR_SONG_TITLES|POPULAR_SONG_TITLE_SET/)
@@ -435,7 +455,7 @@ test('第三版曲库缓存会补齐新默认歌曲并升级到新版', async ()
 
   const catalog = loadEditableCatalog(storage, [...songs, newDefaultSong])
 
-  assert.equal(catalog.version, 10)
+  assert.equal(catalog.version, 11)
   assert.ok(catalog.artists.includes('新增歌手'))
   assert.equal(catalog.songs.find((song: { id: string }) => song.id === newDefaultSong.id)?.title, '新增默认歌')
 })
@@ -518,7 +538,7 @@ test('旧版曲库快照会补齐新版默认歌手并保留自定义歌曲', as
 
   const catalog = loadEditableCatalog(storage, [...songs, newDefaultSong])
 
-  assert.equal(catalog.version, 10)
+  assert.equal(catalog.version, 11)
   assert.deepEqual(catalog.artists, ['周杰伦', 'Coldplay', '新默认歌手', '自定义歌手'])
   assert.deepEqual(catalog.songs.map((song: { id: string }) => song.id), ['a', 'b', 'c', 'default:new', 'custom:legacy'])
 })
@@ -536,7 +556,7 @@ test('第四版曲库快照会补齐默认歌曲、同步热门标记并保留�
 
   const catalog = loadEditableCatalog(storage, [...songs, newDefaultSong])
 
-  assert.equal(catalog.version, 10)
+  assert.equal(catalog.version, 11)
   assert.equal(catalog.songs.find((song: { id: string }) => song.id === 'a')?.featured, true)
   assert.equal(catalog.songs.find((song: { id: string }) => song.id === 'default:new')?.title, '新版热门歌')
   assert.equal(catalog.songs.find((song: { id: string }) => song.id === 'custom:kept')?.title, '保留的自定义歌曲')
@@ -563,7 +583,7 @@ test('第五版曲库缓存会同步默认歌曲的歌手更正并保留自定�
 
   const catalog = loadEditableCatalog(storage, correctedSongs)
 
-  assert.equal(catalog.version, 10)
+  assert.equal(catalog.version, 11)
   assert.equal(catalog.songs.find((song: { id: string }) => song.id === songs[0].id)?.artist, '李佳薇')
   assert.equal(catalog.songs.find((song: { id: string }) => song.id === songs[1].id)?.artist, '王唯旖')
   assert.ok(catalog.songs.some((song: { id: string }) => song.id === 'custom:kept'))
@@ -582,7 +602,7 @@ test('第六版曲库缓存会补齐第七版新增歌手歌曲并保留自定�
 
   const catalog = loadEditableCatalog(storage, [...songs, newDefaultSong])
 
-  assert.equal(catalog.version, 10)
+  assert.equal(catalog.version, 11)
   assert.ok(catalog.artists.includes('新增歌手'))
   assert.ok(catalog.songs.some((song: { id: string }) => song.id === newDefaultSong.id))
   assert.ok(catalog.songs.some((song: { id: string }) => song.id === customSong.id))
@@ -599,7 +619,7 @@ test('第八版曲库缓存会补齐第九版新增点歌歌曲', async () => {
 
   const catalog = loadEditableCatalog(storage, [songs[0], newRequestSong])
 
-  assert.equal(catalog.version, 10)
+  assert.equal(catalog.version, 11)
   assert.ok(catalog.artists.includes('刘若英'))
   assert.ok(catalog.songs.some((song: { id: string }) => song.id === 'rny-hou-lai'))
 })
@@ -614,7 +634,7 @@ test('第九版云端曲库快照会补齐第十版新增点歌歌曲', async ()
 
   const catalog = upgradeEditableCatalog(cloudCatalog, [songs[0], ...newRequestSongs])
 
-  assert.equal(catalog.version, 10)
+  assert.equal(catalog.version, 11)
   assert.ok(catalog.artists.includes('颜人中'))
   assert.ok(catalog.artists.includes('刘若英'))
   assert.ok(catalog.songs.some((song: { id: string }) => song.id === 'yrz-you-xie'))

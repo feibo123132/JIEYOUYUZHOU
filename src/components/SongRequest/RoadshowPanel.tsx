@@ -21,6 +21,7 @@ import {
   deduplicateRoadshowSongs,
   mergePreviousRecognitionSongs,
   prepareRoadshowSwitch,
+  prepareRoadshowDetailNavigation,
   groupRoadshowRecognitionSongs,
   groupPerformanceSongsByMatchTier,
   paginateRoadshowSongs,
@@ -66,8 +67,9 @@ export type RoadshowEditorTab = 'performance' | 'recognition' | 'feelings';
 interface RoadshowPanelProps {
   editorTab: RoadshowEditorTab;
   onEditorTabChange: (tab: RoadshowEditorTab) => void;
-  onIncrementSingCount?: (songId: string, delta?: 1 | -1) => void;
+  onIncrementSingCount?: (songId: string, delta?: 1 | -1, location?: string) => void;
   pendingSingCounts?: Record<string, number>;
+  singCountsByLocation?: Partial<Record<string, Record<string, number>>>;
   defaultAlias?: string;
   songs?: Song[];
   records?: SongRecord[];
@@ -76,6 +78,7 @@ interface RoadshowPanelProps {
   canManageFeaturedSongs?: boolean;
   onRecordsChange?: (records: SongRecord[]) => void;
   onOpenSongDetail?: (song: Song) => void;
+  onRoadshowsChange?: (records: RoadshowRecord[]) => void;
 }
 
 type ArchiveView = 'practice' | 'roadshows' | 'invitations';
@@ -123,6 +126,7 @@ const RoadshowPanel = ({
   onEditorTabChange,
   onIncrementSingCount = () => undefined,
   pendingSingCounts = {},
+  singCountsByLocation,
   defaultAlias = '',
   songs = SONGS,
   records: songRecords = [],
@@ -131,6 +135,7 @@ const RoadshowPanel = ({
   canManageFeaturedSongs = false,
   onRecordsChange = () => undefined,
   onOpenSongDetail = () => undefined,
+  onRoadshowsChange,
 }: RoadshowPanelProps) => {
   const [credentials, setCredentials] = useState<Credentials | null>(() => readSession());
   const isStationOwner = isFeaturedSongManager(credentials?.alias);
@@ -171,6 +176,7 @@ const RoadshowPanel = ({
         if (!active) return;
         setRecords(cloudRecords);
         cacheRecords(cloudRecords);
+        if (isStationOwner) onRoadshowsChange?.(cloudRecords);
         // 云端权威：重挂载时若正在编辑的路演在云端有更新（如被一键导入过），用云端数据覆盖本地恢复的旧快照
         const currentEditing = editingRef.current;
         if (currentEditing) {
@@ -182,7 +188,7 @@ const RoadshowPanel = ({
       .catch((error) => { if (active) setMessage(mapRoadshowSyncError(error)); })
       .finally(() => { if (active) setBusy(false); });
     return () => { active = false; };
-  }, [credentials]);
+  }, [credentials, isStationOwner, onRoadshowsChange]);
 
   // 监听外部导入事件（例如从点歌榜一键导入），刷新当前编辑缓存以反映最新云端数据
   useEffect(() => {
@@ -193,6 +199,7 @@ const RoadshowPanel = ({
       pullRoadshows(credentials).then((cloudRecords) => {
         setRecords(cloudRecords);
         cacheRecords(cloudRecords);
+        if (isStationOwner) onRoadshowsChange?.(cloudRecords);
         const updated = cloudRecords.find((record) => record.id === targetId);
         if (updated && editing && editing.id === targetId) {
           setEditing(updated);
@@ -201,7 +208,7 @@ const RoadshowPanel = ({
     };
     window.addEventListener('jieyou-roadshow-imported', handler);
     return () => { window.removeEventListener('jieyou-roadshow-imported', handler); };
-  }, [credentials, editing]);
+  }, [credentials, editing, isStationOwner, onRoadshowsChange]);
 
   const authenticate = async (mode: 'login' | 'register') => {
     const next = { alias: alias.trim(), password };
@@ -221,6 +228,7 @@ const RoadshowPanel = ({
       setInvitationCode('');
       setRecords(cloudRecords);
       cacheRecords(cloudRecords);
+      if (isFeaturedSongManager(next.alias)) onRoadshowsChange?.(cloudRecords);
     } catch (error) {
       setMessage(mapRoadshowSyncError(error));
     } finally {
@@ -258,6 +266,7 @@ const RoadshowPanel = ({
       next.sort((left, right) => right.date.localeCompare(left.date));
       setRecords(next);
       cacheRecords(next);
+      onRoadshowsChange?.(next);
       setEditing(saved);
       setMessage('已保存到腾讯云');
       window.dispatchEvent(new Event('jieyou-quiz-ranking-updated'));
@@ -285,6 +294,7 @@ const RoadshowPanel = ({
       const next = records.filter((item) => item.id !== record.id);
       setRecords(next);
       cacheRecords(next);
+      onRoadshowsChange?.(next);
       setEditing(null);
       setMessage('已从云端删除');
     } catch (error) { setMessage(mapRoadshowSyncError(error)); }
@@ -321,8 +331,8 @@ const RoadshowPanel = ({
       <RoadshowEditor
         editorTab={editorTab}
         setEditorTab={onEditorTabChange}
-        onIncrementSingCount={onIncrementSingCount}
-        pendingSingCounts={pendingSingCounts}
+        onIncrementSingCount={(songId, delta) => onIncrementSingCount(songId, delta, editing.location)}
+        pendingSingCounts={singCountsByLocation && editing.location ? singCountsByLocation[editing.location] ?? {} : pendingSingCounts}
         credentials={credentials}
         record={editing}
         allRecords={records}
@@ -337,7 +347,14 @@ const RoadshowPanel = ({
         onSwitch={(targetId) => void switchRoadshow(targetId)}
         onSave={(candidate) => void persistRecord(candidate ?? editing)}
         onRecordAttempt={(record) => { void persistRecord(record); }}
-        onOpenSongDetail={(song) => onOpenSongDetail(resolveRoadshowSong(songs, song))}
+        onOpenSongDetail={(song) => {
+          if (busy || switchingRef.current) return;
+          switchingRef.current = true;
+          onRoadshowsChange?.(records);
+          void prepareRoadshowDetailNavigation(editing, records, persistRecord).then((saved) => {
+            if (saved) onOpenSongDetail(resolveRoadshowSong(songs, song));
+          }).finally(() => { switchingRef.current = false; });
+        }}
         onDelete={() => void removeRecord(editing)}
       />
     );

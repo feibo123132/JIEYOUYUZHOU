@@ -90,3 +90,15 @@ test('歌单快照拒绝重复歌曲及不匹配的歌手', () => {
   const request = { action: 'artistSettings:push', ...user, expectedRevision: null };
   for (const songs of [[song, song], [{ ...song, artist: '不存在' }]]) assert.throws(() => validateRequest({ ...request, snapshot: { ...seed, catalog: { ...seed.catalog, songs } } }), /INVALID_ARTIST_SETTINGS/);
 });
+
+test('新版歌曲补充支持第十一版快照，并兼容第十版客户端', async () => {
+  const { handler: call } = setup();
+  for (const version of [10, 11]) {
+    const snapshot = { ...seed, catalog: { ...seed.catalog, version } };
+    const result = await call({ action: 'artistSettings:push', ...owner, expectedRevision: version === 10 ? null : 1, snapshot });
+    assert.equal(result.ok, true);
+    assert.equal(result.snapshot.catalog.version, version);
+    assert.equal((await call({ action: 'artistSettings:pull' })).snapshot.catalog.version, version);
+  }
+  assert.throws(() => validateRequest({ action: 'artistSettings:push', ...user, expectedRevision: null, snapshot: { ...seed, catalog: { ...seed.catalog, version: 999 } } }), /INVALID_ARTIST_SETTINGS/);
+});

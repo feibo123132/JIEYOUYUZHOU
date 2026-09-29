@@ -6,7 +6,7 @@ test('roadshow performance counters use a separate store from request sung count
   const station = readFileSync(new URL('../src/components/SongRequest/SongRequestStation.tsx', import.meta.url), 'utf8');
   const requestButton = station.match(/requestSungCounts\[song\.id\][\s\S]*adjustRequestSungCount\(song\.id\)[\s\S]*>已唱\{sungCount\}次/);
   const requestMinusButton = station.match(/adjustRequestSungCount\(song\.id, -1\)/);
-  const roadshowPanel = station.match(/onIncrementSingCount=\{\(songId, delta = 1\) => \{ void adjustRoadshowSingCount\(songId, delta\); \}\}[\s\S]*?pendingSingCounts=\{roadshowSingCounts\}/);
+  const roadshowPanel = station.match(/onIncrementSingCount=\{\(songId, delta = 1, location\) => \{ void adjustRoadshowSingCount\(songId, delta, location\); \}\}[\s\S]*?pendingSingCounts=\{roadshowSingCounts\}[\s\S]*?singCountsByLocation=\{roadshowSingCountsByLocation\}/);
 
   assert.ok(requestButton, 'pending visitor requests should have a button that increments request sung counts');
   assert.ok(requestMinusButton, 'pending visitor requests should have a button that decrements request sung counts');

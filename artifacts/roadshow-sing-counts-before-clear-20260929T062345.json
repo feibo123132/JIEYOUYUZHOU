@@ -1,0 +1,121 @@
+{
+  "data": {
+    "results": [
+      [
+        {
+          "_id": "4c5eb2821e56cfef572e1d87209f40bc60d7950af2ddc0a069886fbacd24682f",
+          "sungVoteCounts": {},
+          "sungVoteCountsByLocation": {},
+          "roadshowSingCounts": {
+            "fddm-shao-nian-shi": {
+              "$numberInt": "1"
+            },
+            "hei-ye-wen-bai-tian": {
+              "$numberInt": "2"
+            },
+            "lie-feng-zhong-de-yang-guang": {
+              "$numberInt": "1"
+            },
+            "bu-chao-bu-yong-hua-qian": {
+              "$numberInt": "1"
+            },
+            "syz-wo-huai-nian-de": {
+              "$numberInt": "1"
+            },
+            "wsl-ru-guo-ke-yi": {
+              "$numberInt": "1"
+            },
+            "syz-ban-ju-zai-jian": {
+              "$numberInt": "1"
+            },
+            "syz-yu-jian": {
+              "$numberInt": "1"
+            },
+            "zl-gu-lou": {
+              "$numberInt": "1"
+            },
+            "pu-gong-ying-de-yue-ding": {
+              "$numberInt": "1"
+            },
+            "ljr-ke-xi-bu-shi-ni": {
+              "$numberInt": "1"
+            },
+            "qing-hua-ci": {
+              "$numberInt": "2"
+            },
+            "hua-hai": {
+              "$numberInt": "1"
+            },
+            "syz-kai-shi-dong-le": {
+              "$numberInt": "1"
+            },
+            "xs-nan-shan-yi": {
+              "$numberInt": "2"
+            },
+            "mljyq-qi-feng-le": {
+              "$numberInt": "1"
+            },
+            "ljr-da-shou-la-xiao-shou": {
+              "$numberInt": "1"
+            },
+            "guo-zhe-xin-de-guang": {
+              "$numberInt": "1"
+            },
+            "ljr-chong-bai": {
+              "$numberInt": "1"
+            },
+            "ta-shuo": {
+              "$numberInt": "1"
+            },
+            "hong-chen-ke-zhan": {
+              "$numberInt": "3"
+            },
+            "ljr-qing-ge": {
+              "$numberInt": "2"
+            },
+            "deng-ni-xia-ke": {
+              "$numberInt": "2"
+            },
+            "syz-wo-bu-nan-guo": {
+              "$numberInt": "1"
+            },
+            "tfz-xiao-xing-yun": {
+              "$numberInt": "2"
+            },
+            "xia-tian-de-feng": {
+              "$numberInt": "3"
+            },
+            "wlh-ni-bu-zhi-dao-de-shi": {
+              "$numberInt": "1"
+            },
+            "zui-chi-bi": {
+              "$numberInt": "1"
+            },
+            "cjy-letting-go": {
+              "$numberInt": "2"
+            },
+            "cl-xiao-ban": {
+              "$numberInt": "2"
+            },
+            "wo-luo-lei-qing-xu-ling-sui": {
+              "$numberInt": "2"
+            },
+            "tcy-hong-se-gao-gen-xie": {
+              "$numberInt": "2"
+            },
+            "zrz-xia-xiang": {
+              "$numberInt": "1"
+            },
+            "wsl-nian-lun": {
+              "$numberInt": "1"
+            },
+            "xzq-tian-wai-lai-wu": {
+              "$numberInt": "2"
+            }
+          }
+        }
+      ]
+    ],
+    "requestId": "d86b0bad-0066-449b-b859-1087c7cfb8c3"
+  }
+}

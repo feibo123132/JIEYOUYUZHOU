@@ -41,6 +41,7 @@ export interface PublicQuizRankingItem {
   answerCount: number;
   correctCount: number;
   accuracy: number;
+  playCount?: number;
 }
 
 export interface RoadshowRecord {
@@ -60,6 +61,15 @@ export const ROADSHOW_CACHE_KEY = 'jieyou-roadshows-v1';
 export const ROADSHOW_SESSION_KEY = 'jieyou-roadshow-session-v1';
 export const ROADSHOW_EDITING_KEY = 'jieyou-roadshow-editing-v1';
 export const ROADSHOW_QUIZ_PAGE_SIZE = 5;
+
+export const prepareRoadshowDetailNavigation = async (
+  current: RoadshowRecord,
+  records: RoadshowRecord[],
+  save: (record: RoadshowRecord) => Promise<boolean>,
+): Promise<boolean> => {
+  const saved = records.find(record => record.id === current.id);
+  return JSON.stringify(current) === JSON.stringify(saved) || await save(current);
+};
 
 export const prepareRoadshowSwitch = async (
   current: RoadshowRecord,
@@ -385,7 +395,9 @@ export const parsePublicQuizRanking = (value: unknown): PublicQuizRankingItem[] 
     return typeof item.songId === 'string' && Boolean(item.songId.trim())
       && typeof item.songTitle === 'string' && Boolean(item.songTitle.trim())
       && typeof item.songArtist === 'string'
-      && Number.isInteger(item.answerCount) && (item.answerCount ?? 0) > 0
+      && Number.isInteger(item.answerCount) && (item.answerCount ?? -1) >= 0
+      && ((item.answerCount ?? 0) > 0 || (Number.isInteger(item.playCount) && (item.playCount ?? 0) > 0))
+      && (item.playCount === undefined || (Number.isInteger(item.playCount) && item.playCount >= (item.answerCount ?? 0)))
       && Number.isInteger(item.correctCount) && (item.correctCount ?? -1) >= 0
       && (item.correctCount ?? 0) <= (item.answerCount ?? 0)
       && typeof item.accuracy === 'number' && item.accuracy >= 0 && item.accuracy <= 100;
