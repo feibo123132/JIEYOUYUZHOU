@@ -57,7 +57,7 @@ import {
   type QuizAssignments, type QuizLevel,
 } from './songQuizLibrary';
 
-interface SongRequestStationProps { onBack: () => void; }
+interface SongRequestStationProps { onBack: () => void; canReturnToUniverse: boolean; }
 type SectionId = 'ranking' | 'artists' | 'roadshows' | 'playlists' | 'quiz';
 type RankingView = 'requests' | 'personal' | 'quiz';
 type RequestVoteView = 'pending' | 'sung';
@@ -212,7 +212,7 @@ const resizeArtistAvatar = (file: File): Promise<string> => new Promise((resolve
 const PENDING_SING_COUNTS_KEY = 'jieyou-pending-sing-counts-v1';
 const REQUESTER_NAME_STORAGE_KEY = 'jieyou-song-request-requester-name-v1';
 
-const SongRequestStation = ({ onBack, settingsStorage }: SongRequestStationProps & { settingsStorage: ArtistSettingsStorage }) => {
+const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: SongRequestStationProps & { settingsStorage: ArtistSettingsStorage }) => {
   const accountAlias = readBrowserSongRecordSession()?.alias.trim().toLowerCase() || '';
   const [catalogReady, setCatalogReady] = useState(false);
   const nickname = useAppStore((state) => state.user?.nickname || '');
@@ -1335,7 +1335,7 @@ const SongRequestStation = ({ onBack, settingsStorage }: SongRequestStationProps
       }
       return;
     }
-    if (activeSection === null) return onBack();
+    if (activeSection === null) { if (canReturnToUniverse) onBack(); return; }
     if (selectedArtist) {
       setSongOrderMode(false);
       setSongEditMode(false);
@@ -2010,6 +2010,7 @@ const SongRequestStation = ({ onBack, settingsStorage }: SongRequestStationProps
           : activeSection === 'artists' && selectedArtist ? selectedArtist : '点歌台'
     : '';
   const popularImmersive = activeSection === 'playlists' && !selectedSong;
+  const showBackButton = canReturnToUniverse || activeSection !== null || Boolean(selectedSong || tagDirectoryOpen || inquiriesOpen);
 
   return (
     <main className={`relative z-20 min-h-screen text-white ${popularImmersive ? 'h-screen overflow-hidden bg-transparent' : 'overflow-y-auto bg-[radial-gradient(circle_at_15%_0%,rgba(249,115,22,.14),transparent_30%),radial-gradient(circle_at_88%_18%,rgba(124,58,237,.12),transparent_28%)] px-4 py-5 sm:px-7 lg:px-10 lg:py-8'}`}>
@@ -2065,10 +2066,10 @@ const SongRequestStation = ({ onBack, settingsStorage }: SongRequestStationProps
       ) : (
       <div className="relative mx-auto w-full max-w-6xl">
         <header className="mb-8 flex items-center justify-between gap-4">
-          <button type="button" onClick={goBack} className="inline-flex h-11 items-center gap-2 rounded-full border border-white/10 bg-black/35 px-4 text-sm font-semibold text-white/70 backdrop-blur-xl transition hover:text-white">
+          {showBackButton && <button type="button" onClick={goBack} className="inline-flex h-11 items-center gap-2 rounded-full border border-white/10 bg-black/35 px-4 text-sm font-semibold text-white/70 backdrop-blur-xl transition hover:text-white">
             <ArrowLeft className="h-4 w-4" /> {tagDirectoryOpen || inquiriesOpen ? '返回' : selectedSong ? detailBackLabel : activeSection === null ? '宇宙' : selectedArtist ? sectionTitle : '点歌台'}
-          </button>
-          <div className="relative z-50">
+          </button>}
+          <div className="relative z-50 ml-auto">
             {accountMenuOpen && <button type="button" aria-label="关闭账户菜单" className="fixed inset-0 z-40 cursor-default bg-transparent" onClick={() => setAccountMenuOpen(false)} />}
             <button
               type="button"
@@ -3014,7 +3015,7 @@ const AccountSongRequestStation = (props: SongRequestStationProps) => {
       <div>
         <p role={storageError ? 'alert' : 'status'}>{storageError || '正在读取歌单和头像…'}</p>
         {storageError && <button type="button" onClick={() => setStorageRetry((value) => value + 1)} className="mt-4 rounded-full border border-orange-200/30 px-5 py-2 text-orange-100">重试</button>}
-        <button type="button" onClick={props.onBack} className="ml-3 mt-4 rounded-full border border-white/20 px-5 py-2">宇宙</button>
+        {props.canReturnToUniverse && <button type="button" onClick={props.onBack} className="ml-3 mt-4 rounded-full border border-white/20 px-5 py-2">宇宙</button>}
       </div>
     </div>;
   }

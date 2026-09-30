@@ -12,7 +12,8 @@ import StarryCanvas from './components/StarrySky/StarryCanvas';
 import services from './services/starService';
 import useAppStore from './store/appStore';
 import { isReservedStarName, STAR_OWNER_ALIAS, STAR_OWNER_ID } from './components/Welcome/starOwner';
-import { readBrowserSongRecordSession, readSongRecordSession } from './components/SongRequest/songRecords';
+import { readBrowserSongRecordSession, readSongRecordSession, SONG_REQUEST_SESSION_EVENT } from './components/SongRequest/songRecords';
+import { isFeaturedSongManager } from './components/SongRequest/songRequest';
 import { verifyStarOwner } from './components/SongRequest/songRequestCloud';
 import { ROADSHOW_SESSION_KEY } from './components/SongRequest/roadshow';
 import { tryGetThemeConfig, type ThemeId } from './themes/themeConfig';
@@ -30,6 +31,7 @@ function App() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [songRequestEntryOpen, setSongRequestEntryOpen] = useState(false);
+  const [ownerVerified, setOwnerVerified] = useState(false);
   const [starrySkyInitialView, setStarrySkyInitialView] = useState<'stars' | 'my-messages' | 'star-messages'>('stars');
   const {
     activeTheme,
@@ -46,6 +48,35 @@ function App() {
   } = useAppStore();
 
   const theme = tryGetThemeConfig(activeTheme);
+
+  useEffect(() => {
+    let active = true;
+    let generation = 0;
+    const refreshOwner = () => {
+      const request = ++generation;
+      setOwnerVerified(false);
+      const session = readBrowserSongRecordSession();
+      if (!session || !isFeaturedSongManager(session.alias)) return;
+      void verifyStarOwner(session).then(() => {
+        if (active && request === generation) setOwnerVerified(true);
+      }).catch(() => {
+        if (active && request === generation) setOwnerVerified(false);
+      });
+    };
+    refreshOwner();
+    window.addEventListener(SONG_REQUEST_SESSION_EVENT, refreshOwner);
+    return () => {
+      active = false;
+      window.removeEventListener(SONG_REQUEST_SESSION_EVENT, refreshOwner);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!ownerVerified && ['theme-hub', 'welcome', 'starry-sky'].includes(currentView)) {
+      setSongRequestEntryOpen(false);
+      enterSongRequestStation();
+    }
+  }, [currentView, enterSongRequestStation, ownerVerified]);
 
   useEffect(() => {
     isPlayingRef.current = isPlaying;
@@ -171,6 +202,7 @@ function App() {
         if (!password) throw new Error('OWNER_PASSWORD_REQUIRED');
         await verifyStarOwner({ alias: STAR_OWNER_ALIAS, password });
         sessionStorage.setItem(ROADSHOW_SESSION_KEY, JSON.stringify({ alias: STAR_OWNER_ALIAS, password }));
+        setOwnerVerified(true);
         setUser({ id: STAR_OWNER_ID, nickname: 'JIEYOU', isAuthenticated: true });
       } else if (!user || user.nickname !== nickname) {
         const userData = await userService.createUser(nickname);
@@ -214,11 +246,11 @@ function App() {
         />
       )}
 
-      {currentView === 'enough-journal' && <EnoughJournal onBack={returnToThemeHub} />}
+      {currentView === 'enough-journal' && <EnoughJournal onBack={ownerVerified ? returnToThemeHub : enterSongRequestStation} />}
 
-      {currentView === 'keepsake-studio' && <KeepsakeStudio onBack={returnToThemeHub} />}
+      {currentView === 'keepsake-studio' && <KeepsakeStudio onBack={ownerVerified ? returnToThemeHub : enterSongRequestStation} />}
 
-      {currentView === 'song-request' && <SongRequestStation onBack={returnToThemeHub} />}
+      {currentView === 'song-request' && <SongRequestStation onBack={returnToThemeHub} canReturnToUniverse={ownerVerified} />}
 
       {currentView === 'welcome' && theme && (
         <div className="relative z-10 min-h-screen">

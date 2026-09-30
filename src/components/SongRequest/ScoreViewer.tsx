@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Minus, Plus, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Minus, Pencil, Plus, X } from 'lucide-react';
 import { readScorePage, saveScorePage } from './songScores';
+import ScorePageEditor from './ScorePageEditor';
 import {
   getFittedScoreSize,
   getPinchScoreZoom,
@@ -19,6 +20,9 @@ interface ScoreViewerProps {
   pages: string[];
   /** 谱子用的是云端签名地址，过期会变裂图：加载失败时通知上层换一批新地址。 */
   onPagesStale?: (force?: boolean) => void;
+  onSavePage?: (index: number, page: string) => void;
+  editingAllowed?: boolean;
+  startEditing?: boolean;
   onClose: () => void;
 }
 
@@ -40,7 +44,7 @@ const AUTO_SCROLL_PIXELS_PER_SECOND: Record<Exclude<AutoScrollSpeed, 0>, number>
   5: 22,
 };
 
-const ScoreViewer = ({ songId, songTitle, pages, onPagesStale, onClose }: ScoreViewerProps) => {
+const ScoreViewer = ({ songId, songTitle, pages, onPagesStale, onSavePage, editingAllowed = true, startEditing = false, onClose }: ScoreViewerProps) => {
   const total = pages.length;
   const [page, setPage] = useState(() => Math.min(readScorePage(window.localStorage, songId), Math.max(total - 1, 0)));
   const [pageError, setPageError] = useState(false);
@@ -49,6 +53,7 @@ const ScoreViewer = ({ songId, songTitle, pages, onPagesStale, onClose }: ScoreV
   const [imageSize, setImageSize] = useState<ScoreSize>({ width: 0, height: 0 });
   const [autoScrollSpeed, setAutoScrollSpeed] = useState<AutoScrollSpeed>(0);
   const [autoScrollMenuOpen, setAutoScrollMenuOpen] = useState(false);
+  const [editingSource, setEditingSource] = useState<string | null>(() => startEditing ? pages[page] : null);
   const autoScrollControlRef = useRef<HTMLDivElement | null>(null);
   const autoScrollButtonRef = useRef<HTMLButtonElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
@@ -242,6 +247,7 @@ const ScoreViewer = ({ songId, songTitle, pages, onPagesStale, onClose }: ScoreV
   }, [autoScrollMenuOpen]);
 
   useEffect(() => {
+    if (editingSource) return;
     const onKey = (event: KeyboardEvent) => {
       if (autoScrollMenuOpen) {
         if (event.key === 'Escape') {
@@ -265,7 +271,7 @@ const ScoreViewer = ({ songId, songTitle, pages, onPagesStale, onClose }: ScoreV
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [total, songId, onClose, autoScrollMenuOpen]);
+  }, [total, songId, onClose, autoScrollMenuOpen, editingSource]);
 
   const touchDistance = (touches: React.TouchList) => Math.hypot(
     touches[0].clientX - touches[1].clientX,
@@ -364,6 +370,7 @@ const ScoreViewer = ({ songId, songTitle, pages, onPagesStale, onClose }: ScoreV
       </div>
 
       <div className="absolute right-3 top-3 z-20 flex shrink-0 items-center gap-2 text-white/85 sm:right-4 sm:top-4">
+        {onSavePage && !pageError && <button type="button" disabled={!editingAllowed} onClick={() => { setAutoScrollSpeed(0); setEditingSource(pages[page]); }} className="inline-flex h-9 items-center gap-1.5 rounded-full border border-white/10 bg-black/50 px-3 text-xs font-bold text-white/85 backdrop-blur-md transition hover:bg-white/15 disabled:opacity-40"><Pencil className="h-3.5 w-3.5" />编辑本页</button>}
         <span className="rounded-full border border-white/10 bg-black/50 px-3 py-1 text-xs font-bold tabular-nums text-white/75 backdrop-blur-md">
           {page + 1} / {total}
         </span>
@@ -457,6 +464,7 @@ const ScoreViewer = ({ songId, songTitle, pages, onPagesStale, onClose }: ScoreV
           <span className="min-w-0 truncate">{zoomed ? '双指缩放 · 单指拖动阅览 · 双击复原' : '左右滑动翻页 · 双击适合宽度 · 双指缩放'}</span>
         )}
       </footer>
+      {editingSource && onSavePage && <ScorePageEditor source={editingSource} title={songTitle} pageNumber={page + 1} onSave={(editedPage) => { onSavePage(page, editedPage); setEditingSource(null); }} onClose={() => setEditingSource(null)} />}
     </div>,
     document.body,
   );

@@ -50,7 +50,7 @@ const useAppStore = create<AppState & AppActions>((set) => ({
   user: null,
   stars: [],
   activeTheme: null,
-  currentView: 'theme-hub',
+  currentView: 'song-request',
   isLoading: false,
   error: null,
   keepsakeInitialBody: '',

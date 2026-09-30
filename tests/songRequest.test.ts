@@ -153,6 +153,21 @@ test('点歌台返回按钮仅显示目标名称并保留左箭头', () => {
   assert.match(stationSource, /activeSection === null \? '宇宙'/)
 })
 
+test('点歌台只向已验证站主提供返回宇宙入口，子页面仍能返回点歌台', () => {
+  const appSource = readFileSync(appUrl, 'utf8')
+  const stationSource = readFileSync(stationUrl, 'utf8')
+
+  assert.match(appSource, /verifyStarOwner\(session\)/)
+  assert.match(appSource, /if \(!ownerVerified && \['theme-hub', 'welcome', 'starry-sky'\]\.includes\(currentView\)\)/)
+  assert.match(appSource, /if \(!\['keepsake', 'enough'\]\.includes\(view\)\) return/)
+  assert.match(appSource, /<EnoughJournal onBack=\{ownerVerified \? returnToThemeHub : enterSongRequestStation\}/)
+  assert.match(appSource, /<KeepsakeStudio onBack=\{ownerVerified \? returnToThemeHub : enterSongRequestStation\}/)
+  assert.match(appSource, /<SongRequestStation onBack=\{returnToThemeHub\} canReturnToUniverse=\{ownerVerified\}/)
+  assert.match(stationSource, /if \(activeSection === null\) \{ if \(canReturnToUniverse\) onBack\(\); return; \}/)
+  assert.match(stationSource, /\{showBackButton && <button type="button" onClick=\{goBack\}/)
+  assert.match(stationSource, /\{props\.canReturnToUniverse && <button type="button" onClick=\{props\.onBack\}/)
+})
+
 test('入口和登录卡片统一使用私人记录文案', () => {
   const stationSource = readFileSync(stationUrl, 'utf8')
   const roadshowSource = readFileSync(roadshowPanelUrl, 'utf8')

@@ -4,6 +4,10 @@ import test from 'node:test'
 
 import useAppStore from '../src/store/appStore.ts'
 
+test('opening the site lands directly on the song request hub', () => {
+  assert.equal(useAppStore.getState().currentView, 'song-request')
+})
+
 test('theme navigation updates theme and view atomically', () => {
   useAppStore.setState({ user: null, stars: [] })
   useAppStore.getState().returnToThemeHub()

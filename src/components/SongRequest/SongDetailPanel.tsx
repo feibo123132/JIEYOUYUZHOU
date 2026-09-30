@@ -2,7 +2,7 @@ import { Download } from 'lucide-react';
 import { downloadScorePages } from './scoreDownload';
 import { refreshSongScorePageUrls } from './songRequestCloud';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CalendarDays, ChevronDown, ChevronUp, Cloud, Disc3, FileText, Guitar, MessageCircle, Music4, Save, Target, Trash2, Upload } from 'lucide-react';
+import { CalendarDays, ChevronDown, ChevronUp, Cloud, Disc3, FileText, Guitar, MessageCircle, Music4, Pencil, Save, Target, Trash2, Upload } from 'lucide-react';
 import { isFeaturedSongManager } from './songRequest';
 import type { Song } from './songCatalog';
 import { findSongRoadshowHistory, type RoadshowRecord } from './roadshow';
@@ -15,7 +15,7 @@ import ArtistTagsDialog from './ArtistTagsDialog';
 import { Tag } from 'lucide-react';
 import {
   appendSongScorePages, compressScoreImage, getSongScoreDisplayPages, moveSongScorePage,
-  removeSongScorePage, SCORE_PAGE_LIMIT, SCORE_PAGES_TOTAL_LIMIT, withSongLyrics, withSongScoreNote, type SongScore,
+  removeSongScorePage, replaceSongScorePage, SCORE_PAGE_LIMIT, SCORE_PAGES_TOTAL_LIMIT, withSongLyrics, withSongScoreNote, type SongScore,
 } from './songScores';
 import { useResolvedScorePages } from './useResolvedScorePages';
 import {
@@ -115,6 +115,7 @@ const SongDetailPanel = ({
   const [quizMenuOpen, setQuizMenuOpen] = useState(false);
   const [tagsOpen, setTagsOpen] = useState(false);
   const [scoreViewerOpen, setScoreViewerOpen] = useState(false);
+  const [scoreEditorRequested, setScoreEditorRequested] = useState(false);
   const [lyricsEditorOpen, setLyricsEditorOpen] = useState(false);
   const [lyricsDraft, setLyricsDraft] = useState(score?.lyrics ?? '');
   const [scoreNoteDraft, setScoreNoteDraft] = useState(score?.scoreNote ?? '');
@@ -292,6 +293,16 @@ const SongDetailPanel = ({
     onScoreChange(song.id, moveSongScorePage(score, index, delta));
   };
 
+  const saveEditedScorePage = (index: number, editedPage: string) => {
+    if (!session || !score || scoreBusy || scoreBusyLocal) throw new Error('SCORE_NOT_READY');
+    const next = replaceSongScorePage(score, index, editedPage);
+    if (next === score) throw new Error('INVALID_SCORE_PAGE');
+    const localPagesSize = next.pages.filter((page) => page.startsWith('data:image/')).join('').length;
+    if (localPagesSize > SCORE_PAGES_TOTAL_LIMIT) throw new Error('SCORE_TOO_LARGE');
+    onScoreChange(song.id, next);
+    setMessage('谱页批注已保存，正在同步到云端');
+  };
+
   const removeAllScorePages = () => {
     if (!scorePages.length || !window.confirm('确定删除这首歌的全部谱子吗？')) return;
     onScoreChange(song.id, score?.lyrics?.trim() || score?.scoreNote?.trim() ? { ...score, pages: [], pageUrls: [], pendingSync: true, updatedAt: new Date().toISOString() } : null);
@@ -444,12 +455,13 @@ const SongDetailPanel = ({
             {scorePages.length > 0 && (
               <button
                 type="button"
-                onClick={() => setScoreViewerOpen(true)}
+                onClick={() => { setScoreEditorRequested(false); setScoreViewerOpen(true); }}
                 className="inline-flex h-11 items-center gap-2 rounded-full bg-orange-400 px-5 text-sm font-black text-black transition hover:bg-orange-300"
               >
                 <Music4 className="h-4 w-4" />打开谱子
               </button>
             )}
+            {session && scorePages.length > 0 && <button type="button" disabled={Boolean(scoreBusy || scoreBusyLocal)} onClick={() => { setScoreEditorRequested(true); setScoreViewerOpen(true); }} className="inline-flex h-11 items-center gap-2 rounded-full border border-orange-200/30 bg-orange-300/10 px-5 text-sm font-black text-orange-100 transition hover:bg-orange-300/20 disabled:opacity-40"><Pencil className="h-4 w-4" />编辑谱子</button>}
             {scorePages.length > 0 && <button type="button" onClick={() => void downloadScore()} disabled={downloading} className="inline-flex h-11 items-center gap-2 rounded-full border border-orange-200/30 bg-orange-300/10 px-5 text-sm font-black text-orange-100 transition hover:bg-orange-300/20 disabled:opacity-40"><Download className="h-4 w-4" />{downloading ? '下载中…' : '下载谱子'}</button>}
             {downloadError && <p role="alert" className="w-full text-sm text-amber-200">{downloadError}</p>}
             {(session || score?.lyrics?.trim()) && (
@@ -538,7 +550,10 @@ const SongDetailPanel = ({
           songArtist={song.artist}
           pages={scorePages}
           onPagesStale={refreshScorePages}
-          onClose={() => setScoreViewerOpen(false)}
+          onSavePage={session ? saveEditedScorePage : undefined}
+          editingAllowed={!scoreBusy && !scoreBusyLocal}
+          startEditing={scoreEditorRequested}
+          onClose={() => { setScoreViewerOpen(false); setScoreEditorRequested(false); }}
         />
       )}
 

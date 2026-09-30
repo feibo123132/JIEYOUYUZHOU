@@ -78,6 +78,23 @@ test('移动和删除谱页会同步更新云引用与显示地址', async () =>
   assert.equal(removed.pendingSync, true);
 });
 
+test('编辑谱页只替换当前页，保留其他页和专属文字', async () => {
+  const { buildSongScore, replaceSongScorePage, withResolvedSongScorePages } = await import(moduleUrl.href);
+  const score = {
+    ...withResolvedSongScorePages(buildSongScore(song, [cloudPage, cloudPage]), [cloudUrl, cloudUrl]),
+    lyrics: '副歌歌词',
+    scoreNote: '原调',
+  };
+  const edited = replaceSongScorePage(score, 1, localPage);
+  assert.notEqual(edited, score);
+  assert.deepEqual(edited.pages, [cloudPage, localPage]);
+  assert.deepEqual(edited.pageUrls, [cloudUrl, localPage]);
+  assert.equal(edited.lyrics, '副歌歌词');
+  assert.equal(edited.scoreNote, '原调');
+  assert.equal(edited.pendingSync, true);
+  assert.equal(replaceSongScorePage(score, 2, localPage), score);
+});
+
 test('云端元数据会剥离临时地址和待同步标记', async () => {
   const { buildSongScore, toStoredSongScore, withResolvedSongScorePages } = await import(moduleUrl.href);
   const score = {

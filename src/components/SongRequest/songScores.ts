@@ -154,6 +154,15 @@ export const removeSongScorePage = (score: SongScore, index: number): SongScore 
   updatedAt: new Date().toISOString(),
 });
 
+export const replaceSongScorePage = (score: SongScore, index: number, page: string): SongScore => {
+  if (index < 0 || index >= score.pages.length) return score;
+  const pages = [...score.pages];
+  const pageUrls = [...getSongScoreDisplayPages(score)];
+  pages[index] = page;
+  pageUrls[index] = page;
+  return { ...score, pages, pageUrls, pendingSync: true, updatedAt: new Date().toISOString() };
+};
+
 export const toStoredSongScore = (score: SongScore): StoredSongScore => ({
   id: score.id,
   songId: score.songId,
