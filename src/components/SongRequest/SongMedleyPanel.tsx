@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, FileText, Link2, Pencil, Plus, Save, X } from 'lucide-react';
 import type { Song } from './songCatalog';
 import type { SongGroup, SongMedley } from './songGroups';
@@ -61,8 +61,20 @@ export function SongMedleyLyrics({ group, medley, songs, managing, busy, saveSta
   const [lyrics, setLyrics] = useState(medley.lyrics);
   const [editing, setEditing] = useState(!medley.lyrics.trim());
   const [fontSize, setFontSize] = useState(18);
+  const lyricsInputRef = useRef<HTMLTextAreaElement>(null);
   const outline = medley.songIds.map(id => `《${songs.find(song => song.id === id)?.title ?? '歌库中已移除的歌曲'}》\n`).join('\n');
   useEffect(() => { onDirtyChange(managing && editing && lyrics !== medley.lyrics); }, [lyrics, medley.lyrics, managing, editing, onDirtyChange]);
+  useLayoutEffect(() => {
+    if (!managing || !editing || !lyricsInputRef.current) return;
+    const input = lyricsInputRef.current;
+    const fitContent = () => {
+      input.style.height = 'auto';
+      input.style.height = `${input.scrollHeight}px`;
+    };
+    fitContent();
+    window.addEventListener('resize', fitContent);
+    return () => window.removeEventListener('resize', fitContent);
+  }, [lyrics, fontSize, managing, editing]);
   const save = async () => {
     if (await onSave(lyrics)) {
       setLyrics(lyrics.trim());
@@ -82,7 +94,7 @@ export function SongMedleyLyrics({ group, medley, songs, managing, busy, saveSta
       {managing && <div className="flex flex-wrap gap-2">{editing ? <><button type="button" disabled={busy} onClick={() => { setLyrics(medley.lyrics); setEditing(false); }} className={button}>取消编辑</button><button type="button" disabled={busy} onClick={() => void save()} className={`${button} border-teal-200 bg-teal-200 !text-[#0c1614] hover:bg-teal-100`}><Save size={14} />{busy ? '保存中…' : '保存歌词'}</button></> : <button type="button" disabled={busy} onClick={() => { setLyrics(medley.lyrics); setEditing(true); }} className={button}><Pencil size={14} />编辑歌词</button>}</div>}
     </div>
     {managing && editing ? <>
-      <textarea aria-label="整条串烧链的歌词" value={lyrics} onChange={event => setLyrics(event.target.value)} disabled={busy} maxLength={12000} placeholder={`${outline}\n按演唱顺序粘贴每首歌要唱的段落，可以在段落间加入衔接提示…`} style={{ fontSize, lineHeight: 1.9 }} className="mt-3 min-h-72 w-full resize-y rounded-2xl border border-white/10 bg-black/35 p-4 text-white/85 outline-none transition placeholder:text-white/20 focus:border-teal-200/45 disabled:opacity-60 sm:p-5" />
+      <textarea ref={lyricsInputRef} aria-label="整条串烧链的歌词" value={lyrics} onChange={event => setLyrics(event.target.value)} disabled={busy} maxLength={12000} placeholder={`${outline}\n按演唱顺序粘贴每首歌要唱的段落，可以在段落间加入衔接提示…`} style={{ fontSize, lineHeight: 1.9 }} className="mt-3 min-h-72 w-full resize-none overflow-hidden rounded-2xl border border-white/10 bg-black/35 p-4 text-white/85 outline-none transition placeholder:text-white/20 focus:border-teal-200/45 disabled:opacity-60 sm:p-5" />
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[10px] text-white/35">{!lyrics.trim() ? <button type="button" disabled={busy} onClick={() => setLyrics(outline)} className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-teal-100/65 hover:bg-white/5 disabled:opacity-35"><Plus size={12} />填入歌名分段</button> : <span>按此处顺序连续显示，请只保留需要演唱的段落。</span>}<span>{lyrics.length} / 12000 · {lyrics !== medley.lyrics ? '有未保存修改' : '与当前歌词一致'}</span></div>
     </> : medley.lyrics.trim() ? <div style={{ fontSize, lineHeight: 1.9 }} className="mt-3 whitespace-pre-wrap break-words rounded-2xl border border-white/10 bg-black/35 p-4 font-sans text-white/85 sm:p-6">{medley.lyrics}</div> : <div className="mt-3 rounded-2xl border border-dashed border-teal-200/15 bg-black/20 p-8 text-center text-sm text-white/35">还没有串烧歌词{managing ? '，点击“编辑歌词”粘贴各首高潮段落。' : '，等待管理员补充。'}</div>}
     {saveStatus && <p role="status" className="mt-3 text-xs text-teal-100/70">{saveStatus}</p>}
