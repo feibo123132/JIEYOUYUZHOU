@@ -3,16 +3,22 @@ import { ChevronLeft, ChevronRight, FileText, Layers3, Link2, Pencil, Plus, Tras
 import type { Song } from './songCatalog';
 import { initializeSongGroupMedleys, type SongGroup, type SongGroupsSnapshot, type SongMedley } from './songGroups';
 import { SongMedleyEditor, SongMedleyLyrics } from './SongMedleyPanel';
+import SongGroupRoundsDialog from './SongGroupRoundsDialog';
 import { pullSongGroups, saveSongGroups } from './songRequestCloud';
 import { readBrowserSongRecordSession } from './songRecords';
+import type { RoadshowRecord } from './roadshow';
 
 const button = 'inline-flex items-center justify-center gap-1.5 rounded-full border border-teal-200/25 px-3 py-2 text-xs font-bold text-teal-100 transition hover:bg-teal-200/10 disabled:opacity-35';
 const input = 'w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2.5 text-sm text-white outline-none focus:border-teal-200/45';
 
-export default function SharedSongGroups({ catalogSongs, managing, onOpenSong }: {
+export default function SharedSongGroups({ catalogSongs, managing, onOpenSong, record, records, roundsBusy, onSaveRounds }: {
   catalogSongs: Song[];
   managing: boolean;
   onOpenSong: (song: Song) => void;
+  record: RoadshowRecord;
+  records: RoadshowRecord[];
+  roundsBusy: boolean;
+  onSaveRounds: (record: RoadshowRecord) => Promise<boolean>;
 }) {
   const [snapshot, setSnapshot] = useState<SongGroupsSnapshot | null>(null);
   const [draft, setDraft] = useState<SongGroup | null>(null);
@@ -25,6 +31,7 @@ export default function SharedSongGroups({ catalogSongs, managing, onOpenSong }:
   const [reload, setReload] = useState(0);
   const [page, setPage] = useState(1);
   const [editing, setEditing] = useState(false);
+  const [activeRoundsGroupId, setActiveRoundsGroupId] = useState<string | null>(null);
   const [dragged, setDragged] = useState<{ groupId: string; songId: string } | null>(null);
   const lyricsBoard = useRef<HTMLDivElement>(null);
   const groups = (snapshot?.groups ?? []).map(group => initializeSongGroupMedleys(group, catalogSongs));
@@ -159,8 +166,9 @@ export default function SharedSongGroups({ catalogSongs, managing, onOpenSong }:
       const medleys = group.medleys ?? [];
       const linkedIds = new Set(medleys.flatMap(medley => medley.songIds));
       const displaySongIds = managing && editing ? group.songIds : group.songIds.filter(id => !linkedIds.has(id));
-      return <article key={group.id} className="min-w-0 rounded-xl border border-white/10 bg-black/25 p-4">
-      <header className="flex items-center justify-between gap-2"><h5 className="min-w-0 break-words font-bold text-teal-50">{group.name}<small className="ml-2 text-xs font-normal text-white/35">{group.songIds.length} 首</small></h5>{managing && editing && <div className="flex shrink-0 gap-2"><button type="button" disabled={busy || formOpen} aria-label={`编辑${group.name}`} onClick={() => { if (!closeLyrics()) return; setDraft({ ...group, songIds: [...group.songIds] }); setQuery(''); }} className="p-1 text-white/40 hover:text-teal-100 disabled:opacity-30"><Pencil size={15} /></button><button type="button" disabled={busy || formOpen} aria-label={`删除${group.name}`} onClick={() => { if (window.confirm(`删除“${group.name}”歌组及其串烧歌词？所有路演中都会移除该组，但不会删除歌曲。`) && (activeMedley?.groupId !== group.id || closeLyrics())) void persist(groups.filter(item => item.id !== group.id)); }} className="p-1 text-white/40 hover:text-red-200 disabled:opacity-30"><Trash2 size={15} /></button></div>}</header>
+      return <article key={group.id} className={`min-w-0 rounded-xl border border-white/10 bg-black/25 p-4 ${!editing ? 'cursor-pointer transition hover:border-teal-200/35 hover:bg-teal-200/[.045]' : ''}`}
+        onClick={(event) => { if (!editing && !(event.target as HTMLElement).closest('button,input,textarea,select,a')) setActiveRoundsGroupId(group.id); }}>
+      <header className="flex flex-wrap items-center justify-between gap-2"><h5 className="min-w-0 flex-1 break-words font-bold text-teal-50">{group.name}<small className="ml-2 text-xs font-normal text-white/35">{group.songIds.length} 首</small></h5><button type="button" onClick={() => setActiveRoundsGroupId(group.id)} aria-label={`打开${group.name}轮次编排`} className="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[11px] font-bold text-teal-100/55 hover:bg-teal-200/10 hover:text-teal-100">编排轮次<ChevronRight size={13} /></button>{managing && editing && <div className="flex shrink-0 gap-2"><button type="button" disabled={busy || formOpen} aria-label={`编辑${group.name}`} onClick={() => { if (!closeLyrics()) return; setDraft({ ...group, songIds: [...group.songIds] }); setQuery(''); }} className="p-1 text-white/40 hover:text-teal-100 disabled:opacity-30"><Pencil size={15} /></button><button type="button" disabled={busy || formOpen} aria-label={`删除${group.name}`} onClick={() => { if (window.confirm(`删除“${group.name}”歌组及其串烧歌词？所有路演中都会移除该组，但不会删除歌曲。`) && (activeMedley?.groupId !== group.id || closeLyrics())) void persist(groups.filter(item => item.id !== group.id)); }} className="p-1 text-white/40 hover:text-red-200 disabled:opacity-30"><Trash2 size={15} /></button></div>}</header>
       {group.description && <p className="mt-2 whitespace-pre-wrap break-words text-xs leading-6 text-white/45">{group.description}</p>}
       {medleys.length > 0 && <div className="mt-3 space-y-3">{medleys.map(medley => {
         const selected = activeMedley?.groupId === group.id && activeMedley.medleyId === medley.id;
@@ -208,5 +216,6 @@ export default function SharedSongGroups({ catalogSongs, managing, onOpenSong }:
       <button type="button" aria-label="下一页歌组" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)} className="grid h-8 w-8 place-items-center rounded-full border border-white/10 hover:bg-white/10 disabled:opacity-25"><ChevronRight size={14} /></button>
     </nav>}
     {snapshot && !snapshot.groups.length && !draft && <p className="py-5 text-center text-xs text-white/35">还没有歌组，试试创建“如果”系列，或记录一组相同和弦的串烧歌曲。</p>}
+    {activeRoundsGroupId && groups.find(group => group.id === activeRoundsGroupId) && <SongGroupRoundsDialog group={groups.find(group => group.id === activeRoundsGroupId)!} songs={catalogSongs} record={record} records={records} busy={roundsBusy} onSave={onSaveRounds} onClose={() => setActiveRoundsGroupId(null)} />}
   </section>;
 }

@@ -31,7 +31,7 @@ import {
   type SongRecordSession,
   type SongRoadshowRecord,
 } from './songRecords';
-import { copyOwnerSongScore, deleteSongRecord, mapSongRecordSyncError, saveSongRecord } from './songRequestCloud';
+import { deleteSongRecord, mapSongRecordSyncError, saveSongRecord } from './songRequestCloud';
 
 interface SongDetailPanelProps {
   song: Song;
@@ -50,6 +50,7 @@ interface SongDetailPanelProps {
   onRecordsChange: (records: SongRecord[]) => void;
   onScoreChange: (songId: string, score: SongScore | null, alreadySynced?: boolean) => void;
   onOpenPrivateSpace: () => void;
+  onOpenPracticeRanking: () => void;
   roadshowSingState: CloudRoadshowSingState;
   roadshowSingCountsReady: boolean;
   onRoadshowRecorded: (state: CloudRoadshowSingState) => void;
@@ -88,7 +89,7 @@ const displayRoadshowDate = (value: string) => value.replace(/-/g, '/');
 const SongDetailPanel = ({
   song, records, roadshows = [], session, syncStatus = '', quizLevel, quizCounts,
   canManageQuiz, quizBusy = false, score = null, scoreBusy = false, scoreSyncStatus = '', onQuizLevelChange, onRecordsChange,
-  onScoreChange, onOpenPrivateSpace, roadshowSingState, roadshowSingCountsReady, onRoadshowRecorded,
+  onScoreChange, onOpenPrivateSpace, onOpenPracticeRanking, roadshowSingState, roadshowSingCountsReady, onRoadshowRecorded,
 }: SongDetailPanelProps) => {
   const songRecords = useMemo(() => sortSongRecords(records.filter((record) => record.songId === song.id)), [records, song.id]);
   const practices = songRecords.filter((record): record is PracticeRecord => record.kind === 'practice');
@@ -103,8 +104,6 @@ const SongDetailPanel = ({
   const [feelings, setFeelings] = useState('');
   const [singingReflection, setSingingReflection] = useState('');
   const [femaleKey, setFemaleKey] = useState('');
-  const [needsMorePractice, setNeedsMorePractice] = useState(false);
-  const [needsImprovement, setNeedsImprovement] = useState(false);
   const [singingMoods, setSingingMoods] = useState<NonNullable<PracticeRecord['singingMoods']>>([]);
   const [roadshowAt, setRoadshowAt] = useState(localDateTime);
   const [audienceName, setAudienceName] = useState('');
@@ -174,8 +173,6 @@ const SongDetailPanel = ({
       setFeelings(record.feelings);
       setSingingReflection(getPracticeReflection(record));
       setFemaleKey(record.femaleKey ?? '');
-      setNeedsMorePractice(record.needsMorePractice);
-      setNeedsImprovement(record.needsImprovement);
       setSingingMoods(normalizeSingingMoods(record.singingMoods ?? []));
     } else {
       setRoadshowAt(localDateTime(record.occurredAt));
@@ -193,7 +190,9 @@ const SongDetailPanel = ({
       id: editingRecord?.kind === 'practice' ? editingRecord.id : recordId('practice'), kind: 'practice', songId: song.id, songTitle: song.title, songArtist: song.artist,
       occurredAt: new Date(practiceAt).toISOString(), matchScore: Number(matchScore),
       feelings: feelings.trim(), problems: singingReflection.trim(), improvements: '',
-      needsMorePractice, needsImprovement, singingMoods, ...(femaleKey.trim() ? { femaleKey: femaleKey.trim() } : {}), updatedAt: now,
+      needsMorePractice: editingRecord?.kind === 'practice' ? editingRecord.needsMorePractice : false,
+      needsImprovement: editingRecord?.kind === 'practice' ? editingRecord.needsImprovement : false,
+      singingMoods, ...(femaleKey.trim() ? { femaleKey: femaleKey.trim() } : {}), updatedAt: now,
     };
     if (!isValidSongRecord(record)) {
       setMessage('请填写有效的时间和 70–100 分。');
@@ -203,15 +202,14 @@ const SongDetailPanel = ({
     try {
       const saved = await saveSongRecord(session, record);
       commitSaved(saved);
-      if (saved.kind !== 'practice' || Boolean(saved.needsMorePractice) !== needsMorePractice || Boolean(saved.needsImprovement) !== needsImprovement || JSON.stringify([...(saved.singingMoods ?? [])].sort()) !== JSON.stringify([...singingMoods].sort()) || (saved.femaleKey ?? '') !== femaleKey.trim()) {
+      if (saved.kind !== 'practice' || JSON.stringify([...(saved.singingMoods ?? [])].sort()) !== JSON.stringify([...singingMoods].sort()) || (saved.femaleKey ?? '') !== femaleKey.trim()) {
         setEditingRecord(record);
-        setMessage('练习内容已保存，但练习标识、弹唱感受或女生选调未同步。已保留当前填写，请更新云端服务后再次保存。');
+        setMessage('练习内容已保存，但优点勾选或异性小伙伴选调未同步。已保留当前填写，请更新云端服务后再次保存。');
         return;
       }
       const wasEditing = editingRecord?.kind === 'practice';
       setEditingRecord(null);
       setFeelings(''); setSingingReflection(''); setFemaleKey('');
-      setNeedsMorePractice(false); setNeedsImprovement(false);
       setSingingMoods([]);
       setMessage(wasEditing ? '练习记录修改已同步' : '练习记录已同步');
     } catch (error) { setMessage(mapSongRecordSyncError(error)); }
@@ -324,19 +322,6 @@ const SongDetailPanel = ({
     setMessage(next?.lyrics?.trim() ? '歌词已保存，正在同步到云端' : '歌词已清空');
   };
 
-  const copyOwnerScore = async () => {
-    if (!session || isOwner || scoreBusy || scoreBusyLocal || scorePages.length || score?.lyrics?.trim() || score?.scoreNote?.trim()) return;
-    setScoreBusyLocal('正在复制站主谱子…');
-    try {
-      const copied = await copyOwnerSongScore(session, song.id);
-      onScoreChange(song.id, copied, true);
-      setMessage('已保存到你的账户，站主后续修改或删除不会影响这份谱子。');
-    } catch (error) {
-      const code = error instanceof Error ? error.message : '';
-      setMessage(code === 'SCORE_NOT_FOUND' ? '站主尚未上传这首歌的谱子。' : code === 'SCORE_ALREADY_EXISTS' ? '账户已有谱子，请先删除后再扒谱。' : '扒谱失败，请稍后重试。');
-    } finally { setScoreBusyLocal(''); }
-  };
-
   return (
     <section className="space-y-6">
       <div className="relative w-full rounded-[2rem] border border-orange-200/15 bg-[linear-gradient(125deg,rgba(67,29,13,.72),rgba(8,8,13,.9)_58%)] p-6 shadow-[0_28px_90px_rgba(0,0,0,.34)] sm:p-9">
@@ -425,7 +410,7 @@ const SongDetailPanel = ({
             <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-orange-200/15 bg-orange-300/10 text-orange-200"><Music4 className="h-5 w-5" /></span>
             <div className="min-w-0">
               <h2 className="font-serif text-2xl font-black">专属谱子</h2>
-              {isOwner ? (
+              {session ? (
                 <span className="mt-1 flex max-w-[38rem] flex-wrap items-center gap-2">
                   <textarea
                     value={scoreNoteDraft}
@@ -447,7 +432,7 @@ const SongDetailPanel = ({
                   </button>
                 </span>
               ) : (
-                <p className="mt-1 text-xs leading-5 text-white/35">{session ? '把谱子拍下来传到这里（支持拼好的长图）。' : '无需登录，打开谱子即可查看。'}</p>
+                <p className="mt-1 text-xs leading-5 text-white/35">无需登录，打开谱子即可查看。</p>
               )}
             </div>
           </div>
@@ -461,8 +446,21 @@ const SongDetailPanel = ({
                 <Music4 className="h-4 w-4" />打开谱子
               </button>
             )}
-            {session && scorePages.length > 0 && <button type="button" disabled={Boolean(scoreBusy || scoreBusyLocal)} onClick={() => { setScoreEditorRequested(true); setScoreViewerOpen(true); }} className="inline-flex h-11 items-center gap-2 rounded-full border border-orange-200/30 bg-orange-300/10 px-5 text-sm font-black text-orange-100 transition hover:bg-orange-300/20 disabled:opacity-40"><Pencil className="h-4 w-4" />编辑谱子</button>}
+            {session && <><label
+              className={`inline-flex h-11 cursor-pointer items-center gap-2 rounded-full border px-5 text-sm font-black transition ${scorePages.length ? 'border-white/10 bg-black/25 text-white/70 hover:border-orange-200/30 hover:text-white' : 'border-orange-300/45 bg-orange-300 text-black hover:bg-orange-300/90'}`}
+            >
+              <Upload className="h-4 w-4" />{scorePages.length ? '添加谱子' : '上传谱子'}
+              <input
+                ref={scoreFileRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={(event) => void addScorePages(event.target.files)}
+              />
+            </label></>}
             {scorePages.length > 0 && <button type="button" onClick={() => void downloadScore()} disabled={downloading} className="inline-flex h-11 items-center gap-2 rounded-full border border-orange-200/30 bg-orange-300/10 px-5 text-sm font-black text-orange-100 transition hover:bg-orange-300/20 disabled:opacity-40"><Download className="h-4 w-4" />{downloading ? '下载中…' : '下载谱子'}</button>}
+            {session && scorePages.length > 0 && <button type="button" disabled={Boolean(scoreBusy || scoreBusyLocal)} onClick={() => { setScoreEditorRequested(true); setScoreViewerOpen(true); }} className="inline-flex h-11 items-center gap-2 rounded-full border border-orange-200/30 bg-orange-300/10 px-5 text-sm font-black text-orange-100 transition hover:bg-orange-300/20 disabled:opacity-40"><Pencil className="h-4 w-4" />编辑谱子</button>}
             {downloadError && <p role="alert" className="w-full text-sm text-amber-200">{downloadError}</p>}
             {(session || score?.lyrics?.trim()) && (
               <button
@@ -474,20 +472,6 @@ const SongDetailPanel = ({
                 <FileText className="h-4 w-4" />歌词
               </button>
             )}
-            {session && !isOwner && <button type="button" disabled={Boolean(scoreBusy || scoreBusyLocal || scorePages.length || score?.lyrics?.trim() || score?.scoreNote?.trim())} onClick={() => void copyOwnerScore()} className="inline-flex h-11 items-center gap-2 rounded-full border border-orange-200/30 bg-orange-300/10 px-5 text-sm font-black text-orange-100 disabled:opacity-40">一键扒谱</button>}
-            {session && <><label
-              className={`inline-flex h-11 cursor-pointer items-center gap-2 rounded-full border px-5 text-sm font-black transition ${scorePages.length ? 'border-white/10 bg-black/25 text-white/70 hover:border-orange-200/30 hover:text-white' : 'border-orange-300/45 bg-orange-300 text-black hover:bg-orange-300/90'}`}
-            >
-              <Upload className="h-4 w-4" />{scorePages.length ? '添加' : '上传谱子'}
-              <input
-                ref={scoreFileRef}
-                type="file"
-                accept="image/*"
-                multiple
-                className="hidden"
-                onChange={(event) => void addScorePages(event.target.files)}
-              />
-            </label></>}
           </div>
         </div>
         {(scoreWorking || scorePending) && <p aria-live="polite" className="mt-3 text-[11px] font-bold text-orange-100/55">{scoreWorking || '仅保存在本机，等待同步'}</p>}
@@ -552,6 +536,7 @@ const SongDetailPanel = ({
           onPagesStale={refreshScorePages}
           onSavePage={session ? saveEditedScorePage : undefined}
           editingAllowed={!scoreBusy && !scoreBusyLocal}
+          autoScrollAllowed={Boolean(session)}
           startEditing={scoreEditorRequested}
           onClose={() => { setScoreViewerOpen(false); setScoreEditorRequested(false); }}
         />
@@ -560,7 +545,7 @@ const SongDetailPanel = ({
       {activeJournal !== 'score' && (
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,4fr)_minmax(0,5fr)]">
         <div ref={formRef}>
-        <JournalColumn icon={activeJournal === 'practice' ? <Guitar className="h-5 w-5" /> : <MessageCircle className="h-5 w-5" />} title={activeJournal === 'practice' ? '练习记录' : '路演记录'} subtitle={activeJournal === 'practice' ? '每一次慢练，都是下一次从容的伏笔。' : '把现场真实的回声，留给下一次演唱。'}>
+        <JournalColumn icon={activeJournal === 'practice' ? <Guitar className="h-5 w-5" /> : <MessageCircle className="h-5 w-5" />} title={activeJournal === 'practice' ? '练习记录' : '路演记录'} subtitle={activeJournal === 'practice' ? '每一次慢练，都是下一次从容的伏笔。' : '把现场真实的回声，留给下一次演唱。'} action={activeJournal === 'practice' ? <button type="button" onClick={onOpenPracticeRanking} className="inline-flex shrink-0 items-center rounded-full border border-orange-200/25 bg-orange-300/10 px-3 py-2 text-xs font-bold text-orange-100 transition hover:bg-orange-300/20">练习榜</button> : undefined}>
           {activeJournal === 'practice' ? <>
             <div className="grid gap-3 sm:grid-cols-[minmax(0,1.4fr)_minmax(90px,.8fr)_minmax(90px,.8fr)]">
               <Field label="练习时间"><input type="datetime-local" value={practiceAt} onClick={(event) => event.currentTarget.showPicker?.()} onChange={(event) => setPracticeAt(event.target.value)} className={dateTimeInputClass} /></Field>
@@ -568,20 +553,19 @@ const SongDetailPanel = ({
               <Field label="品质"><div aria-readonly="true" className={`${inputClass} flex items-center font-black ${matchQuality ? qualityTextClass[matchQuality.tone] : 'text-white/25'}`}>{matchQuality?.label ?? '—'}</div></Field>
             </div>
             <div className="flex flex-wrap items-start gap-4">
-              <PracticeMarkerOptions needsMorePractice={needsMorePractice} needsImprovement={needsImprovement} onToggleMorePractice={() => setNeedsMorePractice((value) => !value)} onToggleImprovement={() => setNeedsImprovement((value) => !value)} />
               <div>
-                <span className="mb-2 block text-xs font-bold text-white/45">弹唱感受</span>
-                <details aria-label="弹唱感受" className="group relative w-fit min-w-48">
+                <span className="mb-2 block text-xs font-bold text-white/45">优点勾选</span>
+                <details aria-label="优点勾选" className="group relative w-fit min-w-48">
                   <summary className="flex h-10 cursor-pointer list-none items-center justify-between gap-4 rounded-xl border border-orange-200/25 bg-black/20 px-3 text-sm font-bold text-orange-100 hover:border-orange-200/50 [&::-webkit-details-marker]:hidden">
                     <span>{singingMoods.join(' · ') || '未选择'}</span><ChevronDown className="h-4 w-4 transition group-open:rotate-180" />
                   </summary>
                   <div className="absolute right-0 top-full z-20 mt-1 grid w-full min-w-48 grid-cols-2 rounded-xl border border-orange-200/20 bg-[#17110d] p-1 shadow-xl">
-                    {(['欢快', '感动', '爆款', '爽歌', '音色', '歌词'] as const).map((mood) => <label key={mood} className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-orange-100 hover:bg-white/10"><input type="checkbox" checked={singingMoods.includes(mood)} onChange={() => setSingingMoods((current) => current.includes(mood) ? current.filter((item) => item !== mood) : [...current, mood])} className="accent-orange-300" />{mood}</label>)}
+                    {(['欢快', '感动', '爆款', '爽歌', '音色', '歌词', '舒服'] as const).map((mood) => <label key={mood} className={`flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-orange-100 hover:bg-white/10 ${mood === '舒服' ? 'col-start-1' : ''}`}><input type="checkbox" checked={singingMoods.includes(mood)} onChange={() => setSingingMoods((current) => current.includes(mood) ? current.filter((item) => item !== mood) : [...current, mood])} className="accent-orange-300" />{mood}</label>)}
                   </div>
                 </details>
               </div>
               <div className="min-w-40 flex-1">
-                <span className="mb-2 block text-xs font-bold text-white/45">女生选调</span>
+                <span className="mb-2 block text-xs font-bold text-white/45">异性小伙伴选调</span>
                 <input value={femaleKey} onChange={(event) => setFemaleKey(event.target.value)} maxLength={80} placeholder="任意填写，例如：夹三品" className="h-10 w-full rounded-xl border border-orange-200/25 bg-black/20 px-3 text-sm font-bold text-orange-100 outline-none transition placeholder:text-white/25 focus:border-orange-200/50" />
               </div>
             </div>
@@ -618,23 +602,8 @@ const Stat = ({ label, value }: { label: string; value: string }) => (
     <small className="mt-1 block truncate text-[10px] tracking-[.14em] text-white/30">{label}</small>
   </div>
 );
-const PracticeMarkerOptions = ({ needsMorePractice, needsImprovement, onToggleMorePractice, onToggleImprovement }: { needsMorePractice: boolean; needsImprovement: boolean; onToggleMorePractice: () => void; onToggleImprovement: () => void }) => (
-  <div>
-    <span className="mb-2 block text-xs font-bold text-white/45">练习标识</span>
-    <details aria-label="练习标识" className="group relative w-fit min-w-40">
-      <summary className="flex h-10 cursor-pointer list-none items-center justify-between gap-4 rounded-xl border border-orange-200/25 bg-black/20 px-3 text-sm font-bold text-orange-100 transition hover:border-orange-200/50 [&::-webkit-details-marker]:hidden">
-        <span>{[needsMorePractice && '多练习', needsImprovement && '待提升'].filter(Boolean).join(' · ') || '无标识'}</span>
-        <ChevronDown className="h-4 w-4 transition group-open:rotate-180" />
-      </summary>
-      <div className="absolute right-0 top-full z-20 mt-1 grid w-full min-w-48 grid-cols-2 rounded-xl border border-orange-200/20 bg-[#17110d] p-1 shadow-xl">
-        <label className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-orange-100 hover:bg-white/10"><input type="checkbox" checked={needsMorePractice} onChange={onToggleMorePractice} className="accent-orange-300" />多练习</label>
-        <label className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-cyan-100 hover:bg-white/10"><input type="checkbox" checked={needsImprovement} onChange={onToggleImprovement} className="accent-cyan-200" />待提升</label>
-      </div>
-    </details>
-  </div>
-);
 const Field = ({ label, children }: { label: string; children: React.ReactNode }) => <label className="block"><span className="mb-2 block text-xs font-bold text-white/45">{label}</span>{children}</label>;
-const JournalColumn = ({ icon, title, subtitle, children }: { icon: React.ReactNode; title: string; subtitle: string; children: React.ReactNode }) => <section className="rounded-[1.75rem] border border-white/10 bg-[#09090d]/80 p-5 backdrop-blur-xl sm:p-7"><div className="mb-6 flex items-start gap-3"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-orange-200/15 bg-orange-300/10 text-orange-200">{icon}</span><div><h2 className="font-serif text-2xl font-black">{title}</h2><p className="mt-1 text-xs leading-5 text-white/35">{subtitle}</p></div></div><div className="space-y-4">{children}</div></section>;
+const JournalColumn = ({ icon, title, subtitle, action, children }: { icon: React.ReactNode; title: string; subtitle: string; action?: React.ReactNode; children: React.ReactNode }) => <section className="rounded-[1.75rem] border border-white/10 bg-[#09090d]/80 p-5 backdrop-blur-xl sm:p-7"><div className="mb-6 flex items-start gap-3"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-orange-200/15 bg-orange-300/10 text-orange-200">{icon}</span><div className="min-w-0 flex-1"><h2 className="font-serif text-2xl font-black">{title}</h2><p className="mt-1 text-xs leading-5 text-white/35">{subtitle}</p></div>{action}</div><div className="space-y-4">{children}</div></section>;
 
 const RoadshowArchiveTimeline = ({ records }: { records: RoadshowRecord[] }) => (
   <div className="border-t border-white/10 pt-5">
@@ -661,14 +630,12 @@ const RecordTimeline = ({ records, busy, editingId, onEdit, onDelete, label = 'H
 
 const PracticeRecordDetails = ({ record }: { record: PracticeRecord }) => {
   const reflection = getPracticeReflection(record);
-  return <><div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1"><p className="text-sm font-bold text-orange-100">匹配度 {record.matchScore}</p>{record.femaleKey && <p className="text-xs font-bold text-white/45"><span className="mr-1 text-[10px] font-black tracking-wider text-white/25">女生选调</span>{record.femaleKey}</p>}<PracticeMarkerBadges record={record} /></div>{record.feelings && <RecordText label="感受" text={record.feelings} />}{reflection && <RecordText label="弹唱感想" text={reflection} />}</>;
+  return <><div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1"><p className="text-sm font-bold text-orange-100">匹配度 {record.matchScore}</p>{record.femaleKey && <p className="text-xs font-bold text-white/45"><span className="mr-1 text-[10px] font-black tracking-wider text-white/25">异性小伙伴选调</span>{record.femaleKey}</p>}<PracticeMoodBadges record={record} /></div>{record.feelings && <RecordText label="感受" text={record.feelings} />}{reflection && <RecordText label="弹唱感想" text={reflection} />}</>;
 };
 
-const PracticeMarkerBadges = ({ record }: { record: PracticeRecord }) => (
-  (record.needsMorePractice || record.needsImprovement || record.singingMoods?.length) ? (
+const PracticeMoodBadges = ({ record }: { record: PracticeRecord }) => (
+  record.singingMoods?.length ? (
     <p className="flex flex-wrap gap-1.5 text-[10px] font-black">
-      {record.needsMorePractice && <span className="rounded-full border border-orange-200/25 bg-orange-300/10 px-2 py-1 text-orange-100">多练习</span>}
-      {record.needsImprovement && <span className="rounded-full border border-cyan-200/25 bg-cyan-300/10 px-2 py-1 text-cyan-100">待提升</span>}
       {normalizeSingingMoods(record.singingMoods ?? []).map((mood) => <span key={mood} className="rounded-full border border-rose-200/25 bg-rose-300/10 px-2 py-1 text-rose-100">{mood}</span>)}
     </p>
   ) : null

@@ -711,6 +711,7 @@ function createHandler(store) {
       }
 
       if (request.action === 'songScores:save') {
+        if (request.score.pages.some(page => !page.includes(`/song-request-scores/${id}/`))) throw new Error('INVALID_SONG_SCORE');
         const saved = { ...request.score, workspaceId: id, updatedAt: store.now() };
         await store.saveSongScoreAtomically(songScoreDocumentId(id, saved.songId), saved);
         const publicSaved = publicSongScore(saved);
@@ -729,9 +730,14 @@ function createHandler(store) {
       }
 
       if (request.action === 'roadshows:save') {
-        const saved = { ...request.record, updatedAt: store.now() };
         const records = [...(workspace.roadshows || [])];
-        const index = records.findIndex((record) => record.id === saved.id);
+        const index = records.findIndex((record) => record.id === request.record.id);
+        const saved = {
+          ...request.record,
+          ...(request.record.funGroupRounds === undefined && records[index]?.funGroupRounds !== undefined
+            ? { funGroupRounds: records[index].funGroupRounds } : {}),
+          updatedAt: store.now(),
+        };
         if (index >= 0) records[index] = saved;
         else {
           if (records.filter((record) => !record.deletedAt).length >= 100) throw new Error('INVALID_RECORD');

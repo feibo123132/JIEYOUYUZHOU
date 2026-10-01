@@ -22,6 +22,7 @@ interface ScoreViewerProps {
   onPagesStale?: (force?: boolean) => void;
   onSavePage?: (index: number, page: string) => void;
   editingAllowed?: boolean;
+  autoScrollAllowed?: boolean;
   startEditing?: boolean;
   onClose: () => void;
 }
@@ -44,7 +45,7 @@ const AUTO_SCROLL_PIXELS_PER_SECOND: Record<Exclude<AutoScrollSpeed, 0>, number>
   5: 22,
 };
 
-const ScoreViewer = ({ songId, songTitle, pages, onPagesStale, onSavePage, editingAllowed = true, startEditing = false, onClose }: ScoreViewerProps) => {
+const ScoreViewer = ({ songId, songTitle, pages, onPagesStale, onSavePage, editingAllowed = true, autoScrollAllowed = false, startEditing = false, onClose }: ScoreViewerProps) => {
   const total = pages.length;
   const [page, setPage] = useState(() => Math.min(readScorePage(window.localStorage, songId), Math.max(total - 1, 0)));
   const [pageError, setPageError] = useState(false);
@@ -135,7 +136,7 @@ const ScoreViewer = ({ songId, songTitle, pages, onPagesStale, onSavePage, editi
       window.clearInterval(autoScrollIntervalRef.current);
       autoScrollIntervalRef.current = null;
     }
-    if (autoScrollSpeed === 0) return;
+    if (!autoScrollAllowed || autoScrollSpeed === 0) return;
 
     const advance = (time: number) => {
       const stage = stageRef.current;
@@ -174,7 +175,14 @@ const ScoreViewer = ({ songId, songTitle, pages, onPagesStale, onSavePage, editi
       autoScrollFrameRef.current = null;
       autoScrollIntervalRef.current = null;
     };
-  }, [autoScrollSpeed]);
+  }, [autoScrollAllowed, autoScrollSpeed]);
+
+  useEffect(() => {
+    if (!autoScrollAllowed) {
+      setAutoScrollSpeed(0);
+      setAutoScrollMenuOpen(false);
+    }
+  }, [autoScrollAllowed]);
 
   const applyZoom = useCallback((requestedZoom: number, focalPoint?: { x: number; y: number }) => {
     const stage = stageRef.current;
@@ -330,7 +338,7 @@ const ScoreViewer = ({ songId, songTitle, pages, onPagesStale, onSavePage, editi
       aria-label={`${songTitle} 谱子翻页器`}
       style={{ overscrollBehavior: 'none' }}
     >
-      <div ref={autoScrollControlRef} className="absolute left-3 top-3 z-20 flex shrink-0 items-center text-white/85 sm:left-4 sm:top-4">
+      {autoScrollAllowed && <div ref={autoScrollControlRef} className="absolute left-3 top-3 z-20 flex shrink-0 items-center text-white/85 sm:left-4 sm:top-4">
         <button
           ref={autoScrollButtonRef}
           type="button"
@@ -367,7 +375,7 @@ const ScoreViewer = ({ songId, songTitle, pages, onPagesStale, onSavePage, editi
             ))}
           </div>
         )}
-      </div>
+      </div>}
 
       <div className="absolute right-3 top-3 z-20 flex shrink-0 items-center gap-2 text-white/85 sm:right-4 sm:top-4">
         {onSavePage && !pageError && <button type="button" disabled={!editingAllowed} onClick={() => { setAutoScrollSpeed(0); setEditingSource(pages[page]); }} className="inline-flex h-9 items-center gap-1.5 rounded-full border border-white/10 bg-black/50 px-3 text-xs font-bold text-white/85 backdrop-blur-md transition hover:bg-white/15 disabled:opacity-40"><Pencil className="h-3.5 w-3.5" />编辑本页</button>}

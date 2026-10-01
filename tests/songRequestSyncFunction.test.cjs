@@ -184,8 +184,9 @@ function memoryStore() {
         if (source.deletedAt || existingSongIds.has(source.songId)) continue;
         const pages = [];
         for (const page of source.pages || []) pages.push(`${page}::copy:${targetWorkspaceId}:${source.songId}`);
+        const { scoreNote: _scoreNote, pageUrls: _pageUrls, ...seededScore } = structuredClone(source);
         songScores.set(scoreDocumentId(targetWorkspaceId, source.songId), {
-          ...structuredClone(source),
+          ...seededScore,
           workspaceId: targetWorkspaceId,
           pages,
           updatedAt: seededAt,
@@ -407,7 +408,8 @@ test('保存谱子时由云函数返回可显示的临时地址', async () => {
   const handler = createHandler(store);
   const auth = { alias: 'JIEYOU', password: 'guitar-2026' };
   await seedExistingAccount(store, auth);
-  const fileId = `cloud://env-123/song-request-scores/${'a'.repeat(64)}/${'b'.repeat(64)}/123e4567-e89b-12d3-a456-426614174000.jpg`;
+  const accountId = crypto.createHash('sha256').update(auth.alias.toLowerCase()).digest('hex');
+  const fileId = `cloud://env-123/song-request-scores/${accountId}/${'b'.repeat(64)}/123e4567-e89b-12d3-a456-426614174000.jpg`;
 
   const result = await handler({
     action: 'songScores:save', ...auth,
@@ -421,18 +423,25 @@ test('保存谱子时由云函数返回可显示的临时地址', async () => {
 
 test('新用户首次拉取谱子时获得站主独立副本，删除不会牵连站主和其它用户', async () => {
   const store = memoryStore();
+  const uploads = [];
+  store.uploadSongScorePage = async (workspaceId, songId) => {
+    uploads.push({ workspaceId, songId });
+    return `cloud://env-123/song-request-scores/${workspaceId}/${'b'.repeat(64)}/123e4567-e89b-12d3-a456-426614174000.jpg`;
+  };
   const { createHandler } = loadFunction();
   const handler = createHandler(store);
   const owner = { alias: '2421415030@qq.com', password: 'guitar-2026' };
   const firstUser = { alias: 'first@example.com', password: 'guitar-2026' };
   const secondUser = { alias: 'second@example.com', password: 'guitar-2026' };
-  const ownerPage = `cloud://env-123/song-request-scores/${'a'.repeat(64)}/${'b'.repeat(64)}/123e4567-e89b-12d3-a456-426614174000.jpg`;
+  const ownerId = crypto.createHash('sha256').update(owner.alias).digest('hex');
+  const ownerPage = `cloud://env-123/song-request-scores/${ownerId}/${'b'.repeat(64)}/123e4567-e89b-12d3-a456-426614174000.jpg`;
   const score = {
     id: 'score-qing-tian',
     songId: 'qing-tian',
     songTitle: '晴天',
     songArtist: '周杰伦',
     pages: [ownerPage],
+    scoreNote: '站主说明',
   };
 
   await seedExistingAccount(store, owner);
@@ -447,6 +456,24 @@ test('新用户首次拉取谱子时获得站主独立副本，删除不会牵�
   assert.equal(firstPull.scores[0].songId, 'qing-tian');
   assert.notEqual(firstPull.scores[0].pages[0], ownerPage);
   assert.match(firstPull.scores[0].pages[0], /::copy:/);
+  assert.equal(firstPull.scores[0].scoreNote, undefined);
+  assert.deepEqual(await handler({ action: 'songScores:save', ...firstUser, score: { ...score, scoreNote: '冒用站主文件' } }), { ok: false, error: 'INVALID_SONG_SCORE' });
+
+  const uploaded = await handler({
+    action: 'songScores:uploadPage', ...firstUser, songId: 'qing-tian',
+    pageDataUrl: `data:image/jpeg;base64,${Buffer.from([0xff, 0xd8, 0xff, 0xdb]).toString('base64')}`,
+  });
+  assert.equal(uploaded.ok, true);
+  const firstUserId = crypto.createHash('sha256').update(firstUser.alias).digest('hex');
+  assert.deepEqual(uploads, [{ workspaceId: firstUserId, songId: 'qing-tian' }]);
+  const personalSave = await handler({
+    action: 'songScores:save', ...firstUser,
+    score: { ...score, workspaceId: ownerId, pages: [uploaded.fileId], scoreNote: '用户自己的说明' },
+  });
+  assert.equal(personalSave.ok, true);
+  assert.equal((await handler({ action: 'songScores:pull', ...firstUser })).scores[0].scoreNote, '用户自己的说明');
+  assert.deepEqual((await handler({ action: 'songScores:pull', ...owner })).scores[0].pages, [ownerPage]);
+  assert.equal((await handler({ action: 'songScores:pull', ...owner })).scores[0].scoreNote, '站主说明');
 
   assert.deepEqual(await handler({ action: 'songScores:delete', ...firstUser, songId: 'qing-tian' }), { ok: true });
   assert.deepEqual((await handler({ action: 'songScores:pull', ...firstUser })).scores, []);
@@ -454,6 +481,7 @@ test('新用户首次拉取谱子时获得站主独立副本，删除不会牵�
   const ownerPull = await handler({ action: 'songScores:pull', ...owner });
   assert.equal(ownerPull.scores.length, 1);
   assert.deepEqual(ownerPull.scores[0].pages, [ownerPage]);
+  assert.equal(ownerPull.scores[0].scoreNote, '站主说明');
 
   const secondInvite = await handler({ action: 'invitations:create', ...owner, boundAlias: secondUser.alias });
   assert.equal(secondInvite.ok, true);
@@ -461,6 +489,7 @@ test('新用户首次拉取谱子时获得站主独立副本，删除不会牵�
   const secondPull = await handler({ action: 'songScores:pull', ...secondUser });
   assert.equal(secondPull.scores.length, 1);
   assert.equal(secondPull.scores[0].songId, 'qing-tian');
+  assert.equal(secondPull.scores[0].scoreNote, undefined);
 });
 
 test('validates global artist settings actions, revisions, images, and payload limits', () => {
@@ -754,6 +783,19 @@ test('saves roadshows and keeps soft-deleted records out of pulls', async () => 
   assert.equal(workspace.roadshows[0].deletedAt, '2026-08-25T12:00:00.000Z');
 })
 
+test('preserves saved song-group rounds when an older roadshow client omits the field', async () => {
+  const store = memoryStore();
+  const { createHandler } = loadFunction();
+  const handler = createHandler(store);
+  const auth = { alias: '2421415030@qq.com', password: 'guitar-2026' };
+  await seedExistingAccount(store, auth);
+  const base = { id: 'roadshow-rounds', title: '歌组场', date: '2026-09-30', updatedAt: '', performanceSongs: [], recognitionSongs: [] };
+  const round = { id: 'round-one', groupId: 'love-group', round: 1, songIds: ['song-a'], sungAt: '2026-09-30T12:00:00.000Z' };
+  assert.equal((await handler({ action: 'roadshows:save', ...auth, record: { ...base, funGroupRounds: [round] } })).record.funGroupRounds.length, 1);
+  assert.deepEqual((await handler({ action: 'roadshows:save', ...auth, record: { ...base, title: '歌组场更新' } })).record.funGroupRounds, [round]);
+  assert.deepEqual((await handler({ action: 'roadshows:save', ...auth, record: { ...base, funGroupRounds: [] } })).record.funGroupRounds, []);
+})
+
 test('publishes a quiz ranking from roadshow answers without exposing private workspaces', async () => {
   const store = memoryStore();
   const { createHandler } = loadFunction();
@@ -899,6 +941,7 @@ test('preserves practice markers through save, reload, edit, and clearing', asyn
   await seedExistingAccount(store, auth);
   for (const [needsMorePractice, needsImprovement] of [[true, false], [false, true], [true, true], [false, false]]) {
     const singingMoods = needsMorePractice ? ['快乐', '感动'] : needsImprovement ? ['想哭'] : [];
+    const normalizedMoods = singingMoods.map(mood => mood === '快乐' ? '欢快' : mood === '想哭' ? '爆款' : mood);
     const record = {
       id: 'practice-markers', kind: 'practice', songId: 'qing-tian', songTitle: '晴天', songArtist: '周杰伦',
       occurredAt: '2026-08-25T10:00:00.000Z', matchScore: 88,
@@ -910,12 +953,12 @@ test('preserves practice markers through save, reload, edit, and clearing', asyn
     assert.equal(saved.ok, true);
     assert.equal(saved.record.needsMorePractice, needsMorePractice);
     assert.equal(saved.record.needsImprovement, needsImprovement);
-    assert.deepEqual(saved.record.singingMoods, singingMoods);
+    assert.deepEqual(saved.record.singingMoods, normalizedMoods);
     const reloaded = await handler({ action: 'songRecords:pull', ...auth });
     assert.equal(reloaded.records.length, 1);
     assert.equal(reloaded.records[0].needsMorePractice, needsMorePractice);
     assert.equal(reloaded.records[0].needsImprovement, needsImprovement);
-    assert.deepEqual(reloaded.records[0].singingMoods, singingMoods);
+    assert.deepEqual(reloaded.records[0].singingMoods, normalizedMoods);
     assert.deepEqual(await handler({ action: 'songRecords:save', ...auth, record: { ...record, singingMoods: ['未知'] } }), { ok: false, error: 'INVALID_SONG_RECORD' });
     assert.deepEqual(await handler({ action: 'songRecords:save', ...auth, record: { ...record, singingMoods: '快乐' } }), { ok: false, error: 'INVALID_SONG_RECORD' });
   }

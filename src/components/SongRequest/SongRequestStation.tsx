@@ -2138,6 +2138,14 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
             onRecordsChange={commitSongRecords}
             onScoreChange={commitSongScore}
             onOpenPrivateSpace={openPrivateSpace}
+            onOpenPracticeRanking={() => {
+              setSelectedSong(null);
+              setSelectedArtist(null);
+              setPersonalRankingArtist(null);
+              setRankingView('personal');
+              setActiveSection('ranking');
+              window.scrollTo({ top: 0, behavior: 'auto' });
+            }}
             roadshowSingState={{ roadshowSingCounts, roadshowSingCountsByLocation }}
             roadshowSingCountsReady={roadshowSingCountsReady}
             onRoadshowRecorded={(state) => { ++roadshowSingSyncVersionRef.current; applyRoadshowSingState(state); }}

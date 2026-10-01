@@ -30,7 +30,8 @@ test('practice records preserve free-text female key', () => {
 test('practice form exposes female key as a free text input', () => {
   const source = readFileSync(new URL('../src/components/SongRequest/SongDetailPanel.tsx', import.meta.url), 'utf8');
 
-  assert.match(source, /女生选调/);
+  assert.match(source, /异性小伙伴选调/);
+  assert.doesNotMatch(source, /女生选调/);
   assert.match(source, /value=\{femaleKey\}/);
   assert.match(source, /onChange=\{\(event\) => setFemaleKey\(event\.target\.value\)\}/);
   assert.doesNotMatch(source, /aria-label="女生选调"[\s\S]{0,160}<details/);

@@ -26,6 +26,14 @@ export interface RecognitionAttempt {
   answeredAt: string;
 }
 
+export interface SongGroupRound {
+  id: string;
+  groupId: string;
+  round: number;
+  songIds: string[];
+  sungAt?: string;
+}
+
 export interface PublicQuizParticipantRankingItem {
   participantName: string;
   score: number;
@@ -54,6 +62,7 @@ export interface RoadshowRecord {
   performanceSongs: RoadshowSong[];
   recognitionSongs: RoadshowSong[];
   recognitionAttempts?: RecognitionAttempt[];
+  funGroupRounds?: SongGroupRound[];
   updatedAt: string;
 }
 
@@ -217,6 +226,18 @@ const isRecognitionAttempt = (value: unknown): value is RecognitionAttempt => {
     && typeof attempt.answeredAt === 'string';
 };
 
+const isSongGroupRound = (value: unknown): value is SongGroupRound => {
+  if (!value || typeof value !== 'object') return false;
+  const round = value as Partial<SongGroupRound>;
+  return typeof round.id === 'string' && round.id.length > 0
+    && typeof round.groupId === 'string' && round.groupId.length > 0
+    && Number.isInteger(round.round) && Number(round.round) > 0
+    && Array.isArray(round.songIds) && round.songIds.length > 0 && round.songIds.length <= 4
+    && round.songIds.every(id => typeof id === 'string' && id.length > 0)
+    && new Set(round.songIds).size === round.songIds.length
+    && (round.sungAt === undefined || (typeof round.sungAt === 'string' && Number.isFinite(Date.parse(round.sungAt))));
+};
+
 const isRecord = (value: unknown): value is RoadshowRecord => {
   if (!value || typeof value !== 'object') return false;
   const record = value as Partial<RoadshowRecord>;
@@ -233,6 +254,9 @@ const isRecord = (value: unknown): value is RoadshowRecord => {
     && record.recognitionSongs.every(isSong)
     && (record.recognitionAttempts === undefined || (
       Array.isArray(record.recognitionAttempts) && record.recognitionAttempts.every(isRecognitionAttempt)
+    ))
+    && (record.funGroupRounds === undefined || (
+      Array.isArray(record.funGroupRounds) && record.funGroupRounds.every(isSongGroupRound)
     ));
 };
 

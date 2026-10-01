@@ -302,9 +302,12 @@ const resolveSongScores = async (scores: StoredSongScore[]): Promise<SongScore[]
   });
 };
 
-const deleteSongScoreFiles = async (fileIds: string[]): Promise<void> => {
+const deleteSongScoreFiles = async (fileIds: string[], credentials: Credentials): Promise<void> => {
   if (!tcbApp) throw new Error('CLOUD_UNAVAILABLE');
-  const unique = [...new Set(fileIds.filter(isCloudScorePage))];
+  if (!globalThis.crypto?.subtle) return;
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(credentials.alias.trim().toLocaleLowerCase()));
+  const workspaceId = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+  const unique = [...new Set(fileIds.filter((fileId) => isCloudScorePage(fileId) && fileId.includes(`/song-request-scores/${workspaceId}/`)))];
   for (let index = 0; index < unique.length; index += 50) {
     await tcbApp.deleteFile({ fileList: unique.slice(index, index + 50) });
   }
@@ -358,10 +361,10 @@ export const syncSongScoreToCloud = async (
     if (Object.keys(localOnlyText).length) {
       synced = { ...synced, ...localOnlyText, pendingSync: true };
     }
-    if (retiredFileIds.length) void deleteSongScoreFiles(retiredFileIds).catch(() => undefined);
+    if (retiredFileIds.length) void deleteSongScoreFiles(retiredFileIds, credentials).catch(() => undefined);
     return synced;
   } catch (error) {
-    if (uploadedFileIds.length) await deleteSongScoreFiles(uploadedFileIds).catch(() => undefined);
+    if (uploadedFileIds.length) await deleteSongScoreFiles(uploadedFileIds, credentials).catch(() => undefined);
     throw error;
   }
 };
@@ -374,7 +377,7 @@ export const deleteSongScore = async (
   fileIds: string[] = [],
 ): Promise<void> => {
   await callSync<Record<string, never>>({ action: 'songScores:delete', ...credentials, songId });
-  if (fileIds.length) await deleteSongScoreFiles(fileIds).catch(() => undefined);
+  if (fileIds.length) await deleteSongScoreFiles(fileIds, credentials).catch(() => undefined);
 };
 
 export const mapSongScoreSyncError = (error: unknown) => {

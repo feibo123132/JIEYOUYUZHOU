@@ -259,6 +259,11 @@ const RoadshowPanel = ({
         setMessage('路演感受尚未同步，草稿已保留，请更新云端服务后重试。');
         return false;
       }
+      if (candidate.funGroupRounds !== undefined && JSON.stringify(serverSaved.funGroupRounds ?? []) !== JSON.stringify(candidate.funGroupRounds)) {
+        setEditing({ ...candidate, updatedAt: serverSaved.updatedAt });
+        setMessage('歌组轮次尚未同步。请更新 songRequestSync 云函数后重试。');
+        return false;
+      }
       const saved = preserveRecognitionParticipantNames(candidate, serverSaved);
       const next = [...records];
       const index = next.findIndex((item) => item.id === saved.id);
@@ -346,6 +351,11 @@ const RoadshowPanel = ({
         onBack={() => { setEditing(null); setMessage(''); }}
         onSwitch={(targetId) => void switchRoadshow(targetId)}
         onSave={(candidate) => void persistRecord(candidate ?? editing)}
+        onSaveGroupRounds={async (candidate) => {
+          const saved = await persistRecord(candidate);
+          if (!saved) setEditing(editing);
+          return saved;
+        }}
         onRecordAttempt={(record) => { void persistRecord(record); }}
         onOpenSongDetail={(song) => {
           if (busy || switchingRef.current) return;
@@ -438,12 +448,13 @@ interface EditorProps {
   onBack: () => void;
   onSwitch: (targetId: string) => void;
   onSave: (candidate?: RoadshowRecord) => void;
+  onSaveGroupRounds: (candidate: RoadshowRecord) => Promise<boolean>;
   onRecordAttempt: (record: RoadshowRecord) => void;
   onOpenSongDetail: (song: RoadshowSong) => void;
   onDelete: () => void;
 }
 
-const RoadshowEditor = ({ editorTab, setEditorTab, onIncrementSingCount, pendingSingCounts, credentials, record, allRecords, songRecords, catalogSongs, busy, message, quizAssignments, canManageFeaturedSongs = false, onChange, onBack, onSwitch, onSave, onRecordAttempt, onOpenSongDetail, onDelete }: EditorProps) => {
+const RoadshowEditor = ({ editorTab, setEditorTab, onIncrementSingCount, pendingSingCounts, credentials, record, allRecords, songRecords, catalogSongs, busy, message, quizAssignments, canManageFeaturedSongs = false, onChange, onBack, onSwitch, onSave, onSaveGroupRounds, onRecordAttempt, onOpenSongDetail, onDelete }: EditorProps) => {
   const updateList = (key: 'performanceSongs' | 'recognitionSongs', songs: RoadshowSong[]) => onChange({ ...record, [key]: songs });
   return (
     <fieldset disabled={busy} className="min-w-0 space-y-5">
@@ -481,7 +492,7 @@ const RoadshowEditor = ({ editorTab, setEditorTab, onIncrementSingCount, pending
       </div>
 
       {editorTab === 'performance' && <SongListEditor key={record.id} onIncrementSingCount={onIncrementSingCount} pendingSingCounts={pendingSingCounts} title="路演歌曲" description="本次准备演唱的歌曲" songs={record.performanceSongs} allRecords={allRecords} recordId={record.id} songRecords={songRecords} catalogSongs={catalogSongs} onChange={(songs) => updateList('performanceSongs', songs)} onSave={(updatedSongs) => onSave({ ...record, performanceSongs: updatedSongs })} onOpenSongDetail={onOpenSongDetail} />}
-      {editorTab === 'recognition' && <RecognitionSongListEditor key={record.id} catalogSongs={catalogSongs} record={record} assignments={quizAssignments} allRecords={allRecords} busy={busy} onSave={onSave} onRecordAttempt={onRecordAttempt} onOpenSongDetail={onOpenSongDetail} />}
+      {editorTab === 'recognition' && <RecognitionSongListEditor key={record.id} catalogSongs={catalogSongs} record={record} assignments={quizAssignments} allRecords={allRecords} busy={busy} onSave={onSave} onSaveGroupRounds={onSaveGroupRounds} onRecordAttempt={onRecordAttempt} onOpenSongDetail={onOpenSongDetail} />}
       {editorTab === 'feelings' && (
         <RoadshowFeelingsNotebook key={credentials.alias} credentials={credentials} records={[...allRecords.filter(item => item.id !== record.id), record]} />
       )}
@@ -831,13 +842,14 @@ const saveRecognitionParticipationDraft = (recordId: string, draft: RecognitionP
   } catch {}
 };
 
-const RecognitionSongListEditor = ({ record, assignments, allRecords, catalogSongs, busy, onSave, onRecordAttempt, onOpenSongDetail }: {
+const RecognitionSongListEditor = ({ record, assignments, allRecords, catalogSongs, busy, onSave, onSaveGroupRounds, onRecordAttempt, onOpenSongDetail }: {
   record: RoadshowRecord;
   assignments: QuizAssignments;
   allRecords: RoadshowRecord[];
   catalogSongs: Song[];
   busy: boolean;
   onSave: (record: RoadshowRecord) => void;
+  onSaveGroupRounds: (record: RoadshowRecord) => Promise<boolean>;
   onRecordAttempt: (record: RoadshowRecord) => void;
   onOpenSongDetail: (song: RoadshowSong) => void;
 }) => {
@@ -1141,7 +1153,7 @@ const RecognitionSongListEditor = ({ record, assignments, allRecords, catalogSon
         })}
       </div>
       <FixedQuizSongs record={record} catalogSongs={catalogSongs} managing={!participating && !joining} busy={busy} onSave={onSave} renderSong={renderQuizSong} />
-      <SharedSongGroups catalogSongs={catalogSongs} managing={!participating && !joining} onOpenSong={song => onOpenSongDetail(createRoadshowSong(song))} />
+      <SharedSongGroups catalogSongs={catalogSongs} managing={!participating && !joining} record={record} records={allRecords} roundsBusy={busy} onSaveRounds={onSaveGroupRounds} onOpenSong={song => onOpenSongDetail(createRoadshowSong(song))} />
     </section>
   );
 };

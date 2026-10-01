@@ -137,6 +137,27 @@ const validateRecognitionAttempts = (value) => {
   return attempts;
 };
 
+const validateFunGroupRounds = (value) => {
+  if (!Array.isArray(value) || value.length > 200) throw new Error('INVALID_RECORD');
+  const rounds = value.map(round => {
+    if (!round || typeof round !== 'object' || Array.isArray(round)
+      || !Number.isInteger(round.round) || round.round < 1 || round.round > 9999
+      || !Array.isArray(round.songIds) || round.songIds.length < 1 || round.songIds.length > 4) throw new Error('INVALID_RECORD');
+    const songIds = round.songIds.map(id => cleanText(id, 100, 'INVALID_RECORD'));
+    if (new Set(songIds).size !== songIds.length) throw new Error('INVALID_RECORD');
+    return {
+      id: cleanText(round.id, 100, 'INVALID_RECORD'),
+      groupId: cleanText(round.groupId, 100, 'INVALID_RECORD'),
+      round: round.round,
+      songIds,
+      ...(round.sungAt === undefined ? {} : { sungAt: cleanIsoTime(round.sungAt, 'INVALID_RECORD') }),
+    };
+  });
+  if (new Set(rounds.map(round => round.id)).size !== rounds.length
+    || new Set(rounds.map(round => round.round)).size !== rounds.length) throw new Error('INVALID_RECORD');
+  return rounds;
+};
+
 const validateRecord = (value) => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('INVALID_RECORD');
   const date = cleanText(value.date, 10, 'INVALID_RECORD');
@@ -146,6 +167,7 @@ const validateRecord = (value) => {
   if (value.weather !== undefined) optionalFields.weather = cleanOptionalText(value.weather, 40, 'INVALID_RECORD');
   if (value.feelings !== undefined) optionalFields.feelings = cleanOptionalText(value.feelings, 10000, 'INVALID_RECORD');
   if (value.recognitionAttempts !== undefined) optionalFields.recognitionAttempts = validateRecognitionAttempts(value.recognitionAttempts);
+  if (value.funGroupRounds !== undefined) optionalFields.funGroupRounds = validateFunGroupRounds(value.funGroupRounds);
   return {
     id: cleanText(value.id, 80, 'INVALID_RECORD'),
     title: cleanText(value.title, 60, 'INVALID_RECORD'),
@@ -185,7 +207,7 @@ const validateSongRecord = (value) => {
       improvements,
       needsMorePractice: Boolean(value.needsMorePractice),
       needsImprovement: Boolean(value.needsImprovement),
-      singingMoods: [...new Set((value.singingMoods ?? []).map(mood => mood === '快乐' ? '欢快' : mood === '舒服' ? '音色' : mood === '想哭' ? '爆款' : mood))],
+      singingMoods: [...new Set((value.singingMoods ?? []).map(mood => mood === '快乐' ? '欢快' : mood === '想哭' ? '爆款' : mood))],
       ...(femaleKey ? { femaleKey } : {}),
     };
   }

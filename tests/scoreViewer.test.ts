@@ -4,6 +4,17 @@ import test from 'node:test'
 
 const scoreViewerUrl = new URL('../src/components/SongRequest/ScoreViewer.tsx', import.meta.url)
 const scoreZoomUrl = new URL('../src/components/SongRequest/scoreViewerZoom.ts', import.meta.url)
+const songDetailUrl = new URL('../src/components/SongRequest/SongDetailPanel.tsx', import.meta.url)
+
+test('auto-scroll is available only to signed-in score viewers', () => {
+  const viewer = readFileSync(scoreViewerUrl, 'utf8')
+  const detail = readFileSync(songDetailUrl, 'utf8')
+
+  assert.match(detail, /autoScrollAllowed=\{Boolean\(session\)\}/)
+  assert.match(viewer, /\{autoScrollAllowed && <div ref=\{autoScrollControlRef\}/)
+  assert.match(viewer, /if \(!autoScrollAllowed \|\| autoScrollSpeed === 0\) return/)
+  assert.match(viewer, /if \(!autoScrollAllowed\) \{\s*setAutoScrollSpeed\(0\)/)
+})
 
 test('score viewer isolates iPad gestures from page zoom and renders in the document top layer', () => {
   const source = readFileSync(scoreViewerUrl, 'utf8')

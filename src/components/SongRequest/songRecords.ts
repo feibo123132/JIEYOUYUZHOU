@@ -307,4 +307,4 @@ export const recoverSongsFromRecords = (records: SongRecord[], knownSongs: Song[
   return [...recovered.values()];
 };
 
-export const normalizeSingingMoods = (moods: NonNullable<PracticeRecord['singingMoods']>) => [...new Set(moods.map(mood => mood === '快乐' ? '欢快' as const : mood === '舒服' ? '音色' as const : mood === '想哭' ? '爆款' as const : mood))];
+export const normalizeSingingMoods = (moods: NonNullable<PracticeRecord['singingMoods']>) => [...new Set(moods.map(mood => mood === '快乐' ? '欢快' as const : mood === '想哭' ? '爆款' as const : mood))];
