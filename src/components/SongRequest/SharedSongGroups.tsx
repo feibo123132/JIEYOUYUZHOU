@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, FileText, Layers3, Link2, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, FileText, Layers3, Link2, Pencil, Plus, Trash2, X } from 'lucide-react';
 import type { Song } from './songCatalog';
 import { initializeSongGroupMedleys, type SongGroup, type SongGroupsSnapshot, type SongMedley } from './songGroups';
 import { SongMedleyEditor, SongMedleyLyrics } from './SongMedleyPanel';
@@ -31,6 +31,8 @@ export default function SharedSongGroups({ catalogSongs, managing, onOpenSong, r
   const [reload, setReload] = useState(0);
   const [page, setPage] = useState(1);
   const [editing, setEditing] = useState(false);
+  const [expandedMedleyKey, setExpandedMedleyKey] = useState<string | null>(null);
+  const [expandedSongOrderGroupId, setExpandedSongOrderGroupId] = useState<string | null>(null);
   const [activeRoundsGroupId, setActiveRoundsGroupId] = useState<string | null>(null);
   const [dragged, setDragged] = useState<{ groupId: string; songId: string } | null>(null);
   const lyricsBoard = useRef<HTMLDivElement>(null);
@@ -167,23 +169,35 @@ export default function SharedSongGroups({ catalogSongs, managing, onOpenSong, r
       const linkedIds = new Set(medleys.flatMap(medley => medley.songIds));
       const displaySongIds = managing && editing ? group.songIds : group.songIds.filter(id => !linkedIds.has(id));
       return <article key={group.id} className={`min-w-0 rounded-xl border border-white/10 bg-black/25 p-4 ${!editing ? 'cursor-pointer transition hover:border-teal-200/35 hover:bg-teal-200/[.045]' : ''}`}
-        onClick={(event) => { if (!editing && !(event.target as HTMLElement).closest('button,input,textarea,select,a')) setActiveRoundsGroupId(group.id); }}>
+        onClick={(event) => { if (!editing && !(event.target as HTMLElement).closest('button,input,textarea,select,a,[data-medley-card]')) setActiveRoundsGroupId(group.id); }}>
       <header className="flex flex-wrap items-center justify-between gap-2"><h5 className="min-w-0 flex-1 break-words font-bold text-teal-50">{group.name}<small className="ml-2 text-xs font-normal text-white/35">{group.songIds.length} 首</small></h5><button type="button" onClick={() => setActiveRoundsGroupId(group.id)} aria-label={`打开${group.name}轮次编排`} className="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[11px] font-bold text-teal-100/55 hover:bg-teal-200/10 hover:text-teal-100">编排轮次<ChevronRight size={13} /></button>{managing && editing && <div className="flex shrink-0 gap-2"><button type="button" disabled={busy || formOpen} aria-label={`编辑${group.name}`} onClick={() => { if (!closeLyrics()) return; setDraft({ ...group, songIds: [...group.songIds] }); setQuery(''); }} className="p-1 text-white/40 hover:text-teal-100 disabled:opacity-30"><Pencil size={15} /></button><button type="button" disabled={busy || formOpen} aria-label={`删除${group.name}`} onClick={() => { if (window.confirm(`删除“${group.name}”歌组及其串烧歌词？所有路演中都会移除该组，但不会删除歌曲。`) && (activeMedley?.groupId !== group.id || closeLyrics())) void persist(groups.filter(item => item.id !== group.id)); }} className="p-1 text-white/40 hover:text-red-200 disabled:opacity-30"><Trash2 size={15} /></button></div>}</header>
       {group.description && <p className="mt-2 whitespace-pre-wrap break-words text-xs leading-6 text-white/45">{group.description}</p>}
       {medleys.length > 0 && <div className="mt-3 space-y-3">{medleys.map(medley => {
         const selected = activeMedley?.groupId === group.id && activeMedley.medleyId === medley.id;
-        return <div key={medley.id} className={`rounded-xl border p-3 transition ${selected ? 'border-teal-200/45 bg-teal-200/[.09]' : 'border-teal-200/20 bg-teal-200/[.045]'}`}>
-          <div className="flex flex-wrap items-center justify-between gap-2"><h6 className="flex min-w-0 flex-wrap items-center gap-2 text-xs font-bold text-teal-100"><Link2 size={14} /><span className="break-words">{medley.name}</span>{medley.chordProgression && <span className="break-all rounded-md border border-teal-200/15 bg-black/20 px-2 py-0.5 font-mono tracking-wider text-teal-200/80">{medley.chordProgression}</span>}</h6>{managing && editing && <div className="flex gap-2"><button type="button" aria-label={`编辑${medley.name}串烧链`} disabled={busy || formOpen} onClick={() => editMedley(group, medley)} className="p-1 text-teal-100/55 hover:text-teal-100 disabled:opacity-30"><Pencil size={14} /></button><button type="button" aria-label={`删除${medley.name}串烧链`} disabled={busy || formOpen} onClick={() => { if (window.confirm(`删除“${medley.name}”串烧链及其歌词？歌曲仍保留在歌组中。`) && (!selected || closeLyrics())) void persist(groups.map(item => item.id === group.id ? { ...item, medleys: medleys.filter(chain => chain.id !== medley.id) } : item)); }} className="p-1 text-white/40 hover:text-red-200 disabled:opacity-30"><Trash2 size={14} /></button></div>}</div>
-          <ol aria-label={`${medley.name}演唱顺序`} className="mt-3 flex flex-wrap items-center gap-x-1 gap-y-2">{medley.songIds.map((id, index) => {
+        const medleyKey = `${group.id}/${medley.id}`;
+        const expanded = expandedMedleyKey === medleyKey;
+        return <div key={medley.id} data-medley-card className={`rounded-xl border px-3 py-2.5 transition ${selected ? 'border-teal-200/45 bg-teal-200/[.09]' : 'border-teal-200/20 bg-teal-200/[.045]'}`}>
+          <div className="flex items-center gap-2">
+            <button type="button" aria-expanded={expanded} onClick={() => setExpandedMedleyKey(expanded ? null : medleyKey)} className="flex min-w-0 flex-1 items-center gap-2 text-left text-xs font-bold text-teal-100 hover:text-teal-50">
+              <Link2 size={14} className="shrink-0" /><span className="min-w-0 truncate">{medley.name}</span><span className="shrink-0 font-normal text-white/40">{medley.songIds.length} 首</span><ChevronDown size={14} className={`shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+            </button>
+            {managing && editing && <div className="flex shrink-0 gap-2"><button type="button" aria-label={`编辑${medley.name}串烧链`} disabled={busy || formOpen} onClick={() => editMedley(group, medley)} className="p-1 text-teal-100/55 hover:text-teal-100 disabled:opacity-30"><Pencil size={14} /></button><button type="button" aria-label={`删除${medley.name}串烧链`} disabled={busy || formOpen} onClick={() => { if (window.confirm(`删除“${medley.name}”串烧链及其歌词？歌曲仍保留在歌组中。`) && (!selected || closeLyrics())) void persist(groups.map(item => item.id === group.id ? { ...item, medleys: medleys.filter(chain => chain.id !== medley.id) } : item)); }} className="p-1 text-white/40 hover:text-red-200 disabled:opacity-30"><Trash2 size={14} /></button></div>}
+          </div>
+          <div className="mt-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[10px] text-teal-100/45">
+            <span className="min-w-0 truncate">{medley.chordProgression || '未设置和弦'} · {medley.lyrics.trim() ? '已备歌词' : '待补歌词'}</span>
+            <button type="button" aria-expanded={selected} disabled={busy || formOpen} onClick={() => openLyrics(group.id, medley.id)} className="inline-flex shrink-0 items-center gap-1 rounded-lg px-1 py-0.5 text-xs font-bold text-teal-100 transition hover:bg-teal-200/10 disabled:opacity-35"><FileText size={13} />串烧歌词<ChevronRight size={13} /></button>
+          </div>
+          {expanded && <div className="mt-2 border-t border-teal-200/10 pt-2.5">
+          <ol aria-label={`${medley.name}演唱顺序`} className="flex flex-wrap items-center gap-x-1 gap-y-2">{medley.songIds.map((id, index) => {
             const song = catalogSongs.find(item => item.id === id);
             return <li key={id} className="inline-flex max-w-full items-center gap-1">{index > 0 && <Link2 size={16} className="shrink-0 text-teal-200/35" />}<button type="button" disabled={!song} title={song?.artist} onClick={() => song && onOpenSong(song)} className="inline-flex min-w-0 items-center gap-1.5 rounded-full border border-teal-200/30 bg-black/20 py-1.5 pl-1.5 pr-3 text-xs font-bold text-teal-50 transition hover:bg-teal-200/10 disabled:opacity-35"><span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-teal-200/15 font-mono text-[10px] text-teal-200">{index + 1}</span><span className="truncate">{song?.title ?? '歌库中已移除的歌曲'}</span></button></li>;
           })}</ol>
           {medley.notes && <p className="mt-2 whitespace-pre-wrap break-words text-xs leading-5 text-white/40">{medley.notes}</p>}
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-teal-200/10 pt-2.5"><span className="text-[10px] text-teal-100/40">{medley.songIds.length} 首连续演唱 · {medley.lyrics.trim() ? '已备歌词' : '待补歌词'}</span><button type="button" aria-expanded={selected} disabled={busy || formOpen} onClick={() => openLyrics(group.id, medley.id)} className="inline-flex items-center gap-1.5 rounded-full px-2 py-1.5 text-xs font-bold text-teal-100 transition hover:bg-teal-200/10 disabled:opacity-35"><FileText size={13} />串烧歌词<ChevronRight size={13} /></button></div>
+          </div>}
         </div>;
       })}</div>}
-      {displaySongIds.length > 0 && medleys.length > 0 && <p className="mt-3 text-[10px] text-white/35">{managing && editing ? '歌组排序 · 串烧顺序单独编排' : '待串联'}</p>}
-      <div className="mt-3 flex flex-wrap gap-2">{displaySongIds.map((id, index) => {
+      {displaySongIds.length > 0 && medleys.length > 0 && <button type="button" aria-expanded={expandedSongOrderGroupId === group.id} onClick={() => setExpandedSongOrderGroupId(expandedSongOrderGroupId === group.id ? null : group.id)} className="mt-3 inline-flex items-center gap-1.5 rounded-lg px-1 py-1 text-xs font-bold text-teal-100/65 hover:bg-teal-200/10 hover:text-teal-100"><ChevronDown size={14} className={`transition-transform ${expandedSongOrderGroupId === group.id ? 'rotate-180' : ''}`} />{managing && editing ? '歌组排序' : '待串联'} · {displaySongIds.length} 首</button>}
+      {(medleys.length === 0 || expandedSongOrderGroupId === group.id) && <div className="mt-3 flex flex-wrap gap-2">{displaySongIds.map((id, index) => {
         const song = catalogSongs.find(item => item.id === id);
         if (managing && editing) return <span key={id}
           draggable={!busy && !formOpen}
@@ -197,7 +211,7 @@ export default function SharedSongGroups({ catalogSongs, managing, onOpenSong, r
           <button type="button" aria-label={`${song?.title ?? id}后移`} disabled={busy || formOpen || index === group.songIds.length - 1} onClick={() => moveSong(group.id, id, index + 1)} className="rounded-full p-1.5 hover:bg-teal-200/10 disabled:opacity-25"><ChevronRight size={14} /></button>
         </span>;
         return <button key={id} type="button" disabled={!song} title={song?.artist} onClick={() => song && onOpenSong(song)} className={`${button} max-w-full text-left disabled:opacity-35`}><span className="truncate">{song?.title ?? '歌库中已移除的歌曲'}</span></button>;
-      })}</div>
+      })}</div>}
       {managing && editing && group.songIds.length >= 2 && <button type="button" disabled={busy || formOpen || medleys.length >= 10} onClick={() => editMedley(group)} className="mt-3 inline-flex items-center gap-1.5 rounded-full px-2 py-1.5 text-xs text-teal-100/60 transition hover:bg-teal-200/10 hover:text-teal-100 disabled:opacity-30"><Plus size={13} />{medleys.length ? '新增串烧链' : '编排串烧链'}</button>}
     </article>;
     })}</div>
