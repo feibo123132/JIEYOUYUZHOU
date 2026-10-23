@@ -354,16 +354,19 @@ const buildPublicPracticeRanking = (records) => {
       songArtist: record.songArtist,
       total: 0,
       count: 0,
+      stars: 0,
     };
     current.total += record.matchScore;
     current.count += 1;
+    if (Number.isInteger(record.chorusStars) && record.chorusStars > current.stars) current.stars = record.chorusStars;
     groups.set(record.songId, current);
   }
-  return [...groups.values()].map(({ songId, songTitle, songArtist, total, count }) => ({
+  return [...groups.values()].map(({ songId, songTitle, songArtist, total, count, stars }) => ({
     songId,
     songTitle,
     songArtist,
     score: Math.round((total / count) * 10) / 10,
+    stars,
   })).sort((left, right) => right.score - left.score || left.songTitle.localeCompare(right.songTitle, 'zh-CN')).slice(0, 500);
 };
 

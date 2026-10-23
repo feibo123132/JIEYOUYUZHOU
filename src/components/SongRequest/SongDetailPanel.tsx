@@ -103,7 +103,7 @@ const SongDetailPanel = ({
   const [matchScore, setMatchScore] = useState<number | ''>(80);
   const [feelings, setFeelings] = useState('');
   const [singingReflection, setSingingReflection] = useState('');
-  const [femaleKey, setFemaleKey] = useState('');
+  const [chorusStars, setChorusStars] = useState(0);
   const [singingMoods, setSingingMoods] = useState<NonNullable<PracticeRecord['singingMoods']>>([]);
   const [roadshowAt, setRoadshowAt] = useState(localDateTime);
   const [audienceName, setAudienceName] = useState('');
@@ -172,7 +172,7 @@ const SongDetailPanel = ({
       setMatchScore(record.matchScore);
       setFeelings(record.feelings);
       setSingingReflection(getPracticeReflection(record));
-      setFemaleKey(record.femaleKey ?? '');
+      setChorusStars(record.chorusStars ?? 0);
       setSingingMoods(normalizeSingingMoods(record.singingMoods ?? []));
     } else {
       setRoadshowAt(localDateTime(record.occurredAt));
@@ -192,7 +192,7 @@ const SongDetailPanel = ({
       feelings: feelings.trim(), problems: singingReflection.trim(), improvements: '',
       needsMorePractice: editingRecord?.kind === 'practice' ? editingRecord.needsMorePractice : false,
       needsImprovement: editingRecord?.kind === 'practice' ? editingRecord.needsImprovement : false,
-      singingMoods, ...(femaleKey.trim() ? { femaleKey: femaleKey.trim() } : {}), updatedAt: now,
+      singingMoods, ...(chorusStars > 0 ? { chorusStars } : {}), updatedAt: now,
     };
     if (!isValidSongRecord(record)) {
       setMessage('请填写有效的时间和 70–100 分。');
@@ -202,14 +202,14 @@ const SongDetailPanel = ({
     try {
       const saved = await saveSongRecord(session, record);
       commitSaved(saved);
-      if (saved.kind !== 'practice' || JSON.stringify([...(saved.singingMoods ?? [])].sort()) !== JSON.stringify([...singingMoods].sort()) || (saved.femaleKey ?? '') !== femaleKey.trim()) {
+      if (saved.kind !== 'practice' || JSON.stringify([...(saved.singingMoods ?? [])].sort()) !== JSON.stringify([...singingMoods].sort()) || (saved.chorusStars ?? 0) !== chorusStars) {
         setEditingRecord(record);
-        setMessage('练习内容已保存，但优点勾选或异性小伙伴选调未同步。已保留当前填写，请更新云端服务后再次保存。');
+        setMessage('练习内容已保存，但优点勾选或合唱星级未同步。已保留当前填写，请更新云端服务后再次保存。');
         return;
       }
       const wasEditing = editingRecord?.kind === 'practice';
       setEditingRecord(null);
-      setFeelings(''); setSingingReflection(''); setFemaleKey('');
+      setFeelings(''); setSingingReflection(''); setChorusStars(0);
       setSingingMoods([]);
       setMessage(wasEditing ? '练习记录修改已同步' : '练习记录已同步');
     } catch (error) { setMessage(mapSongRecordSyncError(error)); }
@@ -565,8 +565,22 @@ const SongDetailPanel = ({
                 </details>
               </div>
               <div className="min-w-40 flex-1">
-                <span className="mb-2 block text-xs font-bold text-white/45">异性小伙伴选调</span>
-                <input value={femaleKey} onChange={(event) => setFemaleKey(event.target.value)} maxLength={80} placeholder="任意填写，例如：夹三品" className="h-10 w-full rounded-xl border border-orange-200/25 bg-black/20 px-3 text-sm font-bold text-orange-100 outline-none transition placeholder:text-white/25 focus:border-orange-200/50" />
+                <span className="mb-2 block text-xs font-bold text-white/45">合唱星级</span>
+                <div className="flex h-10 w-full items-center gap-1 rounded-xl border border-orange-200/25 bg-black/20 px-2.5" role="group" aria-label="合唱星级">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      key={star}
+                      type="button"
+                      aria-label={`${star} 星`}
+                      aria-pressed={chorusStars >= star}
+                      title={chorusStars === star ? '再点一次清空' : `点亮 ${star} 星`}
+                      onClick={() => setChorusStars((current) => (current === star ? 0 : star))}
+                      className={`text-lg leading-none transition hover:scale-110 ${chorusStars >= star ? 'opacity-100 drop-shadow-[0_0_7px_rgba(253,186,116,.6)]' : 'opacity-20 grayscale'}`}
+                    >
+                      ⭐
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
             <Field label="练习感受"><textarea value={feelings} onChange={(event) => setFeelings(event.target.value)} placeholder="音色、情绪、舒适程度……" className={areaClass} /></Field>
@@ -630,7 +644,7 @@ const RecordTimeline = ({ records, busy, editingId, onEdit, onDelete, label = 'H
 
 const PracticeRecordDetails = ({ record }: { record: PracticeRecord }) => {
   const reflection = getPracticeReflection(record);
-  return <><div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1"><p className="text-sm font-bold text-orange-100">匹配度 {record.matchScore}</p>{record.femaleKey && <p className="text-xs font-bold text-white/45"><span className="mr-1 text-[10px] font-black tracking-wider text-white/25">异性小伙伴选调</span>{record.femaleKey}</p>}<PracticeMoodBadges record={record} /></div>{record.feelings && <RecordText label="感受" text={record.feelings} />}{reflection && <RecordText label="弹唱感想" text={reflection} />}</>;
+  return <><div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1"><p className="text-sm font-bold text-orange-100">匹配度 {record.matchScore}</p>{record.chorusStars ? <p className="text-xs leading-none" aria-label={`合唱星级 ${record.chorusStars} 星`}>{'⭐'.repeat(record.chorusStars)}</p> : null}<PracticeMoodBadges record={record} /></div>{record.feelings && <RecordText label="感受" text={record.feelings} />}{reflection && <RecordText label="弹唱感想" text={reflection} />}</>;
 };
 
 const PracticeMoodBadges = ({ record }: { record: PracticeRecord }) => (

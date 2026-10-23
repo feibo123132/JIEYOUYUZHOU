@@ -26,6 +26,9 @@ export interface PracticeRecord extends SongRecordBase {
   needsMorePractice: boolean;
   needsImprovement: boolean;
   singingMoods?: Array<'快乐' | '感动' | '想哭' | '爽歌' | '舒服' | '欢快' | '音色' | '歌词' | '爆款'>;
+  /** 合唱星级：0–5，0 表示未评星。 */
+  chorusStars?: number;
+  /** @deprecated 历史字段，仅用于兼容旧记录读取，新记录不再写入。 */
   femaleKey?: string;
 }
 
@@ -42,6 +45,7 @@ export interface PublicPracticeRankingItem {
   songTitle: string;
   songArtist: string;
   score: number;
+  stars: number;
 }
 
 interface ReadableStorage { getItem: (key: string) => string | null; }
@@ -70,6 +74,7 @@ export const isValidSongRecord = (value: unknown): value is SongRecord => {
       && (record.needsMorePractice === undefined || typeof record.needsMorePractice === 'boolean')
       && (record.needsImprovement === undefined || typeof record.needsImprovement === 'boolean')
       && (record.femaleKey === undefined || isText(record.femaleKey, 80, false))
+      && (record.chorusStars === undefined || (Number.isInteger(record.chorusStars) && Number(record.chorusStars) >= 0 && Number(record.chorusStars) <= 5))
       && (record.singingMoods === undefined || (Array.isArray(record.singingMoods) && record.singingMoods.length <= 9 && record.singingMoods.every((mood) => ['快乐', '感动', '想哭', '爽歌', '舒服', '欢快', '音色', '歌词', '爆款'].includes(mood))));
   }
   return record.kind === 'roadshow'
@@ -93,6 +98,14 @@ export const bestMatchScore = (records: Array<Pick<PracticeRecord, 'matchScore'>
 };
 
 export const parseMatchScoreInput = (value: string): number | '' => value === '' ? '' : Number(value);
+
+// 取多次练习中的最高合唱星级（0–5）。没有评过星的历史记录按 0 计。
+export const bestChorusStars = (records: Array<Pick<PracticeRecord, 'chorusStars'>>): number => (
+  records.reduce((top, record) => {
+    const stars = Number.isInteger(record.chorusStars) ? Number(record.chorusStars) : 0;
+    return stars > top ? stars : top;
+  }, 0)
+);
 
 export type MatchQuality = {
   label: '普通' | '优秀' | '精良' | '稀有' | '传奇';
@@ -166,10 +179,10 @@ export const rankSongsByPracticeMatch = (songs: Song[], records: SongRecord[]) =
   }
   return songs.map((song, catalogIndex) => {
     const practices = practicesBySong.get(song.id) ?? [];
-    return { song, score: bestMatchScore(practices), practiceCount: practices.length, catalogIndex };
+    return { song, score: bestMatchScore(practices), practiceCount: practices.length, stars: bestChorusStars(practices), catalogIndex };
   }).filter((item): item is typeof item & { score: number } => item.score !== null)
     .sort((left, right) => right.score - left.score || left.catalogIndex - right.catalogIndex)
-    .map(({ song, score, practiceCount }) => ({ song, score, practiceCount }));
+    .map(({ song, score, practiceCount, stars }) => ({ song, score, practiceCount, stars }));
 };
 
 export const parsePublicPracticeRanking = (value: unknown): PublicPracticeRankingItem[] => {
@@ -185,6 +198,7 @@ export const parsePublicPracticeRanking = (value: unknown): PublicPracticeRankin
       songTitle: String(entry.songTitle).trim(),
       songArtist: String(entry.songArtist).trim(),
       score: Math.round(entry.score * 10) / 10,
+      stars: Number.isInteger(entry.stars) && Number(entry.stars) >= 0 && Number(entry.stars) <= 5 ? Number(entry.stars) : 0,
     }];
   });
 };
@@ -213,6 +227,7 @@ const cleanSongRecord = (record: SongRecord): SongRecord => {
         needsMorePractice: Boolean(record.needsMorePractice),
         needsImprovement: Boolean(record.needsImprovement),
         singingMoods: normalizeSingingMoods(record.singingMoods ?? []),
+        ...(Number.isInteger(record.chorusStars) && Number(record.chorusStars) > 0 ? { chorusStars: Number(record.chorusStars) } : {}),
         ...(record.femaleKey?.trim() ? { femaleKey: record.femaleKey.trim() } : {}),
       }
     : {

@@ -1165,15 +1165,15 @@ test('个人练习榜支持保留真实名次的倒序展示', async () => {
 
   assert.match(source, /const PERSONAL_RANKING_PAGE_SIZE = 50/)
   assert.match(source, /const \[personalRankingMode, setPersonalRankingMode\] = useState<RankingDisplayMode>\('normal'\)/)
-  assert.match(source, /orderPersonalRankingItems\(base, personalRankingMode\)/)
+  assert.match(source, /orderPersonalRankingItems\(ranked, personalRankingMode\)/)
   assert.match(source, /paginateRankingItems\(visiblePersonalRanking, personalRankingPage, PERSONAL_RANKING_PAGE_SIZE\)/)
   assert.match(source, /paginatedPersonalRanking\.items\.map/)
-  assert.match(source, /key=\{`practice-ranking-\$\{personalRankingMode\}-\$\{paginatedPersonalRanking\.page\}`\}/)
+  assert.match(source, /key=\{`practice-ranking-\$\{personalRankingBoard\}-\$\{personalRankingMode\}-\$\{paginatedPersonalRanking\.page\}`\}/)
   assert.match(source, /getRankingMedalTone\(originalRank - 1, personalRankingPodiumSize\)/)
   assert.match(source, /aria-label="上一页练习榜"/)
   assert.match(source, /aria-label="下一页练习榜"/)
   assert.match(source, /togglePersonalRankingReverse/)
-  assert.match(source, /togglePersonalRankingRandom/)
+  assert.match(source, /setPersonalRankingBoard/)
   assert.match(source, /grid grid-cols-2 gap-2[\s\S]*placeholder="搜索歌手或歌曲"[\s\S]*aria-label="切换练习榜正倒序"/)
 })
 
@@ -1194,13 +1194,12 @@ test('个人练习榜在平均匹配值旁显示对应品质', () => {
   assert.match(source, /quality\?\.label \?\? '—'/)
 })
 
-test('个人练习榜每首歌可一键加入最新一次路演', () => {
+test('个人练习榜进入多选后才显示加入路演的加号按钮', () => {
   const source = readFileSync(stationUrl, 'utf8')
 
   assert.match(source, /paginatedPersonalRanking\.items\.map/)
   assert.match(source, /prepareLatestRoadshowPerformanceSong\(\[latestRoadshow\], song\)\.kind === 'duplicate'/)
-  assert.match(source, /aria-label=\{`将\$\{song\.title\}加入最新路演`\}/)
-  assert.match(source, /addSongToLatestRoadshowPerformance\(song\)/)
+  assert.match(source, /\{canManageFeaturedSongs && personalRankingSelectMode && \(/)
   assert.match(source, /isInLatestRoadshow \? <Check/)
 })
 
