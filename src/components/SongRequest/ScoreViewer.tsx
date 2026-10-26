@@ -20,6 +20,8 @@ interface ScoreViewerProps {
   pages: string[];
   /** 谱子用的是云端签名地址，过期会变裂图：加载失败时通知上层换一批新地址。 */
   onPagesStale?: (force?: boolean) => void;
+  /** 编辑器直连签名地址被跨域拦下时的兜底取图（走云函数代理）。 */
+  loadPageFallback?: (index: number) => Promise<Blob>;
   onSavePage?: (index: number, page: string) => void;
   editingAllowed?: boolean;
   autoScrollAllowed?: boolean;
@@ -45,7 +47,7 @@ const AUTO_SCROLL_PIXELS_PER_SECOND: Record<Exclude<AutoScrollSpeed, 0>, number>
   5: 22,
 };
 
-const ScoreViewer = ({ songId, songTitle, pages, onPagesStale, onSavePage, editingAllowed = true, autoScrollAllowed = false, startEditing = false, onClose }: ScoreViewerProps) => {
+const ScoreViewer = ({ songId, songTitle, pages, onPagesStale, loadPageFallback, onSavePage, editingAllowed = true, autoScrollAllowed = false, startEditing = false, onClose }: ScoreViewerProps) => {
   const total = pages.length;
   const [page, setPage] = useState(() => Math.min(readScorePage(window.localStorage, songId), Math.max(total - 1, 0)));
   const [pageError, setPageError] = useState(false);
@@ -472,7 +474,7 @@ const ScoreViewer = ({ songId, songTitle, pages, onPagesStale, onSavePage, editi
           <span className="min-w-0 truncate">{zoomed ? '双指缩放 · 单指拖动阅览 · 双击复原' : '左右滑动翻页 · 双击适合宽度 · 双指缩放'}</span>
         )}
       </footer>
-      {editingSource && onSavePage && <ScorePageEditor source={editingSource} title={songTitle} pageNumber={page + 1} onSave={(editedPage) => { onSavePage(page, editedPage); setEditingSource(null); }} onClose={() => setEditingSource(null)} />}
+      {editingSource && onSavePage && <ScorePageEditor source={editingSource} loadFallback={loadPageFallback ? () => loadPageFallback(page) : undefined} title={songTitle} pageNumber={page + 1} onSave={(editedPage) => { onSavePage(page, editedPage); setEditingSource(null); }} onClose={() => setEditingSource(null)} />}
     </div>,
     document.body,
   );

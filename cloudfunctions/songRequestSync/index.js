@@ -17,12 +17,18 @@ const PUBLIC_ERRORS = new Set([
   'INVALID_QUIZ_LIBRARY',
   'INVALID_SONG_SCORE',
   'SCORE_UPLOAD_FAILED', 'SCORE_NOT_FOUND', 'SCORE_ALREADY_EXISTS',
+  'SCORE_DOWNLOAD_FAILED', 'SCORE_PAGE_TOO_LARGE',
   'INVALID_LOCATION', 'NO_LATEST_ROADSHOW',
   'INVALID_NOTEBOOK',
   'INVALID_SONG_GROUPS',
 ]);
 
 const FEATURED_SONGS_OWNER_ALIAS = '2421415030@qq.com';
+// 云函数单次返回上限约 6MB，base64 会把体积放大三分之一；
+// 谱页上传时已经限到 3.5MB，这里保持同一上限，超出就明确告知前端换压缩重传。
+const SCORE_PAGE_PROXY_MAX_BYTES = 3_500_000;
+// 录音合并的内存上限：云函数默认 256MB，留足 Buffer + 临时副本余量。
+const SONG_RECORDING_MERGE_MAX_BYTES = 40 * 1024 * 1024;
 const OWNER_SONG_SCORE_SEED_VERSION = 1;
 const quizSongPlaysId = (ownerId) => `quiz-song-plays-${ownerId}`;
 const quizRankingResetId = (ownerId) => `quiz-ranking-reset-${ownerId}`;
@@ -344,6 +350,17 @@ const buildSoftDeletedSongRecord = (current, workspaceId, deletedAt) => {
   return { ...writableRecord, deletedAt, updatedAt: deletedAt };
 };
 
+// 旧版「合唱星级」(1–5) 等分映射到合唱指数 70–100，与前端 chorusStarsToScore 保持一致。
+const legacyChorusStarsToScore = (stars) => (
+  Number.isInteger(stars) && stars >= 1 && stars <= 5 ? 70 + Math.round((stars / 5) * 30) : 0
+);
+
+const recordChorusScore = (record) => (
+  Number.isInteger(record.chorusScore) && record.chorusScore >= 70 && record.chorusScore <= 100
+    ? record.chorusScore
+    : legacyChorusStarsToScore(record.chorusStars)
+);
+
 const buildPublicPracticeRanking = (records) => {
   const groups = new Map();
   for (const record of records) {
@@ -354,19 +371,20 @@ const buildPublicPracticeRanking = (records) => {
       songArtist: record.songArtist,
       total: 0,
       count: 0,
-      stars: 0,
+      chorusScore: 0,
     };
     current.total += record.matchScore;
     current.count += 1;
-    if (Number.isInteger(record.chorusStars) && record.chorusStars > current.stars) current.stars = record.chorusStars;
+    const chorusScore = recordChorusScore(record);
+    if (chorusScore > current.chorusScore) current.chorusScore = chorusScore;
     groups.set(record.songId, current);
   }
-  return [...groups.values()].map(({ songId, songTitle, songArtist, total, count, stars }) => ({
+  return [...groups.values()].map(({ songId, songTitle, songArtist, total, count, chorusScore }) => ({
     songId,
     songTitle,
     songArtist,
     score: Math.round((total / count) * 10) / 10,
-    stars,
+    chorusScore,
   })).sort((left, right) => right.score - left.score || left.songTitle.localeCompare(right.songTitle, 'zh-CN')).slice(0, 500);
 };
 
@@ -727,6 +745,58 @@ function createHandler(store) {
         return { ok: true };
       }
 
+      // 录音：音频由云函数分片写入云存储，元数据与裁剪区间存在 workspace.recordings。
+      if (request.action === 'recordings:pull') {
+        const recordings = (workspace.recordings || []).filter((item) => !item.deletedAt);
+        return { ok: true, recordings };
+      }
+
+      if (request.action === 'recordings:uploadChunk') {
+        const fileID = await store.uploadRecordingChunk(id, request.songId, request.uploadId, request.index, request.chunkContent);
+        return { ok: true, fileID };
+      }
+
+      if (request.action === 'recordings:finishUpload') {
+        const fileID = await store.finishRecordingUpload(id, request.songId, request.uploadId, request.partFileIDs, request.ext);
+        return { ok: true, fileID };
+      }
+
+      // 分段代理读录音：只允许读自己空间下的文件，前端拼回完整音频做裁剪 / 导出。
+      if (request.action === 'recordings:readChunk') {
+        if (!request.fileID.includes(`/song-request-recordings/${id}/`)) throw new Error('INVALID_RECORDING');
+        const chunk = await store.readRecordingChunk(request.fileID, request.offset, request.length);
+        return { ok: true, ...chunk };
+      }
+
+      if (request.action === 'recordings:save') {
+        const recordings = [...(workspace.recordings || [])];
+        const index = recordings.findIndex((item) => item.id === request.recording.id);
+        const saved = { ...request.recording, workspaceId: id, updatedAt: store.now() };
+        if (index >= 0) recordings[index] = saved;
+        else {
+          if (recordings.filter((item) => !item.deletedAt).length >= 30) throw new Error('INVALID_RECORDING');
+          recordings.push(saved);
+        }
+        await store.setWorkspace(id, { ...workspace, recordings, updatedAt: saved.updatedAt });
+        return { ok: true, recording: saved };
+      }
+
+      if (request.action === 'recordings:delete') {
+        const recordings = (workspace.recordings || []).map((item) => (
+          item.id === request.id ? { ...item, deletedAt: store.now() } : item
+        ));
+        await store.setWorkspace(id, { ...workspace, recordings, updatedAt: store.now() });
+        return { ok: true };
+      }
+
+      // 兜底读谱：谱页在页面里用 <img> 能显示（不走跨域），但编辑器要用 fetch + canvas 取像素，
+      // 一旦云存储没给这个站点开 CORS，浏览器就会拦下来。这里由云函数代取原图，
+      // 以 base64 交回前端；fileID 形状已在 validation 里锁死，读不到谱子以外的文件。
+      if (request.action === 'scorePages:read') {
+        const bytes = await store.downloadSongScorePage(request.fileID);
+        return { ok: true, contentType: 'image/jpeg', base64: bytes.toString('base64') };
+      }
+
       if (request.action === 'roadshows:pull') {
         const records = id === workspaceId(FEATURED_SONGS_OWNER_ALIAS) ? (workspace.roadshows || []).filter((record) => !record.deletedAt) : [];
         return { ok: true, records };
@@ -990,6 +1060,69 @@ exports.main = async (event) => {
         const uploaded = await app.uploadFile({ cloudPath, fileContent: pageContent });
         if (!uploaded?.fileID) throw new Error('SCORE_UPLOAD_FAILED');
         return uploaded.fileID;
+      },
+      // 录音分片上传：浏览器把大文件切成小片，云函数逐片写入云存储，
+      // 最后在服务端合并成完整音频——绕开云函数请求体上限，也不需要开放存储桶写权限。
+      async uploadRecordingChunk(workspaceId, songId, uploadId, index, content) {
+        const songHash = crypto.createHash('sha256').update(songId.trim().toLocaleLowerCase()).digest('hex');
+        const cloudPath = `song-request-recordings/${workspaceId}/${songHash}/_chunks/${uploadId}/${String(index).padStart(4, '0')}.part`;
+        const uploaded = await app.uploadFile({ cloudPath, fileContent: content });
+        if (!uploaded?.fileID) throw new Error('RECORDING_UPLOAD_FAILED');
+        return uploaded.fileID;
+      },
+      async finishRecordingUpload(workspaceId, songId, uploadId, partFileIDs, ext) {
+        const songHash = crypto.createHash('sha256').update(songId.trim().toLocaleLowerCase()).digest('hex');
+        const allowedPrefix = `song-request-recordings/${workspaceId}/${songHash}/_chunks/${uploadId}/`;
+        if (!Array.isArray(partFileIDs) || !partFileIDs.length || partFileIDs.length > 80) throw new Error('INVALID_RECORDING');
+        if (partFileIDs.some(fileID => typeof fileID !== 'string' || !fileID.includes(allowedPrefix))) throw new Error('INVALID_RECORDING');
+        const chunks = [];
+        let totalBytes = 0;
+        for (const fileID of partFileIDs) {
+          const downloaded = await app.downloadFile({ fileID });
+          const content = downloaded?.fileContent;
+          if (!content?.length) throw new Error('RECORDING_UPLOAD_FAILED');
+          const buffer = Buffer.isBuffer(content) ? content : Buffer.from(content);
+          totalBytes += buffer.length;
+          if (totalBytes > SONG_RECORDING_MERGE_MAX_BYTES) throw new Error('RECORDING_TOO_LARGE');
+          chunks.push(buffer);
+        }
+        const merged = Buffer.concat(chunks);
+        const cloudPath = `song-request-recordings/${workspaceId}/${songHash}/${crypto.randomUUID()}.${ext}`;
+        const uploaded = await app.uploadFile({ cloudPath, fileContent: merged });
+        if (!uploaded?.fileID) throw new Error('RECORDING_UPLOAD_FAILED');
+        try { await app.deleteFile({ fileList: partFileIDs }); } catch { /* 分片清理失败不影响结果 */ }
+        return uploaded.fileID;
+      },
+      // 换设备后本机没有原始音频，且签名地址直连可能撞上跨域；
+      // 这里由云函数把文件取回来、按请求区间切片返回 base64，前端拼回整段。
+      async readRecordingChunk(fileID, offset, length) {
+        let downloaded;
+        try {
+          downloaded = await app.downloadFile({ fileID });
+        } catch (error) {
+          console.error('songRequestSync 录音代理读取失败', error);
+          throw new Error('RECORDING_DOWNLOAD_FAILED');
+        }
+        const content = downloaded?.fileContent;
+        if (!content?.length) throw new Error('RECORDING_DOWNLOAD_FAILED');
+        const buffer = Buffer.isBuffer(content) ? content : Buffer.from(content);
+        const slice = buffer.subarray(offset, Math.min(buffer.length, offset + length));
+        return { base64: slice.toString('base64'), bytes: slice.length, totalBytes: buffer.length };
+      },
+      // 兜底读谱：按 fileID 直接把原图下载成 Buffer，绕开浏览器对 COS 签名地址的跨域限制。
+      async downloadSongScorePage(fileID) {
+        let downloaded;
+        try {
+          downloaded = await app.downloadFile({ fileID });
+        } catch (error) {
+          console.error('songRequestSync 谱页代理读取失败', error);
+          throw new Error('SCORE_DOWNLOAD_FAILED');
+        }
+        const content = downloaded?.fileContent;
+        if (!content?.length) throw new Error('SCORE_DOWNLOAD_FAILED');
+        const bytes = Buffer.isBuffer(content) ? content : Buffer.from(content);
+        if (bytes.length > SCORE_PAGE_PROXY_MAX_BYTES) throw new Error('SCORE_PAGE_TOO_LARGE');
+        return bytes;
       },
       saveSongScoreAtomically: (documentId, value) => db.runTransaction(async (transaction) => {
         const ref = transaction.collection('song_request_song_scores').doc(documentId);

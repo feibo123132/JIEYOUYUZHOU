@@ -841,7 +841,7 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
       featured: false,
     },
     score: entry.score,
-    stars: entry.stars,
+    chorusScore: entry.chorusScore,
     practiceCount: 0,
   })), [catalogSongs, publicPracticeRanking]);
   const personalRanking = songRecordSession ? privatePersonalRanking : publicPersonalRanking;
@@ -851,7 +851,7 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
       ? personalRanking.filter(({ song }) => song.artist === personalRankingArtist)
       : personalRanking;
     const ranked = personalRankingBoard === 'chorus'
-      ? [...base].sort((left, right) => (right.stars - left.stars) || (right.score - left.score))
+      ? [...base].sort((left, right) => ((right.chorusScore ?? 0) - (left.chorusScore ?? 0)) || (right.score - left.score))
       : base;
     return orderPersonalRankingItems(ranked, personalRankingMode);
   }, [personalRanking, personalRankingArtist, personalRankingMode, personalRankingBoard]);
@@ -2291,10 +2291,11 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
                       <ol
                         key={`practice-ranking-${personalRankingBoard}-${personalRankingMode}-${paginatedPersonalRanking.page}`}
                         tabIndex={paginatedPersonalRanking.items.length > PERSONAL_RANKING_SCROLL_THRESHOLD ? 0 : undefined}
-                        aria-label={paginatedPersonalRanking.items.length > PERSONAL_RANKING_SCROLL_THRESHOLD ? `${personalRankingArtist ?? '总榜'}${personalBoardLabel}${personalRankingBoard === 'chorus' ? '按星级' : personalRankingReversed ? '倒序' : '按匹配度'}排行，可上下滚动` : undefined}
+                        aria-label={paginatedPersonalRanking.items.length > PERSONAL_RANKING_SCROLL_THRESHOLD ? `${personalRankingArtist ?? '总榜'}${personalBoardLabel}${personalRankingBoard === 'chorus' ? '按合唱指数' : personalRankingReversed ? '倒序' : '按匹配度'}排行，可上下滚动` : undefined}
                         className={`space-y-3 ${paginatedPersonalRanking.items.length > PERSONAL_RANKING_SCROLL_THRESHOLD ? 'max-h-[42rem] overflow-y-auto overscroll-contain pr-2' : ''}`}
-                      >{paginatedPersonalRanking.items.map(({ song, score, stars, practiceCount, originalRank }) => {
+                      >{paginatedPersonalRanking.items.map(({ song, score, chorusScore, practiceCount, originalRank }) => {
                       const quality = getMatchQuality(Math.round(score));
+                      const chorusQuality = chorusScore ? getMatchQuality(chorusScore) : null;
                       const isInLatestRoadshow = Boolean(latestRoadshow && prepareLatestRoadshowPerformanceSong([latestRoadshow], song).kind === 'duplicate');
                       const isSelectedForRoadshow = selectedPersonalRankingSongIds.includes(song.id);
                       return (
@@ -2313,9 +2314,14 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
                               </button>
                             )}
                             {personalRankingBoard === 'chorus' ? (
-                              <span className="text-sm leading-none tracking-tight" title={`合唱星级 ${stars} 星`} aria-label={`合唱星级 ${stars} 星`}>
-                                {stars > 0 ? '⭐'.repeat(stars) : '—'}
-                              </span>
+                              chorusScore ? (
+                                <>
+                                  <em className={`practice-quality ${chorusQuality?.tone ?? 'white'}`}>{chorusQuality?.label ?? '—'}</em>
+                                  <strong className="font-serif text-xl text-orange-200">{chorusScore}<small className="ml-1 font-sans text-[10px] font-normal text-white/30">合唱指数</small></strong>
+                                </>
+                              ) : (
+                                <span className="text-sm leading-none text-white/25" title="还没评过合唱指数" aria-label="还没评过合唱指数">—</span>
+                              )
                             ) : (
                               <>
                                 <em className={`practice-quality ${quality?.tone ?? 'white'}`}>{quality?.label ?? '—'}</em>

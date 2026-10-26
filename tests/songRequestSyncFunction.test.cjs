@@ -380,6 +380,59 @@ test('已认证谱子图片由云函数上传，浏览器不再直传云存储',
   assert.deepEqual(uploaded[0].pageContent, pageBytes);
 });
 
+const scorePageFileId = (workspace = 'a'.repeat(64)) =>
+  `cloud://env-123/song-request-scores/${workspace}/${'b'.repeat(64)}/123e4567-e89b-12d3-a456-426614174000.jpg`;
+
+test('兜底读谱只允许读谱页文件，其它云端文件一律拒绝', () => {
+  const { validateRequest } = require(validationPath);
+  const auth = { alias: 'JIEYOU', password: 'guitar-2026' };
+  const pageId = scorePageFileId();
+
+  assert.equal(validateRequest({ action: 'scorePages:read', ...auth, fileID: pageId }).fileID, pageId);
+  // 换成别的目录、别的扩展名、少了哈希层级的文件都不许借这个接口读。
+  assert.throws(() => validateRequest({ action: 'scorePages:read', ...auth, fileID: 'cloud://env-123/artist-avatars/x.jpg' }), /INVALID_SONG_SCORE/);
+  assert.throws(() => validateRequest({ action: 'scorePages:read', ...auth, fileID: `cloud://env-123/song-request-scores/${'a'.repeat(64)}/${'b'.repeat(64)}/secret.pdf` }), /INVALID_SONG_SCORE/);
+  assert.throws(() => validateRequest({ action: 'scorePages:read', ...auth, fileID: `cloud://env-123/song-request-scores/${'a'.repeat(64)}/not-a-hash/x.jpg` }), /INVALID_SONG_SCORE/);
+  // 和不带口令的公开动作不同，代理读谱必须带上账号口令。
+  assert.throws(() => validateRequest({ action: 'scorePages:read', fileID: pageId }), /INVALID_ALIAS/);
+});
+
+test('编辑器直连谱页被跨域拦下时，云函数按 fileID 代取原图', async () => {
+  const store = memoryStore();
+  const bytes = Buffer.from([0xff, 0xd8, 0xff, 0xdb, 0x00, 0x11, 0x22]);
+  const requested = [];
+  store.downloadSongScorePage = async (fileID) => { requested.push(fileID); return bytes; };
+  const { createHandler } = loadFunction();
+  const handler = createHandler(store);
+  const auth = { alias: 'JIEYOU', password: 'guitar-2026' };
+  await seedExistingAccount(store, auth);
+  const pageId = scorePageFileId();
+
+  const result = await handler({ action: 'scorePages:read', ...auth, fileID: pageId });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.contentType, 'image/jpeg');
+  assert.equal(result.base64, bytes.toString('base64'));
+  assert.deepEqual(requested, [pageId]);
+});
+
+test('未登记的账号不能借代理读谱，谱页超大时返回可识别的错误', async () => {
+  const store = memoryStore();
+  const requested = [];
+  store.downloadSongScorePage = async (fileID) => { requested.push(fileID); throw new Error('SCORE_PAGE_TOO_LARGE'); };
+  const { createHandler } = loadFunction();
+  const handler = createHandler(store);
+  const pageId = scorePageFileId();
+
+  const denied = await handler({ action: 'scorePages:read', alias: 'guest', password: 'guitar-2026', fileID: pageId });
+  assert.equal(denied.ok, false);
+  assert.equal(requested.length, 0);
+
+  const auth = { alias: 'JIEYOU', password: 'guitar-2026' };
+  await seedExistingAccount(store, auth);
+  assert.deepEqual(await handler({ action: 'scorePages:read', ...auth, fileID: pageId }), { ok: false, error: 'SCORE_PAGE_TOO_LARGE' });
+});
+
 test('谱子图片云存储失败时返回可识别的错误，而不是笼统同步失败', async () => {
   const store = memoryStore();
   store.uploadSongScorePage = async () => { throw new Error('SCORE_UPLOAD_FAILED'); };
@@ -723,17 +776,17 @@ test('publishes only sanitized practice averages to guests without credentials',
   const { createHandler } = loadFunction();
   const handler = createHandler(store);
   const auth = { alias: 'JIEYOU', password: 'guitar-2026' };
-  const practice = (id, songId, songTitle, score, chorusStars) => ({
+  const practice = (id, songId, songTitle, score, chorusScore) => ({
     id, kind: 'practice', songId, songTitle, songArtist: '邓紫棋',
     occurredAt: '2026-08-26T12:00:00.000Z', matchScore: score,
     feelings: '私人感受', problems: '私人问题', improvements: '私人计划', updatedAt: '2026-08-26T12:00:00.000Z',
-    ...(chorusStars ? { chorusStars } : {}),
+    ...(chorusScore ? { chorusScore } : {}),
   });
 
   await seedExistingAccount(store, auth);
   await handler({ action: 'songRecords:saveBatch', ...auth, records: [
-    practice('practice-1', 'guang-nian-zhi-wai', '光年之外', 86, 4),
-    practice('practice-2', 'guang-nian-zhi-wai', '光年之外', 83, 5),
+    practice('practice-1', 'guang-nian-zhi-wai', '光年之外', 86, 88),
+    practice('practice-2', 'guang-nian-zhi-wai', '光年之外', 83, 100),
     practice('practice-3', 'ju-hao', '句号', 80),
   ] });
 
@@ -741,8 +794,8 @@ test('publishes only sanitized practice averages to guests without credentials',
   assert.deepEqual(result, {
     ok: true,
     ranking: [
-      { songId: 'guang-nian-zhi-wai', songTitle: '光年之外', songArtist: '邓紫棋', score: 84.5, stars: 5 },
-      { songId: 'ju-hao', songTitle: '句号', songArtist: '邓紫棋', score: 80, stars: 0 },
+      { songId: 'guang-nian-zhi-wai', songTitle: '光年之外', songArtist: '邓紫棋', score: 84.5, chorusScore: 100 },
+      { songId: 'ju-hao', songTitle: '句号', songArtist: '邓紫棋', score: 80, chorusScore: 0 },
     ],
   });
   assert.doesNotMatch(JSON.stringify(result), /occurredAt|practiceCount|feelings|problems|improvements|updatedAt|workspaceId/);

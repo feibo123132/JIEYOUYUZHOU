@@ -35,3 +35,6 @@ dist-ssr
 
 # Generated cloud-function deployment bundles
 artifacts/*-deploy-*.zip
+
+# Local build verification output (vite build --outDir .build-check-xxx)
+.build-check-*/

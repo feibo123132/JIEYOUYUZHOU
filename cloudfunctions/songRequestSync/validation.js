@@ -41,6 +41,13 @@ const ACTIONS = new Set([
   'songScores:uploadPage',
   'songScores:save',
   'songScores:delete',
+  'recordings:pull',
+  'recordings:save',
+  'recordings:delete',
+  'recordings:uploadChunk',
+  'recordings:finishUpload',
+  'recordings:readChunk',
+  'scorePages:read',
   'artistSettings:privatePull',
   'songScores:copyOwner',
   'artistSettings:pull',
@@ -62,6 +69,15 @@ const DEFAULT_REQUEST_LIMIT = 256 * 1024;
 const ARTIST_AVATAR_LIMIT = 1024 * 1024;
 const SONG_SCORE_PAGE_BYTES_LIMIT = 3_500_000;
 const SONG_SCORE_PAGE_LIMIT = 4;
+// 谱页 fileID 的固定形状；代理读取接口沿用它，避免被拿来读别的云端文件。
+const SONG_SCORE_PAGE_FILE_ID = /^cloud:\/\/[^/\s]{1,180}\/song-request-scores\/[a-f0-9]{64}\/[a-f0-9]{64}\/[a-f0-9-]{16,64}\.jpg$/i;
+// 录音 fileID：云端直传路径 song-request-recordings/{workspaceHash}/{songHash}/{timestamp-random}.{ext}
+const SONG_RECORDING_FILE_ID = /^cloud:\/\/[^/\s]{1,180}\/song-request-recordings\/[a-f0-9]{64}\/[a-f0-9]{64}\/[A-Za-z0-9-]{1,80}\.(mp3|m4a|aac|wav|webm|ogg|flac|bin)$/i;
+const SONG_RECORDING_MAX_BYTES = 40 * 1024 * 1024;
+const RECORDING_CHUNK_BYTES = 3 * 1024 * 1024;
+const RECORDING_CHUNK_BASE64 = /^data:application\/octet-stream;base64,([A-Za-z0-9+/]+={0,2})$/;
+const RECORDING_UPLOAD_ID = /^[a-z0-9-]{8,64}$/i;
+const RECORDING_EXTENSION = /^(mp3|m4a|aac|wav|webm|ogg|flac|bin)$/i;
 const ROADSHOW_LOCATIONS = new Set(['医大（武鸣）', '医大（本部）', '南湖']);
 
 const optionalRankingLocation = (value) => {
@@ -196,6 +212,7 @@ const validateSongRecord = (value) => {
     const improvements = cleanOptionalText(value.improvements, 2000, 'INVALID_SONG_RECORD');
     const femaleKey = value.femaleKey === undefined ? '' : cleanOptionalText(value.femaleKey, 80, 'INVALID_SONG_RECORD');
     if (value.chorusStars !== undefined && (!Number.isInteger(value.chorusStars) || value.chorusStars < 0 || value.chorusStars > 5)) throw new Error('INVALID_SONG_RECORD');
+    if (value.chorusScore !== undefined && (!Number.isInteger(value.chorusScore) || value.chorusScore < 70 || value.chorusScore > 100)) throw new Error('INVALID_SONG_RECORD');
     if (value.needsMorePractice !== undefined && typeof value.needsMorePractice !== 'boolean') throw new Error('INVALID_SONG_RECORD');
     if (value.needsImprovement !== undefined && typeof value.needsImprovement !== 'boolean') throw new Error('INVALID_SONG_RECORD');
     if (value.singingMoods !== undefined && (!Array.isArray(value.singingMoods) || value.singingMoods.length > 9 || !value.singingMoods.every((mood) => ['快乐', '感动', '想哭', '爽歌', '舒服', '欢快', '音色', '歌词', '爆款'].includes(mood)))) throw new Error('INVALID_SONG_RECORD');
@@ -209,6 +226,7 @@ const validateSongRecord = (value) => {
       needsMorePractice: Boolean(value.needsMorePractice),
       needsImprovement: Boolean(value.needsImprovement),
       singingMoods: [...new Set((value.singingMoods ?? []).map(mood => mood === '快乐' ? '欢快' : mood === '想哭' ? '爆款' : mood))],
+      ...(Number.isInteger(value.chorusScore) ? { chorusScore: value.chorusScore } : {}),
       ...(Number.isInteger(value.chorusStars) && value.chorusStars > 0 ? { chorusStars: value.chorusStars } : {}),
       ...(femaleKey ? { femaleKey } : {}),
     };
@@ -309,8 +327,7 @@ const validateSongScore = (value) => {
   };
   if (!Array.isArray(score.pages) || score.pages.length > SONG_SCORE_PAGE_LIMIT || (!score.pages.length && !score.lyrics && !score.scoreNote)) throw new Error('INVALID_SONG_SCORE');
   for (const page of score.pages) {
-    if (typeof page !== 'string'
-      || !/^cloud:\/\/[^/\s]{1,180}\/song-request-scores\/[a-f0-9]{64}\/[a-f0-9]{64}\/[a-f0-9-]{16,64}\.jpg$/i.test(page)) throw new Error('INVALID_SONG_SCORE');
+    if (typeof page !== 'string' || !SONG_SCORE_PAGE_FILE_ID.test(page)) throw new Error('INVALID_SONG_SCORE');
   }
   const { lyrics, scoreNote, ...base } = score;
   return { ...base, ...(lyrics ? { lyrics } : {}), ...(scoreNote ? { scoreNote } : {}) };
@@ -327,11 +344,46 @@ const validateSongScorePage = (value) => {
   return bytes;
 };
 
+const validateRecording = (value) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('INVALID_RECORDING');
+  const id = cleanText(value.id, 120, 'INVALID_RECORDING');
+  const songId = cleanText(value.songId, 100, 'INVALID_RECORDING');
+  const songTitle = cleanText(value.songTitle, 100, 'INVALID_RECORDING');
+  const songArtist = cleanOptionalText(value.songArtist, 100, 'INVALID_RECORDING');
+  const title = cleanText(value.title, 160, 'INVALID_RECORDING');
+  const fileName = cleanText(value.fileName, 260, 'INVALID_RECORDING');
+  const mimeType = cleanText(value.mimeType, 120, 'INVALID_RECORDING');
+  if (typeof value.fileID !== 'string' || !SONG_RECORDING_FILE_ID.test(value.fileID)) throw new Error('INVALID_RECORDING');
+  if (!Number.isSafeInteger(value.size) || value.size < 0 || value.size > SONG_RECORDING_MAX_BYTES) throw new Error('INVALID_RECORDING');
+  const duration = Number(value.duration);
+  const clipStart = Number(value.clipStart);
+  const clipEnd = Number(value.clipEnd);
+  if (![duration, clipStart, clipEnd].every(Number.isFinite)) throw new Error('INVALID_RECORDING');
+  if (duration <= 0 || clipStart < 0 || clipEnd <= clipStart || clipEnd > duration + 0.5) throw new Error('INVALID_RECORDING');
+  // 删除段：发生在 clipStart..clipEnd 之内，最多 30 段。
+  const rawCuts = value.cuts === undefined ? [] : value.cuts;
+  if (!Array.isArray(rawCuts) || rawCuts.length > 30) throw new Error('INVALID_RECORDING');
+  const cuts = rawCuts.map((cut) => {
+    if (!cut || typeof cut !== 'object') throw new Error('INVALID_RECORDING');
+    const cutStart = Number(cut.start);
+    const cutEnd = Number(cut.end);
+    if (![cutStart, cutEnd].every(Number.isFinite)) throw new Error('INVALID_RECORDING');
+    if (cutStart < clipStart - 0.01 || cutEnd <= cutStart || cutEnd > clipEnd + 0.5) throw new Error('INVALID_RECORDING');
+    return { start: cutStart, end: cutEnd };
+  }).sort((left, right) => left.start - right.start);
+  const createdAt = cleanOptionalText(value.createdAt, 40, 'INVALID_RECORDING') || new Date().toISOString();
+  const updatedAt = cleanOptionalText(value.updatedAt, 40, 'INVALID_RECORDING') || createdAt;
+  return {
+    id, songId, songTitle, songArtist, title, fileName, mimeType, fileID: value.fileID,
+    size: value.size, duration, clipStart, clipEnd, ...(cuts.length ? { cuts } : {}), createdAt, updatedAt,
+  };
+};
+
 function validateRequest(event) {
   if (!event || typeof event !== 'object' || !ACTIONS.has(event.action)) throw new Error('INVALID_ACTION');
   const requestLimit = event.action === 'enough:save' ? 650000 : event.action === 'feelingsNotebook:save' ? 4 * 1024 * 1024 : (event.action === 'artistSettings:push' || event.action === 'artistSettings:privatePull')
     ? ARTIST_SETTINGS_REQUEST_LIMIT
-    : event.action === 'songScores:uploadPage' ? SONG_SCORE_UPLOAD_REQUEST_LIMIT : DEFAULT_REQUEST_LIMIT;
+    : (event.action === 'songScores:uploadPage' || event.action === 'recordings:uploadChunk') ? SONG_SCORE_UPLOAD_REQUEST_LIMIT : DEFAULT_REQUEST_LIMIT;
   if (Buffer.byteLength(JSON.stringify(event), 'utf8') > requestLimit) throw new Error('PAYLOAD_TOO_LARGE');
 
   if (event.action === 'votes:pull' || event.action === 'roadshows:publicQuizRanking') {
@@ -446,7 +498,45 @@ function validateRequest(event) {
     };
   }
   if (event.action === 'songScores:save') return { ...base, score: validateSongScore(event.score) };
+  // 兜底读谱：浏览器直连签名地址被跨域策略拦住时，由云函数按 fileID 把原图取回来。
+  if (event.action === 'scorePages:read') {
+    if (typeof event.fileID !== 'string' || !SONG_SCORE_PAGE_FILE_ID.test(event.fileID)) throw new Error('INVALID_SONG_SCORE');
+    return { ...base, fileID: event.fileID };
+  }
   if (event.action === 'songScores:delete') return { ...base, songId: cleanText(event.songId, 100, 'INVALID_SONG_SCORE') };
+  if (event.action === 'recordings:pull') return base;
+  if (event.action === 'recordings:save') return { ...base, recording: validateRecording(event.recording) };
+  if (event.action === 'recordings:delete') return { ...base, id: cleanText(event.id, 120, 'INVALID_RECORDING') };
+  if (event.action === 'recordings:uploadChunk') {
+    const songId = cleanText(event.songId, 100, 'INVALID_RECORDING');
+    const uploadId = cleanText(event.uploadId, 64, 'INVALID_RECORDING');
+    if (!RECORDING_UPLOAD_ID.test(uploadId)) throw new Error('INVALID_RECORDING');
+    if (!Number.isSafeInteger(event.index) || event.index < 0 || event.index > 79) throw new Error('INVALID_RECORDING');
+    const match = RECORDING_CHUNK_BASE64.exec(typeof event.chunkBase64 === 'string' ? event.chunkBase64 : '');
+    if (!match) throw new Error('INVALID_RECORDING');
+    const bytes = Buffer.from(match[1], 'base64');
+    if (!bytes.length || bytes.length > RECORDING_CHUNK_BYTES) throw new Error('INVALID_RECORDING');
+    return { ...base, songId, uploadId, index: event.index, chunkContent: bytes };
+  }
+  if (event.action === 'recordings:finishUpload') {
+    const songId = cleanText(event.songId, 100, 'INVALID_RECORDING');
+    const uploadId = cleanText(event.uploadId, 64, 'INVALID_RECORDING');
+    if (!RECORDING_UPLOAD_ID.test(uploadId)) throw new Error('INVALID_RECORDING');
+    if (!Array.isArray(event.partFileIDs) || !event.partFileIDs.length || event.partFileIDs.length > 80) throw new Error('INVALID_RECORDING');
+    const partFileIDs = event.partFileIDs.map((fileID) => cleanText(fileID, 600, 'INVALID_RECORDING'));
+    const ext = cleanText(event.ext, 8, 'INVALID_RECORDING');
+    if (!RECORDING_EXTENSION.test(ext)) throw new Error('INVALID_RECORDING');
+    return { ...base, songId, uploadId, partFileIDs, ext: ext.toLowerCase() };
+  }
+  // 分段代理读录音：换设备后本机没有原始文件，浏览器直连签名地址又可能被跨域拦掉，
+  // 由云函数按 fileID 取回并按 3MB 切片返回，前端拼回完整音频用于裁剪 / 导出。
+  if (event.action === 'recordings:readChunk') {
+    const fileID = cleanText(event.fileID, 600, 'INVALID_RECORDING');
+    if (!SONG_RECORDING_FILE_ID.test(fileID)) throw new Error('INVALID_RECORDING');
+    if (!Number.isSafeInteger(event.offset) || event.offset < 0 || event.offset > SONG_RECORDING_MAX_BYTES) throw new Error('INVALID_RECORDING');
+    if (!Number.isSafeInteger(event.length) || event.length < 1 || event.length > RECORDING_CHUNK_BYTES) throw new Error('INVALID_RECORDING');
+    return { ...base, fileID, offset: event.offset, length: event.length };
+  }
   if (event.action === 'songRecords:delete') return { ...base, id: cleanText(event.id, 100, 'INVALID_SONG_RECORD') };
   return base;
 }

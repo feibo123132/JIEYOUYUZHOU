@@ -291,6 +291,24 @@ export const refreshSongScorePageUrls = async (pages: string[]): Promise<string[
   return getScorePageUrls(pages);
 };
 
+/**
+ * 兜底读谱：编辑器要用 fetch + canvas 把谱页当像素画到画布上，这一步受同源策略约束，
+ * 云存储若没给当前站点开 CORS，浏览器会直接拦掉（表现为 TypeError: Failed to fetch），
+ * 而 <img> 因为不受此限制，页面里看着又完全正常。
+ * 这里改成让云函数按 fileID 把原图代取回来，以 base64 交回前端，完全绕开浏览器的跨域检查。
+ */
+export const readScorePageViaProxy = async (credentials: Credentials, fileId: string): Promise<Blob> => {
+  if (!isCloudScorePage(fileId)) throw new Error('INVALID_SONG_SCORE');
+  const result = await callSync<{ base64: string }>({ action: 'scorePages:read', ...credentials, fileID: fileId });
+  const base64 = result.base64;
+  if (typeof base64 !== 'string' || !base64) throw new Error('SCORE_DOWNLOAD_FAILED');
+  // 交给浏览器原生解码 base64，比手写 atob + 逐字节循环快得多，也不会卡住主线程。
+  const response = await fetch(`data:image/jpeg;base64,${base64}`);
+  const blob = await response.blob();
+  if (!blob.size) throw new Error('SCORE_DOWNLOAD_FAILED');
+  return blob;
+};
+
 const resolveSongScores = async (scores: StoredSongScore[]): Promise<SongScore[]> => {
   const pages = scores.flatMap((score) => score.pages);
   const resolved = await getScorePageUrls(pages);
@@ -389,6 +407,215 @@ export const mapSongScoreSyncError = (error: unknown) => {
   if (code === 'AUTH_FAILED') return '私有空间已锁定，请先重新进入路演档案。';
   if (code === 'CLOUD_UNAVAILABLE') return '腾讯云暂时未连接，谱子尚未同步。';
   return '云端暂时没有回应，谱子尚未同步。';
+};
+
+/* ------------------------------------------------------------------ */
+/* 录音（上传原文件 + 裁剪区间元数据）                                    */
+/* ------------------------------------------------------------------ */
+
+const workspaceHash = async (alias: string): Promise<string> => {
+  if (!globalThis.crypto?.subtle) throw new Error('CRYPTO_UNAVAILABLE');
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(alias.trim().toLocaleLowerCase()));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+};
+
+const RECORDING_AUDIO_EXTENSIONS: Record<string, string> = {
+  'audio/mpeg': 'mp3',
+  'audio/mp3': 'mp3',
+  'audio/mp4': 'm4a',
+  'audio/x-m4a': 'm4a',
+  'audio/aac': 'aac',
+  'audio/wav': 'wav',
+  'audio/x-wav': 'wav',
+  'audio/webm': 'webm',
+  'audio/ogg': 'ogg',
+  'audio/flac': 'flac',
+};
+
+/** 每片 3MB 原始数据，base64 后约 4MB，落在云函数 4.7MB 请求上限内。 */
+const RECORDING_CHUNK_BYTES = 3 * 1024 * 1024;
+
+const blobToBase64 = (blob: Blob): Promise<string> => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onerror = () => reject(new Error('RECORDING_READ_FAILED'));
+  reader.onload = () => {
+    const result = String(reader.result || '');
+    const comma = result.indexOf(',');
+    resolve(comma >= 0 ? result.slice(comma + 1) : '');
+  };
+  reader.readAsDataURL(blob);
+});
+
+/**
+ * 云函数分片上传（与谱子同一套「云函数写存储」思路）。
+ * 大音频切成 3MB 片段逐片交给云函数，服务端合并成一个文件——
+ * 既绕开请求体上限，也不依赖云存储桶对客户端开放写权限。
+ */
+const uploadRecordingViaChunks = async (
+  credentials: Credentials,
+  songId: string,
+  file: File,
+  extension: string,
+  onProgress?: (percent: number) => void,
+): Promise<{ fileID: string; cloudPath: string }> => {
+  const uploadId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  const total = Math.max(1, Math.ceil(file.size / RECORDING_CHUNK_BYTES));
+  const partFileIDs: string[] = [];
+  for (let index = 0; index < total; index += 1) {
+    const chunk = file.slice(index * RECORDING_CHUNK_BYTES, Math.min(file.size, (index + 1) * RECORDING_CHUNK_BYTES));
+    const base64 = await blobToBase64(chunk);
+    const uploaded = await callSync<{ fileID: string }>({
+      action: 'recordings:uploadChunk',
+      ...credentials,
+      songId,
+      uploadId,
+      index,
+      chunkBase64: `data:application/octet-stream;base64,${base64}`,
+    });
+    if (!uploaded.fileID) throw new Error('RECORDING_UPLOAD_FAILED');
+    partFileIDs.push(uploaded.fileID);
+    onProgress?.(Math.round(((index + 1) / total) * 90));
+  }
+  // 合并这一步要下载全部分片再整体上传，大文件容易顶到云函数超时；
+  // 分片已经在云存储里了，重试只是重新合并，不会重复上传整首。
+  const finish = async () => callSync<{ fileID: string }>({
+    action: 'recordings:finishUpload', ...credentials, songId, uploadId, partFileIDs, ext: extension,
+  });
+  let finished: { fileID: string } | null = null;
+  for (let attempt = 0; attempt < 3 && !finished; attempt += 1) {
+    try {
+      finished = await finish();
+    } catch (error) {
+      const code = error instanceof Error ? error.message : '';
+      const retryable = code === 'CLOUD_TIMEOUT' || code === 'SYNC_FAILED';
+      if (!retryable || attempt === 2) throw error;
+      onProgress?.(90);
+      await new Promise<void>((resolve) => { setTimeout(resolve, 800 * (attempt + 1)); });
+    }
+  }
+  if (!finished?.fileID) throw new Error('RECORDING_UPLOAD_FAILED');
+  onProgress?.(100);
+  return { fileID: finished.fileID, cloudPath: '' };
+};
+
+/**
+ * 上传录音：优先客户端直传（单请求最快），失败自动回退到云函数分片。
+ * 云存储为 PRIVATE，客户端直传在没有写权限时会 403，分片路径是可靠兜底。
+ */
+export const uploadSongRecordingFile = async (
+  credentials: Credentials,
+  songId: string,
+  file: File,
+  onProgress?: (percent: number) => void,
+): Promise<{ fileID: string; cloudPath: string }> => {
+  if (!tcbApp) throw new Error('CLOUD_UNAVAILABLE');
+  await ensureSignIn();
+  const workspaceId = await workspaceHash(credentials.alias);
+  const songHash = await workspaceHash(songId);
+  const extension = RECORDING_AUDIO_EXTENSIONS[file.type] || 'bin';
+  const cloudPath = `song-request-recordings/${workspaceId}/${songHash}/${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}.${extension}`;
+
+  try {
+    const uploaded = await tcbApp.uploadFile({
+      cloudPath,
+      file,
+      onUploadProgress: (event: { loaded?: number; total?: number }) => {
+        if (!onProgress || !event?.total) return;
+        onProgress(Math.max(0, Math.min(90, Math.round((event.loaded ?? 0) / event.total * 90))));
+      },
+    });
+    const fileID = uploaded?.fileID ?? uploaded?.fileId;
+    if (fileID) {
+      onProgress?.(100);
+      return { fileID, cloudPath };
+    }
+  } catch {
+    // 存储桶不允许客户端写入，走云函数分片。
+  }
+
+  return uploadRecordingViaChunks(credentials, songId, file, extension, onProgress);
+};
+
+export const resolveSongRecordingUrl = async (fileID: string): Promise<string> => {
+  if (!fileID) return '';
+  if (!fileID.startsWith('cloud://')) return fileID;
+  if (!tcbApp) throw new Error('CLOUD_UNAVAILABLE');
+  await ensureSignIn();
+  const response = await tcbApp.getTempFileURL({ fileList: [{ fileID, maxAge: 86400 }] });
+  const item = response?.fileList?.[0];
+  const url = item?.tempFileURL ?? item?.download_url;
+  if (!url) throw new Error('RECORDING_URL_FAILED');
+  return url;
+};
+
+/** 代理读音频的每片大小：base64 后约 4MB，落在云函数响应上限内。 */
+const RECORDING_READ_CHUNK_BYTES = 3 * 1024 * 1024;
+
+const base64ToBlob = async (base64: string, type: string): Promise<Blob> => {
+  const response = await fetch(`data:${type || 'application/octet-stream'};base64,${base64}`);
+  return response.blob();
+};
+
+/**
+ * 云函数分段代取录音（对应谱子的「代理读图」）。
+ * 换到另一台设备后本机没有原始音频，直接 fetch 签名地址又可能被跨域策略拦住，
+ * 这里让云函数按区间切片返回，前端拼回完整文件——裁剪、导出因此在任何设备都能用。
+ */
+export const readSongRecordingBlob = async (
+  credentials: Credentials,
+  fileID: string,
+  mimeType = 'audio/mpeg',
+): Promise<Blob> => {
+  const parts: Blob[] = [];
+  let offset = 0;
+  let totalBytes = Number.POSITIVE_INFINITY;
+  // 16 片 × 3MB = 48MB，覆盖 40MB 上限，同时兜住异常返回导致的死循环。
+  for (let guard = 0; guard < 16 && offset < totalBytes; guard += 1) {
+    const result = await callSync<{ base64: string; bytes: number; totalBytes: number }>({
+      action: 'recordings:readChunk', ...credentials, fileID, offset, length: RECORDING_READ_CHUNK_BYTES,
+    });
+    totalBytes = Number.isFinite(result.totalBytes) ? result.totalBytes : 0;
+    if (!result.bytes || !result.base64) break;
+    parts.push(await base64ToBlob(result.base64, mimeType));
+    offset += result.bytes;
+  }
+  if (!parts.length) throw new Error('RECORDING_DOWNLOAD_FAILED');
+  return new Blob(parts, { type: mimeType || 'audio/mpeg' });
+};
+
+export const pullCloudSongRecordings = async (credentials: Credentials): Promise<unknown[]> => (
+  await callSync<{ recordings: unknown[] }>({ action: 'recordings:pull', ...credentials })
+).recordings ?? [];
+
+export const saveCloudSongRecording = async (
+  credentials: Credentials,
+  recording: unknown,
+): Promise<unknown> => (
+  await callSync<{ recording: unknown }>({ action: 'recordings:save', ...credentials, recording })
+).recording;
+
+export const deleteCloudSongRecording = async (credentials: Credentials, id: string): Promise<void> => {
+  await callSync<Record<string, never>>({ action: 'recordings:delete', ...credentials, id });
+};
+
+export const deleteSongRecordingFile = async (fileID: string): Promise<void> => {
+  if (!tcbApp || !fileID.startsWith('cloud://')) return;
+  await ensureSignIn();
+  await tcbApp.deleteFile({ fileList: [fileID] }).catch(() => undefined);
+};
+
+export const mapSongRecordingError = (error: unknown) => {
+  const code = error instanceof Error ? error.message : 'SYNC_FAILED';
+  if (code === 'PAYLOAD_TOO_LARGE') return '录音文件过大，请换更小的文件或先压缩。';
+  if (code === 'RECORDING_UPLOAD_FAILED') return '录音未能传到云存储，已保存在本机，可点「重试同步」。';
+  if (code === 'RECORDING_TOO_LARGE') return '录音超过 40MB 上限，请先压缩或剪短。';
+  if (code === 'RECORDING_LOCAL_MISSING') return '本机找不到这段录音的原始文件（可能被浏览器清理），请重新上传。';
+  if (code === 'RECORDING_DOWNLOAD_FAILED') return '这段录音没能从云端取回来，请检查网络后重试。';
+  if (code === 'CLOUD_UNAVAILABLE') return '腾讯云暂时未连接，录音只保存在本机。';
+  if (code === 'CLOUD_TIMEOUT') return '上传超时，录音已保存在本机，可点「重试同步」。';
+  if (code === 'AUTH_FAILED') return '账号验证失败，请重新进入点歌台。';
+  if (/INVALID_ACTION|INVALID_RECORDING/i.test(code)) return '云端尚未部署录音功能，录音暂时只保存在本机。';
+  return '云端暂时没有回应，录音已保存在本机。';
 };
 
 export const pullArtistSettings = async (credentials?: Credentials | null, seed?: ArtistSettingsPayload): Promise<ArtistSettingsSnapshot | null> => (

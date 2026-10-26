@@ -26,7 +26,9 @@ export interface PracticeRecord extends SongRecordBase {
   needsMorePractice: boolean;
   needsImprovement: boolean;
   singingMoods?: Array<'快乐' | '感动' | '想哭' | '爽歌' | '舒服' | '欢快' | '音色' | '歌词' | '爆款'>;
-  /** 合唱星级：0–5，0 表示未评星。 */
+  /** 合唱指数：70–100 整数，与匹配度同一套刻度；缺省表示这次没评。 */
+  chorusScore?: number;
+  /** @deprecated 历史字段「合唱星级」（0–5）。读取时会换算成 chorusScore，新记录不再写入。 */
   chorusStars?: number;
   /** @deprecated 历史字段，仅用于兼容旧记录读取，新记录不再写入。 */
   femaleKey?: string;
@@ -45,7 +47,8 @@ export interface PublicPracticeRankingItem {
   songTitle: string;
   songArtist: string;
   score: number;
-  stars: number;
+  /** 合唱指数 70–100；null 表示没评过。 */
+  chorusScore: number | null;
 }
 
 interface ReadableStorage { getItem: (key: string) => string | null; }
@@ -74,6 +77,7 @@ export const isValidSongRecord = (value: unknown): value is SongRecord => {
       && (record.needsMorePractice === undefined || typeof record.needsMorePractice === 'boolean')
       && (record.needsImprovement === undefined || typeof record.needsImprovement === 'boolean')
       && (record.femaleKey === undefined || isText(record.femaleKey, 80, false))
+      && (record.chorusScore === undefined || (Number.isInteger(record.chorusScore) && Number(record.chorusScore) >= 70 && Number(record.chorusScore) <= 100))
       && (record.chorusStars === undefined || (Number.isInteger(record.chorusStars) && Number(record.chorusStars) >= 0 && Number(record.chorusStars) <= 5))
       && (record.singingMoods === undefined || (Array.isArray(record.singingMoods) && record.singingMoods.length <= 9 && record.singingMoods.every((mood) => ['快乐', '感动', '想哭', '爽歌', '舒服', '欢快', '音色', '歌词', '爆款'].includes(mood))));
   }
@@ -99,19 +103,37 @@ export const bestMatchScore = (records: Array<Pick<PracticeRecord, 'matchScore'>
 
 export const parseMatchScoreInput = (value: string): number | '' => value === '' ? '' : Number(value);
 
-// 取多次练习中的最高合唱星级（0–5）。没有评过星的历史记录按 0 计。
-export const bestChorusStars = (records: Array<Pick<PracticeRecord, 'chorusStars'>>): number => (
-  records.reduce((top, record) => {
-    const stars = Number.isInteger(record.chorusStars) ? Number(record.chorusStars) : 0;
-    return stars > top ? stars : top;
-  }, 0)
+// 旧版「合唱星级」(1–5) 等分映射到 70–100：1★=76、2★=82、3★=88、4★=94、5★=100。
+export const chorusStarsToScore = (stars: unknown): number | null => (
+  Number.isInteger(stars) && Number(stars) >= 1 && Number(stars) <= 5
+    ? 70 + Math.round((Number(stars) / 5) * 30)
+    : null
 );
+
+/** 单条记录的合唱指数：优先新字段，旧记录按星级换算。 */
+const recordChorusScore = (record: Pick<PracticeRecord, 'chorusScore' | 'chorusStars'>): number | null => {
+  if (Number.isInteger(record.chorusScore) && Number(record.chorusScore) >= 70 && Number(record.chorusScore) <= 100) {
+    return Number(record.chorusScore);
+  }
+  return chorusStarsToScore(record.chorusStars);
+};
+
+// 取多次练习中的最高合唱指数，没评过的记录不参与比较。
+export const bestChorusScore = (records: Array<Pick<PracticeRecord, 'chorusScore' | 'chorusStars'>>): number | null => {
+  let top: number | null = null;
+  for (const record of records) {
+    const score = recordChorusScore(record);
+    if (score !== null && (top === null || score > top)) top = score;
+  }
+  return top;
+};
 
 export type MatchQuality = {
   label: '普通' | '优秀' | '精良' | '稀有' | '传奇';
   tone: 'white' | 'green' | 'lightBlue' | 'darkBlue' | 'purple' | 'gold';
 };
 
+/** 匹配度与合唱指数共用同一套 70–100 品质分档。 */
 export const getMatchQuality = (score: number): MatchQuality | null => {
   if (!Number.isInteger(score) || score < 70 || score > 100) return null;
   if (score >= 96) return { label: '传奇', tone: 'gold' };
@@ -179,10 +201,10 @@ export const rankSongsByPracticeMatch = (songs: Song[], records: SongRecord[]) =
   }
   return songs.map((song, catalogIndex) => {
     const practices = practicesBySong.get(song.id) ?? [];
-    return { song, score: bestMatchScore(practices), practiceCount: practices.length, stars: bestChorusStars(practices), catalogIndex };
+    return { song, score: bestMatchScore(practices), practiceCount: practices.length, chorusScore: bestChorusScore(practices), catalogIndex };
   }).filter((item): item is typeof item & { score: number } => item.score !== null)
     .sort((left, right) => right.score - left.score || left.catalogIndex - right.catalogIndex)
-    .map(({ song, score, practiceCount, stars }) => ({ song, score, practiceCount, stars }));
+    .map(({ song, score, practiceCount, chorusScore }) => ({ song, score, practiceCount, chorusScore }));
 };
 
 export const parsePublicPracticeRanking = (value: unknown): PublicPracticeRankingItem[] => {
@@ -198,7 +220,10 @@ export const parsePublicPracticeRanking = (value: unknown): PublicPracticeRankin
       songTitle: String(entry.songTitle).trim(),
       songArtist: String(entry.songArtist).trim(),
       score: Math.round(entry.score * 10) / 10,
-      stars: Number.isInteger(entry.stars) && Number(entry.stars) >= 0 && Number(entry.stars) <= 5 ? Number(entry.stars) : 0,
+      // 新版云端返回 chorusScore；旧部署仍返回 stars，这里一并兼容。
+      chorusScore: Number.isInteger(entry.chorusScore) && Number(entry.chorusScore) >= 70 && Number(entry.chorusScore) <= 100
+        ? Number(entry.chorusScore)
+        : chorusStarsToScore(entry.stars),
     }];
   });
 };
@@ -216,26 +241,29 @@ const cleanSongRecord = (record: SongRecord): SongRecord => {
     occurredAt: record.occurredAt,
     updatedAt: record.updatedAt,
   };
-  return record.kind === 'practice'
-    ? {
-        ...base,
-        kind: 'practice',
-        matchScore: record.matchScore,
-        feelings: record.feelings,
-        problems: record.problems,
-        improvements: record.improvements,
-        needsMorePractice: Boolean(record.needsMorePractice),
-        needsImprovement: Boolean(record.needsImprovement),
-        singingMoods: normalizeSingingMoods(record.singingMoods ?? []),
-        ...(Number.isInteger(record.chorusStars) && Number(record.chorusStars) > 0 ? { chorusStars: Number(record.chorusStars) } : {}),
-        ...(record.femaleKey?.trim() ? { femaleKey: record.femaleKey.trim() } : {}),
-      }
-    : {
-        ...base,
-        kind: 'roadshow',
-        audienceName: record.audienceName,
-        feedback: record.feedback,
-      };
+  if (record.kind !== 'practice') {
+    return {
+      ...base,
+      kind: 'roadshow',
+      audienceName: record.audienceName,
+      feedback: record.feedback,
+    };
+  }
+  // 旧记录的星级在这里就地换算成合唱指数，之后全链路只认 chorusScore。
+  const chorusScore = recordChorusScore(record);
+  return {
+    ...base,
+    kind: 'practice',
+    matchScore: record.matchScore,
+    feelings: record.feelings,
+    problems: record.problems,
+    improvements: record.improvements,
+    needsMorePractice: Boolean(record.needsMorePractice),
+    needsImprovement: Boolean(record.needsImprovement),
+    singingMoods: normalizeSingingMoods(record.singingMoods ?? []),
+    ...(chorusScore !== null ? { chorusScore } : {}),
+    ...(record.femaleKey?.trim() ? { femaleKey: record.femaleKey.trim() } : {}),
+  };
 };
 
 export const parseSongRecords = (value: unknown): SongRecord[] => (

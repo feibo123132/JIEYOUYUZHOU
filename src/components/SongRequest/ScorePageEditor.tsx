@@ -45,13 +45,15 @@ const drawMark = (context: CanvasRenderingContext2D, mark: Mark) => {
 
 interface ScorePageEditorProps {
   source: string;
+  /** 直连签名地址被浏览器跨域拦下时的兜底：由云函数把同一页谱子代取回来。 */
+  loadFallback?: () => Promise<Blob>;
   title: string;
   pageNumber: number;
   onSave: (page: string) => void;
   onClose: () => void;
 }
 
-export default function ScorePageEditor({ source, title, pageNumber, onSave, onClose }: ScorePageEditorProps) {
+export default function ScorePageEditor({ source, loadFallback, title, pageNumber, onSave, onClose }: ScorePageEditorProps) {
   const [tool, setTool] = useState<Tool>('hand');
   const [color, setColor] = useState(colors[0]);
   const [width, setWidth] = useState(8);
@@ -68,16 +70,38 @@ export default function ScorePageEditor({ source, title, pageNumber, onSave, onC
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const draftRef = useRef<Stroke | null>(null);
   const activePointerRef = useRef<number | null>(null);
+  // 上层每次渲染都会给一个新的箭头函数，放进依赖会让谱页反复重载、批注被清掉，所以用 ref 转存。
+  const fallbackRef = useRef(loadFallback);
+  useEffect(() => { fallbackRef.current = loadFallback; }, [loadFallback]);
 
   useEffect(() => {
     const controller = new AbortController();
     let objectUrl = '';
     const load = async () => {
+      let directError: unknown = null;
+      let viaProxy = false;
       try {
-        const response = await fetch(source, { signal: controller.signal });
-        if (!response.ok) throw new Error('FETCH_FAILED');
-        const blob = await response.blob();
-        if (!blob.size) throw new Error('INVALID_IMAGE');
+        let blob: Blob | null = null;
+        try {
+          const response = await fetch(source, { signal: controller.signal });
+          if (!response.ok) throw new Error(`FETCH_FAILED_${response.status}`);
+          const direct = await response.blob();
+          if (!direct.size) throw new Error('INVALID_IMAGE');
+          blob = direct;
+        } catch (cause) {
+          if (controller.signal.aborted) return;
+          directError = cause;
+        }
+        if (!blob) {
+          // 跨域被拦（TypeError: Failed to fetch）或签名地址过期（非 2xx）都走云函数兜底，
+          // 后者也顺带解决了「地址过期但本地还缓存着旧链接」的裂图问题。
+          const fallback = fallbackRef.current;
+          if (!fallback) throw directError ?? new Error('FETCH_FAILED');
+          blob = await fallback();
+          if (!blob.size) throw new Error('INVALID_IMAGE');
+          viaProxy = true;
+        }
+        if (controller.signal.aborted) return;
         objectUrl = URL.createObjectURL(blob);
         const image = new Image();
         await new Promise<void>((resolve, reject) => {
@@ -86,6 +110,7 @@ export default function ScorePageEditor({ source, title, pageNumber, onSave, onC
           image.src = objectUrl;
         });
         if (controller.signal.aborted) return;
+        if (viaProxy) console.info('[ScorePageEditor] 直连被拦，已通过云函数代理读取谱页', { source });
         const scale = Math.min(1, 2000 / image.naturalWidth, Math.sqrt(MAX_EDITOR_PIXELS / (image.naturalWidth * image.naturalHeight)));
         const width = Math.max(1, Math.round(image.naturalWidth * scale));
         const height = Math.max(1, Math.round(image.naturalHeight * scale));
@@ -100,8 +125,20 @@ export default function ScorePageEditor({ source, title, pageNumber, onSave, onC
         context.fillRect(0, 0, width, height);
         context.drawImage(image, 0, 0, width, height);
         setSize({ width, height });
-      } catch {
-        if (!controller.signal.aborted) setError('谱页无法载入编辑器。请检查网络连接，或重新打开谱子后再试。');
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        // fetch 被跨域策略拦截时抛的是 TypeError: Failed to fetch，和真正的网络故障要区分开，
+        // 否则用户会一直去查「网络」，但图谱在页面里明明显示得好好的。
+        const code = error instanceof Error ? error.message : '';
+        const blockedByCors = directError instanceof TypeError;
+        console.error('[ScorePageEditor] 谱页加载失败', { blockedByCors, viaProxy, source, error });
+        setError(code === 'SCORE_PAGE_TOO_LARGE'
+          ? '这一页谱子超过 3.5MB，云端代理转不回来。请删掉这页后重新上传更小的图片。'
+          : code === 'SCORE_DOWNLOAD_FAILED'
+            ? '云端没能读回这一页谱子，可能文件已被删除。请重新上传谱子后再编辑。'
+            : blockedByCors
+              ? `谱页被浏览器的跨域策略（CORS）拦住了，不是网络问题。${fallbackRef.current ? '云端代理兜底也未成功，请稍后再试。' : '请让云存储把本站加入 CORS 白名单。'}`
+              : '谱页无法载入编辑器。请检查网络连接，或重新打开谱子后再试。');
       } finally {
         if (objectUrl) URL.revokeObjectURL(objectUrl);
       }

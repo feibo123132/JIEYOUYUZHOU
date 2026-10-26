@@ -18,5 +18,10 @@
 - `src/components/SongRequest/useResolvedScorePages.ts`：谱子地址自愈 Hook（挂载/切歌/回前台/网络恢复/定时换链 + `<img onError>` 换新重试，节流 2h/20min、重试上限 4 次、`#score-retry=N` 片段强制重发请求、`generationRef` 防切歌串数据）。`SongDetailPanel`（缩略图）与 `ScoreViewer`（翻谱器 `onPagesStale`）共用。
 - 同类问题排查思路：iPad/长驻页面上「先正常、放一阵子变裂图、刷新后恢复」= 临时签名地址过期，不是存储/权限/网络问题。
 
+## 本地环境坑（症状容易被误判成代码 Bug）
+- **「开了代理就同步失败 / 谱子裂图」先查 Clash 模式**：CFW 便携版在 `D:\Clash.for.Windows-0.20.16-ikuuu`，控制器 `127.0.0.1:58442`（`secret` 为空）。`GET /configs` 看 `mode`；`mode=global` 时 profile 里 9816 条分流规则**全部失效**，腾讯云 API/COS 从境外落地会 TLS 握手失败（curl 返回 000），同时 github/youtube 却正常 —— 这个组合基本就是全局模式。修：`PATCH /configs {"mode":"rule"}` 或 CFW「代理」页顶部选「规则」（PATCH 只改运行时，不落盘）。
+- 判断口诀：`curl --noproxy '*'` 通、`curl -x 127.0.0.1:7890` 不通 = 路由问题，不是代码。
+- 顺手清理：`data/config.yaml` 是 iKuuu 占位配置（节点名「您选错了配置/此配置无节点」、规则仅 `MATCH,DIRECT`），误选会表现为"代理开着但完全不生效"。
+
 ## 用户偏好
 - 中文输出，结构化（标题/视角/正文/引用/小结），精良 HTML 排版与考究动效，禁用 Inter 字体。
