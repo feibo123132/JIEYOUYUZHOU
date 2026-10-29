@@ -79,6 +79,9 @@ const RECORDING_CHUNK_BASE64 = /^data:application\/octet-stream;base64,([A-Za-z0
 const RECORDING_UPLOAD_ID = /^[a-z0-9-]{8,64}$/i;
 const RECORDING_EXTENSION = /^(mp3|m4a|aac|wav|webm|ogg|flac|bin)$/i;
 const ROADSHOW_LOCATIONS = new Set(['医大（武鸣）', '医大（本部）', '南湖']);
+// 狂扫速度的可填范围，与前端 songRecords.ts 的 STRUM_BPM_MIN/MAX 保持一致。
+const STRUM_BPM_MIN = 20;
+const STRUM_BPM_MAX = 300;
 
 const optionalRankingLocation = (value) => {
   if (value === undefined) return {};
@@ -213,6 +216,8 @@ const validateSongRecord = (value) => {
     const femaleKey = value.femaleKey === undefined ? '' : cleanOptionalText(value.femaleKey, 80, 'INVALID_SONG_RECORD');
     if (value.chorusStars !== undefined && (!Number.isInteger(value.chorusStars) || value.chorusStars < 0 || value.chorusStars > 5)) throw new Error('INVALID_SONG_RECORD');
     if (value.chorusScore !== undefined && (!Number.isInteger(value.chorusScore) || value.chorusScore < 70 || value.chorusScore > 100)) throw new Error('INVALID_SONG_RECORD');
+    if (value.strumScore !== undefined && (!Number.isInteger(value.strumScore) || value.strumScore < 70 || value.strumScore > 100)) throw new Error('INVALID_SONG_RECORD');
+    if (value.strumBpm !== undefined && (!Number.isInteger(value.strumBpm) || value.strumBpm < STRUM_BPM_MIN || value.strumBpm > STRUM_BPM_MAX)) throw new Error('INVALID_SONG_RECORD');
     if (value.needsMorePractice !== undefined && typeof value.needsMorePractice !== 'boolean') throw new Error('INVALID_SONG_RECORD');
     if (value.needsImprovement !== undefined && typeof value.needsImprovement !== 'boolean') throw new Error('INVALID_SONG_RECORD');
     if (value.singingMoods !== undefined && (!Array.isArray(value.singingMoods) || value.singingMoods.length > 9 || !value.singingMoods.every((mood) => ['快乐', '感动', '想哭', '爽歌', '舒服', '欢快', '音色', '歌词', '爆款'].includes(mood)))) throw new Error('INVALID_SONG_RECORD');
@@ -227,6 +232,8 @@ const validateSongRecord = (value) => {
       needsImprovement: Boolean(value.needsImprovement),
       singingMoods: [...new Set((value.singingMoods ?? []).map(mood => mood === '快乐' ? '欢快' : mood === '想哭' ? '爆款' : mood))],
       ...(Number.isInteger(value.chorusScore) ? { chorusScore: value.chorusScore } : {}),
+      ...(Number.isInteger(value.strumScore) ? { strumScore: value.strumScore } : {}),
+      ...(Number.isInteger(value.strumBpm) ? { strumBpm: value.strumBpm } : {}),
       ...(Number.isInteger(value.chorusStars) && value.chorusStars > 0 ? { chorusStars: value.chorusStars } : {}),
       ...(femaleKey ? { femaleKey } : {}),
     };

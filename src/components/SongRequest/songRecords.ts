@@ -28,6 +28,10 @@ export interface PracticeRecord extends SongRecordBase {
   singingMoods?: Array<'快乐' | '感动' | '想哭' | '爽歌' | '舒服' | '欢快' | '音色' | '歌词' | '爆款'>;
   /** 合唱指数：70–100 整数，与匹配度同一套刻度；缺省表示这次没评。 */
   chorusScore?: number;
+  /** 狂扫指数：70–100 整数，与匹配度同一套刻度；缺省表示这次没评。 */
+  strumScore?: number;
+  /** 狂扫速度 BPM：20–300 整数，跟狂扫指数一起填，缺省表示没记。 */
+  strumBpm?: number;
   /** @deprecated 历史字段「合唱星级」（0–5）。读取时会换算成 chorusScore，新记录不再写入。 */
   chorusStars?: number;
   /** @deprecated 历史字段，仅用于兼容旧记录读取，新记录不再写入。 */
@@ -49,6 +53,10 @@ export interface PublicPracticeRankingItem {
   score: number;
   /** 合唱指数 70–100；null 表示没评过。 */
   chorusScore: number | null;
+  /** 狂扫指数 70–100；null 表示没评过。 */
+  strumScore: number | null;
+  /** 狂扫速度 BPM；null 表示没记。 */
+  strumBpm: number | null;
 }
 
 interface ReadableStorage { getItem: (key: string) => string | null; }
@@ -56,6 +64,9 @@ interface WritableStorage { setItem: (key: string, value: string) => void; }
 interface RemovableStorage { removeItem: (key: string) => void; }
 
 const CACHE_PREFIX = 'jieyou-song-records-v1:';
+/** 狂扫速度的可填范围，超出视为误填。 */
+export const STRUM_BPM_MIN = 20;
+export const STRUM_BPM_MAX = 300;
 const isText = (value: unknown, max: number, required = true) => (
   typeof value === 'string' && value.length <= max && (!required || Boolean(value.trim()))
 );
@@ -78,6 +89,8 @@ export const isValidSongRecord = (value: unknown): value is SongRecord => {
       && (record.needsImprovement === undefined || typeof record.needsImprovement === 'boolean')
       && (record.femaleKey === undefined || isText(record.femaleKey, 80, false))
       && (record.chorusScore === undefined || (Number.isInteger(record.chorusScore) && Number(record.chorusScore) >= 70 && Number(record.chorusScore) <= 100))
+      && (record.strumScore === undefined || (Number.isInteger(record.strumScore) && Number(record.strumScore) >= 70 && Number(record.strumScore) <= 100))
+      && (record.strumBpm === undefined || (Number.isInteger(record.strumBpm) && Number(record.strumBpm) >= STRUM_BPM_MIN && Number(record.strumBpm) <= STRUM_BPM_MAX))
       && (record.chorusStars === undefined || (Number.isInteger(record.chorusStars) && Number(record.chorusStars) >= 0 && Number(record.chorusStars) <= 5))
       && (record.singingMoods === undefined || (Array.isArray(record.singingMoods) && record.singingMoods.length <= 9 && record.singingMoods.every((mood) => ['快乐', '感动', '想哭', '爽歌', '舒服', '欢快', '音色', '歌词', '爆款'].includes(mood))));
   }
@@ -126,6 +139,42 @@ export const bestChorusScore = (records: Array<Pick<PracticeRecord, 'chorusScore
     if (score !== null && (top === null || score > top)) top = score;
   }
   return top;
+};
+
+/** 单条记录的狂扫指数：只认合法的 70–100 整数，没评就是 null。 */
+const recordStrumScore = (record: Pick<PracticeRecord, 'strumScore'>): number | null => (
+  Number.isInteger(record.strumScore) && Number(record.strumScore) >= 70 && Number(record.strumScore) <= 100
+    ? Number(record.strumScore)
+    : null
+);
+
+// 取多次练习中的最高狂扫指数，没评过的记录不参与比较。
+export const bestStrumScore = (records: Array<Pick<PracticeRecord, 'strumScore'>>): number | null => {
+  let top: number | null = null;
+  for (const record of records) {
+    const score = recordStrumScore(record);
+    if (score !== null && (top === null || score > top)) top = score;
+  }
+  return top;
+};
+
+/**
+ * 狂扫速度跟着「最高分那次」走：取狂扫指数最高的那条记录的 BPM，同分取更晚的一次。
+ * 这样榜单上的指数和 BPM 永远来自同一次练习，不会拼出「A 的分 + B 的速度」。
+ */
+export const bestStrumBpm = (
+  records: Array<Pick<PracticeRecord, 'strumScore' | 'strumBpm' | 'occurredAt'>>,
+): number | null => {
+  let best: { score: number; occurredAt: string; bpm: number } | null = null;
+  for (const record of records) {
+    const score = recordStrumScore(record);
+    const bpm = Number(record.strumBpm);
+    if (score === null || !Number.isInteger(bpm) || bpm < STRUM_BPM_MIN || bpm > STRUM_BPM_MAX) continue;
+    if (!best || score > best.score || (score === best.score && record.occurredAt > best.occurredAt)) {
+      best = { score, occurredAt: record.occurredAt, bpm };
+    }
+  }
+  return best ? best.bpm : null;
 };
 
 export type MatchQuality = {
@@ -201,10 +250,18 @@ export const rankSongsByPracticeMatch = (songs: Song[], records: SongRecord[]) =
   }
   return songs.map((song, catalogIndex) => {
     const practices = practicesBySong.get(song.id) ?? [];
-    return { song, score: bestMatchScore(practices), practiceCount: practices.length, chorusScore: bestChorusScore(practices), catalogIndex };
+    return {
+      song,
+      score: bestMatchScore(practices),
+      practiceCount: practices.length,
+      chorusScore: bestChorusScore(practices),
+      strumScore: bestStrumScore(practices),
+      strumBpm: bestStrumBpm(practices),
+      catalogIndex,
+    };
   }).filter((item): item is typeof item & { score: number } => item.score !== null)
     .sort((left, right) => right.score - left.score || left.catalogIndex - right.catalogIndex)
-    .map(({ song, score, practiceCount, chorusScore }) => ({ song, score, practiceCount, chorusScore }));
+    .map(({ song, score, practiceCount, chorusScore, strumScore, strumBpm }) => ({ song, score, practiceCount, chorusScore, strumScore, strumBpm }));
 };
 
 export const parsePublicPracticeRanking = (value: unknown): PublicPracticeRankingItem[] => {
@@ -220,10 +277,16 @@ export const parsePublicPracticeRanking = (value: unknown): PublicPracticeRankin
       songTitle: String(entry.songTitle).trim(),
       songArtist: String(entry.songArtist).trim(),
       score: Math.round(entry.score * 10) / 10,
-      // 新版云端返回 chorusScore；旧部署仍返回 stars，这里一并兼容。
+      // 新版云端返回 chorusScore / strumScore；旧部署仍返回 stars，这里一并兼容。
       chorusScore: Number.isInteger(entry.chorusScore) && Number(entry.chorusScore) >= 70 && Number(entry.chorusScore) <= 100
         ? Number(entry.chorusScore)
         : chorusStarsToScore(entry.stars),
+      strumScore: Number.isInteger(entry.strumScore) && Number(entry.strumScore) >= 70 && Number(entry.strumScore) <= 100
+        ? Number(entry.strumScore)
+        : null,
+      strumBpm: Number.isInteger(entry.strumBpm) && Number(entry.strumBpm) >= STRUM_BPM_MIN && Number(entry.strumBpm) <= STRUM_BPM_MAX
+        ? Number(entry.strumBpm)
+        : null,
     }];
   });
 };
@@ -262,6 +325,9 @@ const cleanSongRecord = (record: SongRecord): SongRecord => {
     needsImprovement: Boolean(record.needsImprovement),
     singingMoods: normalizeSingingMoods(record.singingMoods ?? []),
     ...(chorusScore !== null ? { chorusScore } : {}),
+    ...(recordStrumScore(record) !== null ? { strumScore: recordStrumScore(record) as number } : {}),
+    ...(Number.isInteger(record.strumBpm) && Number(record.strumBpm) >= STRUM_BPM_MIN && Number(record.strumBpm) <= STRUM_BPM_MAX
+      ? { strumBpm: Number(record.strumBpm) } : {}),
     ...(record.femaleKey?.trim() ? { femaleKey: record.femaleKey.trim() } : {}),
   };
 };

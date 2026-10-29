@@ -24,6 +24,8 @@ import {
   isValidSongRecord,
   parseMatchScoreInput,
   sortSongRecords,
+  STRUM_BPM_MAX,
+  STRUM_BPM_MIN,
   type PracticeRecord,
   type SongRecord,
   type SongRecordSession,
@@ -100,6 +102,8 @@ const SongDetailPanel = ({
   const [practiceAt, setPracticeAt] = useState(localDateTime);
   const [matchScore, setMatchScore] = useState<number | ''>(80);
   const [chorusScore, setChorusScore] = useState<number | ''>('');
+  const [strumScore, setStrumScore] = useState<number | ''>('');
+  const [strumBpm, setStrumBpm] = useState<number | ''>('');
   const [feelings, setFeelings] = useState('');
   const [singingReflection, setSingingReflection] = useState('');
   const [singingMoods, setSingingMoods] = useState<NonNullable<PracticeRecord['singingMoods']>>([]);
@@ -125,6 +129,7 @@ const SongDetailPanel = ({
   const formRef = useRef<HTMLDivElement>(null);
   const matchQuality = getMatchQuality(Number(matchScore));
   const chorusQuality = getMatchQuality(Number(chorusScore));
+  const strumQuality = getMatchQuality(Number(strumScore));
   const currentQuizLevel = QUIZ_LEVELS.find((level) => level.id === quizLevel);
   // 云端签名地址会过期，这里负责在挂载 / 回到前台 / 加载失败时自动换新，避免谱子变裂图。
   const { pages: scorePages, refresh: refreshScorePages } = useResolvedScorePages(
@@ -168,6 +173,8 @@ const SongDetailPanel = ({
       setFeelings(record.feelings);
       setSingingReflection(getPracticeReflection(record));
       setChorusScore(record.chorusScore ?? '');
+      setStrumScore(record.strumScore ?? '');
+      setStrumBpm(record.strumBpm ?? '');
       setSingingMoods(normalizeSingingMoods(record.singingMoods ?? []));
     } else {
       setRoadshowAt(localDateTime(record.occurredAt));
@@ -185,6 +192,16 @@ const SongDetailPanel = ({
       setMessage('合唱指数请填 70–100 的整数；没评过就留空。');
       return;
     }
+    const strumValue = strumScore === '' ? null : Number(strumScore);
+    if (strumValue !== null && (!Number.isInteger(strumValue) || strumValue < 70 || strumValue > 100)) {
+      setMessage('狂扫指数请填 70–100 的整数；没评过就留空。');
+      return;
+    }
+    const bpmValue = strumBpm === '' ? null : Number(strumBpm);
+    if (bpmValue !== null && (!Number.isInteger(bpmValue) || bpmValue < STRUM_BPM_MIN || bpmValue > STRUM_BPM_MAX)) {
+      setMessage(`狂扫速度请填 ${STRUM_BPM_MIN}–${STRUM_BPM_MAX} 的整数 BPM；不填也行。`);
+      return;
+    }
     const now = new Date().toISOString();
     const record: PracticeRecord = {
       id: editingRecord?.kind === 'practice' ? editingRecord.id : recordId('practice'), kind: 'practice', songId: song.id, songTitle: song.title, songArtist: song.artist,
@@ -192,7 +209,9 @@ const SongDetailPanel = ({
       feelings: feelings.trim(), problems: singingReflection.trim(), improvements: '',
       needsMorePractice: editingRecord?.kind === 'practice' ? editingRecord.needsMorePractice : false,
       needsImprovement: editingRecord?.kind === 'practice' ? editingRecord.needsImprovement : false,
-      singingMoods, ...(chorusValue !== null ? { chorusScore: chorusValue } : {}), updatedAt: now,
+      singingMoods, ...(chorusValue !== null ? { chorusScore: chorusValue } : {}),
+      ...(strumValue !== null ? { strumScore: strumValue } : {}),
+      ...(bpmValue !== null ? { strumBpm: bpmValue } : {}), updatedAt: now,
     };
     if (!isValidSongRecord(record)) {
       setMessage('请填写有效的时间和 70–100 分。');
@@ -202,14 +221,19 @@ const SongDetailPanel = ({
     try {
       const saved = await saveSongRecord(session, record);
       commitSaved(saved);
-      if (saved.kind !== 'practice' || JSON.stringify([...(saved.singingMoods ?? [])].sort()) !== JSON.stringify([...singingMoods].sort()) || (saved.chorusScore ?? null) !== chorusValue) {
+      if (saved.kind !== 'practice'
+        || JSON.stringify([...(saved.singingMoods ?? [])].sort()) !== JSON.stringify([...singingMoods].sort())
+        || (saved.chorusScore ?? null) !== chorusValue
+        || (saved.strumScore ?? null) !== strumValue
+        || (saved.strumBpm ?? null) !== bpmValue) {
         setEditingRecord(record);
-        setMessage('练习内容已保存，但优点勾选或合唱指数未同步。已保留当前填写，请更新云端服务后再次保存。');
+        setMessage('练习内容已保存，但优点勾选、合唱指数或狂扫指数未同步。已保留当前填写，请更新云端服务后再次保存。');
         return;
       }
       const wasEditing = editingRecord?.kind === 'practice';
       setEditingRecord(null);
       setFeelings(''); setSingingReflection(''); setChorusScore('');
+      setStrumScore(''); setStrumBpm('');
       setSingingMoods([]);
       setMessage(wasEditing ? '练习记录修改已同步' : '练习记录已同步');
     } catch (error) { setMessage(mapSongRecordSyncError(error)); }
@@ -602,6 +626,11 @@ const SongDetailPanel = ({
               <Field label="合唱指数（70–100）"><input type="number" inputMode="numeric" min="70" max="100" step="1" value={chorusScore} onChange={(event) => setChorusScore(parseMatchScoreInput(event.target.value))} placeholder="未评" className={inputClass} /></Field>
               <Field label="品质"><div aria-readonly="true" title="按合唱指数换算" className={`${inputClass} flex items-center font-black ${chorusQuality ? qualityTextClass[chorusQuality.tone] : 'text-white/25'}`}>{chorusQuality?.label ?? '—'}</div></Field>
             </div>
+            <div className="grid gap-3 sm:grid-cols-[minmax(0,1.4fr)_minmax(90px,.8fr)_minmax(90px,.8fr)]">
+              <Field label="狂扫指数（70–100）"><input type="number" inputMode="numeric" min="70" max="100" step="1" value={strumScore} onChange={(event) => setStrumScore(parseMatchScoreInput(event.target.value))} placeholder="未评" className={inputClass} /></Field>
+              <Field label="BPM"><input type="number" inputMode="numeric" min={STRUM_BPM_MIN} max={STRUM_BPM_MAX} step="1" value={strumBpm} onChange={(event) => setStrumBpm(parseMatchScoreInput(event.target.value))} placeholder="未填" title={`狂扫速度，${STRUM_BPM_MIN}–${STRUM_BPM_MAX} BPM`} className={inputClass} /></Field>
+              <Field label="品质"><div aria-readonly="true" title="按狂扫指数换算" className={`${inputClass} flex items-center font-black ${strumQuality ? qualityTextClass[strumQuality.tone] : 'text-white/25'}`}>{strumQuality?.label ?? '—'}</div></Field>
+            </div>
             <Field label="练习感受"><textarea value={feelings} onChange={(event) => setFeelings(event.target.value)} placeholder="音色、情绪、舒适程度……" className={areaClass} /></Field>
             <button type="button" disabled={Boolean(busy)} onClick={() => void submitPractice()} className="inline-flex h-11 items-center gap-2 rounded-full bg-orange-400 px-5 text-sm font-black text-black transition hover:bg-orange-300 disabled:opacity-40"><Save className="h-4 w-4" />{editingRecord?.kind === 'practice' ? '保存修改' : '保存练习记录'}</button>
           </> : <>
@@ -661,10 +690,19 @@ const RecordTimeline = ({ records, busy, editingId, onEdit, onDelete, label = 'H
   </div>
 );
 
+const ScoreBadge = ({ label, score }: { label: string; score: number }) => {
+  const quality = getMatchQuality(score);
+  return (
+    <p className="flex items-center gap-1.5 text-xs leading-none" aria-label={`${label} ${score}`}>
+      <span className={`font-black ${qualityTextClass[quality?.tone ?? 'white']}`}>{quality?.label ?? '—'}</span>
+      <span className="text-white/50">{label} {score}</span>
+    </p>
+  );
+};
+
 const PracticeRecordDetails = ({ record }: { record: PracticeRecord }) => {
   const reflection = getPracticeReflection(record);
-  const chorusQuality = record.chorusScore ? getMatchQuality(record.chorusScore) : null;
-  return <><div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1"><p className="text-sm font-bold text-orange-100">匹配度 {record.matchScore}</p>{record.chorusScore ? <p className="flex items-center gap-1.5 text-xs leading-none" aria-label={`合唱指数 ${record.chorusScore}`}><span className={`font-black ${qualityTextClass[chorusQuality?.tone ?? 'white']}`}>{chorusQuality?.label ?? '—'}</span><span className="text-white/50">合唱指数 {record.chorusScore}</span></p> : null}<PracticeMoodBadges record={record} /></div>{record.feelings && <RecordText label="感受" text={record.feelings} />}{reflection && <RecordText label="弹唱感想" text={reflection} />}</>;
+  return <><div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1"><p className="text-sm font-bold text-orange-100">匹配度 {record.matchScore}</p>{record.chorusScore ? <ScoreBadge label="合唱指数" score={record.chorusScore} /> : null}{record.strumScore ? <ScoreBadge label="狂扫指数" score={record.strumScore} /> : null}{record.strumBpm ? <p className="text-xs leading-none text-white/45" aria-label={`狂扫速度 ${record.strumBpm} BPM`}>BPM {record.strumBpm}</p> : null}<PracticeMoodBadges record={record} /></div>{record.feelings && <RecordText label="感受" text={record.feelings} />}{reflection && <RecordText label="弹唱感想" text={reflection} />}</>;
 };
 
 const PracticeMoodBadges = ({ record }: { record: PracticeRecord }) => (

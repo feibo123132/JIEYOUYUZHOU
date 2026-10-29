@@ -776,17 +776,18 @@ test('publishes only sanitized practice averages to guests without credentials',
   const { createHandler } = loadFunction();
   const handler = createHandler(store);
   const auth = { alias: 'JIEYOU', password: 'guitar-2026' };
-  const practice = (id, songId, songTitle, score, chorusScore) => ({
+  const practice = (id, songId, songTitle, score, chorusScore, strum) => ({
     id, kind: 'practice', songId, songTitle, songArtist: '邓紫棋',
     occurredAt: '2026-08-26T12:00:00.000Z', matchScore: score,
     feelings: '私人感受', problems: '私人问题', improvements: '私人计划', updatedAt: '2026-08-26T12:00:00.000Z',
     ...(chorusScore ? { chorusScore } : {}),
+    ...(strum ? { strumScore: strum[0], strumBpm: strum[1] } : {}),
   });
 
   await seedExistingAccount(store, auth);
   await handler({ action: 'songRecords:saveBatch', ...auth, records: [
-    practice('practice-1', 'guang-nian-zhi-wai', '光年之外', 86, 88),
-    practice('practice-2', 'guang-nian-zhi-wai', '光年之外', 83, 100),
+    practice('practice-1', 'guang-nian-zhi-wai', '光年之外', 86, 88, [80, 96]),
+    practice('practice-2', 'guang-nian-zhi-wai', '光年之外', 83, 100, [95, 132]),
     practice('practice-3', 'ju-hao', '句号', 80),
   ] });
 
@@ -794,8 +795,8 @@ test('publishes only sanitized practice averages to guests without credentials',
   assert.deepEqual(result, {
     ok: true,
     ranking: [
-      { songId: 'guang-nian-zhi-wai', songTitle: '光年之外', songArtist: '邓紫棋', score: 84.5, chorusScore: 100 },
-      { songId: 'ju-hao', songTitle: '句号', songArtist: '邓紫棋', score: 80, chorusScore: 0 },
+      { songId: 'guang-nian-zhi-wai', songTitle: '光年之外', songArtist: '邓紫棋', score: 84.5, chorusScore: 100, strumScore: 95, strumBpm: 132 },
+      { songId: 'ju-hao', songTitle: '句号', songArtist: '邓紫棋', score: 80, chorusScore: 0, strumScore: 0, strumBpm: 0 },
     ],
   });
   assert.doesNotMatch(JSON.stringify(result), /occurredAt|practiceCount|feelings|problems|improvements|updatedAt|workspaceId/);

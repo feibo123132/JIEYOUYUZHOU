@@ -372,19 +372,37 @@ const buildPublicPracticeRanking = (records) => {
       total: 0,
       count: 0,
       chorusScore: 0,
+      strumScore: 0,
+      strumBpm: 0,
+      strumBpmScore: 0,
+      strumBpmAt: '',
     };
     current.total += record.matchScore;
     current.count += 1;
     const chorusScore = recordChorusScore(record);
     if (chorusScore > current.chorusScore) current.chorusScore = chorusScore;
+    const strumScore = Number.isInteger(record.strumScore) && record.strumScore >= 70 && record.strumScore <= 100 ? record.strumScore : 0;
+    if (strumScore > current.strumScore) current.strumScore = strumScore;
+    // 狂扫速度跟着最高分那次走，与前端 bestStrumBpm 一致：同分取更晚的一次。
+    if (strumScore > 0 && Number.isInteger(record.strumBpm) && record.strumBpm >= 20 && record.strumBpm <= 300) {
+      const occurredAt = String(record.occurredAt || '');
+      if (!current.strumBpm || strumScore > current.strumBpmScore
+        || (strumScore === current.strumBpmScore && occurredAt > current.strumBpmAt)) {
+        current.strumBpm = record.strumBpm;
+        current.strumBpmScore = strumScore;
+        current.strumBpmAt = occurredAt;
+      }
+    }
     groups.set(record.songId, current);
   }
-  return [...groups.values()].map(({ songId, songTitle, songArtist, total, count, chorusScore }) => ({
+  return [...groups.values()].map(({ songId, songTitle, songArtist, total, count, chorusScore, strumScore, strumBpm }) => ({
     songId,
     songTitle,
     songArtist,
     score: Math.round((total / count) * 10) / 10,
     chorusScore,
+    strumScore,
+    strumBpm,
   })).sort((left, right) => right.score - left.score || left.songTitle.localeCompare(right.songTitle, 'zh-CN')).slice(0, 500);
 };
 

@@ -842,6 +842,8 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
     },
     score: entry.score,
     chorusScore: entry.chorusScore,
+    strumScore: entry.strumScore,
+    strumBpm: entry.strumBpm,
     practiceCount: 0,
   })), [catalogSongs, publicPracticeRanking]);
   const personalRanking = songRecordSession ? privatePersonalRanking : publicPersonalRanking;
@@ -852,7 +854,9 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
       : personalRanking;
     const ranked = personalRankingBoard === 'chorus'
       ? [...base].sort((left, right) => ((right.chorusScore ?? 0) - (left.chorusScore ?? 0)) || (right.score - left.score))
-      : base;
+      : personalRankingBoard === 'strum'
+        ? [...base].sort((left, right) => ((right.strumScore ?? 0) - (left.strumScore ?? 0)) || (right.score - left.score))
+        : base;
     return orderPersonalRankingItems(ranked, personalRankingMode);
   }, [personalRanking, personalRankingArtist, personalRankingMode, personalRankingBoard]);
   const paginatedPersonalRanking = useMemo(
@@ -2000,7 +2004,8 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
   );
 
   const sectionTitle = activeSection === 'quiz' ? '听歌识曲' : HUB_DIRECTIONS.find((item) => item.id === activeSection)?.label;
-  const personalBoardLabel = personalRankingBoard === 'chorus' ? '合唱榜' : '练习榜';
+  const personalBoardLabel = personalRankingBoard === 'chorus' ? '合唱榜' : personalRankingBoard === 'strum' ? '狂扫榜' : '练习榜';
+  const personalBoardNoun = personalRankingBoard === 'chorus' ? '合唱' : personalRankingBoard === 'strum' ? '狂扫' : '练习';
   const rankingHeading = visibleRankingView === 'requests'
     ? '点歌榜'
     : visibleRankingView === 'personal'
@@ -2291,11 +2296,12 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
                       <ol
                         key={`practice-ranking-${personalRankingBoard}-${personalRankingMode}-${paginatedPersonalRanking.page}`}
                         tabIndex={paginatedPersonalRanking.items.length > PERSONAL_RANKING_SCROLL_THRESHOLD ? 0 : undefined}
-                        aria-label={paginatedPersonalRanking.items.length > PERSONAL_RANKING_SCROLL_THRESHOLD ? `${personalRankingArtist ?? '总榜'}${personalBoardLabel}${personalRankingBoard === 'chorus' ? '按合唱指数' : personalRankingReversed ? '倒序' : '按匹配度'}排行，可上下滚动` : undefined}
+                        aria-label={paginatedPersonalRanking.items.length > PERSONAL_RANKING_SCROLL_THRESHOLD ? `${personalRankingArtist ?? '总榜'}${personalBoardLabel}${personalRankingBoard === 'chorus' ? '按合唱指数' : personalRankingBoard === 'strum' ? '按狂扫指数' : personalRankingReversed ? '倒序' : '按匹配度'}排行，可上下滚动` : undefined}
                         className={`space-y-3 ${paginatedPersonalRanking.items.length > PERSONAL_RANKING_SCROLL_THRESHOLD ? 'max-h-[42rem] overflow-y-auto overscroll-contain pr-2' : ''}`}
-                      >{paginatedPersonalRanking.items.map(({ song, score, chorusScore, practiceCount, originalRank }) => {
+                      >{paginatedPersonalRanking.items.map(({ song, score, chorusScore, strumScore, strumBpm, practiceCount, originalRank }) => {
                       const quality = getMatchQuality(Math.round(score));
                       const chorusQuality = chorusScore ? getMatchQuality(chorusScore) : null;
+                      const strumQuality = strumScore ? getMatchQuality(strumScore) : null;
                       const isInLatestRoadshow = Boolean(latestRoadshow && prepareLatestRoadshowPerformanceSong([latestRoadshow], song).kind === 'duplicate');
                       const isSelectedForRoadshow = selectedPersonalRankingSongIds.includes(song.id);
                       return (
@@ -2321,6 +2327,16 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
                                 </>
                               ) : (
                                 <span className="text-sm leading-none text-white/25" title="还没评过合唱指数" aria-label="还没评过合唱指数">—</span>
+                              )
+                            ) : personalRankingBoard === 'strum' ? (
+                              strumScore ? (
+                                <>
+                                  <em className={`practice-quality ${strumQuality?.tone ?? 'white'}`}>{strumQuality?.label ?? '—'}</em>
+                                  {strumBpm ? <span title="狂扫速度" aria-label={`狂扫速度 ${strumBpm} BPM`} className="text-[11px] font-black tabular-nums text-white/40">{strumBpm}<small className="ml-0.5 font-sans text-[10px] font-normal text-white/25">BPM</small></span> : null}
+                                  <strong className="font-serif text-xl text-orange-200">{strumScore}<small className="ml-1 font-sans text-[10px] font-normal text-white/30">狂扫指数</small></strong>
+                                </>
+                              ) : (
+                                <span className="text-sm leading-none text-white/25" title="还没评过狂扫指数" aria-label="还没评过狂扫指数">—</span>
                               )
                             ) : (
                               <>
@@ -2361,7 +2377,7 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
                           )}
                         </nav>
                       )}
-                    </> : <div className="grid min-h-64 place-items-center text-center text-white/40"><div><Target className="mx-auto h-9 w-9 opacity-40" /><p className="mt-3">{songRecordSession ? personalRankingArtist ? `${personalRankingArtist}还没有${personalRankingBoard === 'chorus' ? '合唱' : '练习'}记录` : `还没有${personalRankingBoard === 'chorus' ? '合唱' : '练习'}记录` : publicRankingStatus || (personalRankingArtist ? `${personalRankingArtist}暂无公开排行` : '暂无公开排行')}</p></div></div>
+                    </> : <div className="grid min-h-64 place-items-center text-center text-white/40"><div><Target className="mx-auto h-9 w-9 opacity-40" /><p className="mt-3">{songRecordSession ? personalRankingArtist ? `${personalRankingArtist}还没有${personalBoardNoun}记录` : `还没有${personalBoardNoun}记录` : publicRankingStatus || (personalRankingArtist ? `${personalRankingArtist}暂无公开排行` : '暂无公开排行')}</p></div></div>
                   ) : (
                     quizRankingMode === 'participants' ? (
                       publicQuizParticipantRanking.length ? <div className={publicQuizParticipantRanking.length > REQUEST_RANKING_SCROLL_THRESHOLD ? 'max-h-[42rem] overflow-y-auto overscroll-contain pr-2' : ''}><ol className="space-y-3">{publicQuizParticipantRanking.map((entry, index) => (
@@ -2468,9 +2484,10 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
                         <ArrowUpDown className="h-4 w-4" />{personalRankingReversed ? '倒序' : '正序'}
                       </button>
                     </div>
-                    <div className="mt-3 flex gap-2">
-                      <button type="button" aria-pressed={personalRankingBoard === 'practice' && personalRankingArtist === null} onClick={() => { setPersonalRankingBoard('practice'); setPersonalRankingArtist(null); setPersonalRankingPage(1); }} className={`flex-1 rounded-xl border px-4 py-3 text-left text-sm font-black transition ${personalRankingBoard === 'practice' && personalRankingArtist === null ? 'border-orange-300/45 bg-orange-300 text-black' : 'border-white/10 bg-black/25 text-white/65 hover:border-orange-200/25 hover:text-white'}`}>总榜</button>
-                      <button type="button" aria-pressed={personalRankingBoard === 'chorus'} onClick={() => { setPersonalRankingBoard((current) => (current === 'chorus' ? 'practice' : 'chorus')); setPersonalRankingPage(1); }} className={`flex-1 rounded-xl border px-4 py-3 text-sm font-black transition ${personalRankingBoard === 'chorus' ? 'border-orange-300/45 bg-orange-300 text-black' : 'border-white/10 bg-black/25 text-white/65 hover:border-orange-200/25 hover:text-white'}`}>合唱榜</button>
+                    <div className="mt-3 grid grid-cols-3 gap-2">
+                      <button type="button" aria-pressed={personalRankingBoard === 'practice' && personalRankingArtist === null} onClick={() => { setPersonalRankingBoard('practice'); setPersonalRankingArtist(null); setPersonalRankingPage(1); }} className={`rounded-xl border px-2 py-3 text-sm font-black transition ${personalRankingBoard === 'practice' && personalRankingArtist === null ? 'border-orange-300/45 bg-orange-300 text-black' : 'border-white/10 bg-black/25 text-white/65 hover:border-orange-200/25 hover:text-white'}`}>总榜</button>
+                      <button type="button" aria-pressed={personalRankingBoard === 'chorus'} onClick={() => { setPersonalRankingBoard((current) => (current === 'chorus' ? 'practice' : 'chorus')); setPersonalRankingPage(1); }} className={`rounded-xl border px-2 py-3 text-sm font-black transition ${personalRankingBoard === 'chorus' ? 'border-orange-300/45 bg-orange-300 text-black' : 'border-white/10 bg-black/25 text-white/65 hover:border-orange-200/25 hover:text-white'}`}>合唱榜</button>
+                      <button type="button" aria-pressed={personalRankingBoard === 'strum'} onClick={() => { setPersonalRankingBoard((current) => (current === 'strum' ? 'practice' : 'strum')); setPersonalRankingPage(1); }} className={`rounded-xl border px-2 py-3 text-sm font-black transition ${personalRankingBoard === 'strum' ? 'border-orange-300/45 bg-orange-300 text-black' : 'border-white/10 bg-black/25 text-white/65 hover:border-orange-200/25 hover:text-white'}`}>狂扫榜</button>
                     </div>
                     <div className="mt-3 grid max-h-[34rem] grid-cols-2 gap-2 overflow-y-auto overscroll-contain pr-1">
                       {personalRankingArtists.map(({ artist, songs }) => {

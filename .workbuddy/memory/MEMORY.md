@@ -8,6 +8,7 @@
 ## 点歌台（SongRequest）数据模型
 - 三层数据：内置 SONGS（songCatalog.ts，只读）/ localStorage 可编辑目录（EditableCatalog v7）/ 云端 artistSettings（站主 2421415030@qq.com 通过 requireCatalogManager 管理）。
 - 练习记录：SongRecord 联合类型，`kind: 'practice'` 含 matchScore(70–100) 整数；`averageMatchScore` 返回保留 1 位小数的均值或 null。
+- **三个指数共用一套刻度**：matchScore（匹配度）/ chorusScore（合唱指数）/ strumScore（狂扫指数）都是 70–100 整数 + `getMatchQuality()` 品质分档；榜单 `PracticeBoard = 'practice' | 'chorus' | 'strum'`（练习榜/合唱榜/狂扫榜）。狂扫另有 `strumBpm`（20–300，`STRUM_BPM_MIN/MAX` 前端与云函数各一份）。三者取「多次练习最高值」，BPM 取「最高分那次的」，别改成最近一条。
 - 排序/同步路径：`commitCatalog`（本地持久化）→ `commitSongOrder`（权限校验+持久化+`syncCurrentArtistSettings` 云同步）。
 - 点歌/投票系统：云函数 `songRequestSync`，votes 集合按 songId 为文档：`count`（总榜）+ `locationCounts.{medicalWuming|medicalMain|nanhu}`（分地点）；`votes:pull` 按 request.location 读对应桶，无地点读 count；`votes:finishAll`（唱完）把待唱累加到站主 workspace 的 `sungVoteCounts`/`sungVoteCountsByLocation`。归类决策**后端权威**：优先 request.location（validation 已放行），否则按 `latestRoadshowLocation(owner)` 取站主最近路演地点，无路演则只进总榜。`incrementCloudVote` 返回 `{ count, location }` 供前端提示去向。
 - 练习徽章：`songPracticeStats` memo 聚合 `{count, score}`；显示开关持久化在 `localStorage` `jieyou_show_practice_badges`。
