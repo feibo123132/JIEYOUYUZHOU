@@ -7,7 +7,7 @@ const game = require('../cloudfunctions/songRequestSync/listeningGame');
 
 const owner = { alias: '2421415030@qq.com', password: 'test-secret' };
 const idFor = alias => crypto.createHash('sha256').update(alias).digest('hex');
-const songs = Array.from({ length: 15 }, (_, i) => ({ id: `song-${i}`, title: `歌曲${i}`, artist: '歌手' }));
+const songs = Array.from({ length: 24 }, (_, i) => ({ id: `song-${i}`, title: `歌曲${i}`, artist: '歌手' }));
 function setup() {
   let documents = {};
   let caller = 'guest-1';
@@ -52,18 +52,27 @@ async function createRound(s) {
 const control = (room, action) => ({ action: `listeningGame:${action}`, ...owner, roomId: room.id, roundId: room.roundId });
 const submit = (room, songId = 'song-0') => ({ action: 'listeningGame:submit', roomId: room.id, roundId: room.roundId, songId });
 
-test('每轮包含正确歌曲和题库内9首不重复干扰项，并打乱答案位置', () => {
+test('每轮包含正确歌曲和题库内15首不重复干扰项，并打乱答案位置', () => {
   const positions = new Set();
   for (let i = 0; i < 50; i++) {
     const options = game.selectGameOptions(songs, 'song-0');
-    assert.equal(options.length, 10);
-    assert.equal(new Set(options.map(s => s.id)).size, 10);
+    assert.equal(options.length, 16);
+    assert.equal(new Set(options.map(s => s.id)).size, 16);
     assert.ok(options.every(s => songs.some(candidate => candidate.id === s.id)));
     positions.add(options.findIndex(s => s.id === 'song-0'));
   }
   assert.ok(positions.size > 1);
-  assert.throws(() => game.selectGameOptions(songs.slice(0, 9), 'song-0'), /INSUFFICIENT_QUIZ_SONGS/);
+  assert.throws(() => game.selectGameOptions(songs.slice(0, 15), 'song-0'), /INSUFFICIENT_QUIZ_SONGS/);
   assert.throws(() => game.selectGameOptions(songs, 'outside'), /INVALID_QUIZ_SONG/);
+});
+
+test('只显示歌名时，同名歌曲不能成为另一项干扰答案', () => {
+  const duplicates = [...songs, { id: 'same-title-other-artist', title: '歌曲0', artist: '另一位歌手' }];
+  const options = game.selectGameOptions(duplicates, 'same-title-other-artist');
+  assert.equal(options.length, 16);
+  assert.equal(new Set(options.map(song => song.title)).size, 16);
+  assert.equal(options.filter(song => song.title === '歌曲0')[0].id, 'same-title-other-artist');
+  assert.throws(() => game.selectGameOptions([...songs.slice(0, 15), duplicates.at(-1)], 'song-0'), /INSUFFICIENT_QUIZ_SONGS/);
 });
 
 test('游客请求不接受伪造的用户身份、权限和正确答案，输入长度受限', () => {
@@ -91,7 +100,7 @@ test('开放前服务端拒绝提交；游客读取不泄露答案、统计或�
   const pulled = await s.handler({ action: 'listeningGame:pull', roomId: room.id });
   assert.equal(pulled.room.answerSongId, undefined);
   assert.equal(pulled.room.counts, undefined);
-  assert.equal(pulled.room.options.length, 10);
+  assert.equal(pulled.room.options.length, 16);
   assert.equal(JSON.stringify(pulled).includes(owner.alias), false);
   assert.equal(JSON.stringify(pulled).includes('password'), false);
 });
@@ -102,14 +111,21 @@ test('开放后一次提交，重试幂等且不能改答案；刷新可恢复�
   const first = await s.handler(submit(room));
   assert.equal(first.ok, true);
   assert.equal(first.room.submission.songId, 'song-0');
-  assert.equal(first.room.submission.correct, undefined);
+  assert.equal(first.room.submission.correct, true);
+  assert.equal(first.room.answerSongId, 'song-0');
+  assert.equal(first.room.counts, undefined);
   const retried = await s.handler(submit(room, 'song-1'));
   assert.equal(retried.room.submission.songId, 'song-0');
+  assert.equal(retried.room.submission.correct, true);
   const restored = await s.handler({ action: 'listeningGame:pull', roomId: room.id });
   assert.equal(restored.room.submission.songId, 'song-0');
+  assert.equal(restored.room.submission.correct, true);
+  assert.equal(restored.room.answerSongId, 'song-0');
   assert.equal(restored.room.submissionCount, 1);
   s.setCaller('guest-2');
-  assert.equal((await s.handler({ action: 'listeningGame:pull', roomId: room.id })).room.submission, null);
+  const other = await s.handler({ action: 'listeningGame:pull', roomId: room.id });
+  assert.equal(other.room.submission, null);
+  assert.equal(other.room.answerSongId, undefined);
 });
 
 test('无有效云端游客身份、题目之外的歌曲都不能提交', async () => {
@@ -120,7 +136,7 @@ test('无有效云端游客身份、题目之外的歌曲都不能提交', async
   assert.equal((await s.handler(submit(room))).error, 'AUTH_FAILED');
 });
 
-test('暂停提交和公布答案由管理员控制，公布后才返回答案和结果', async () => {
+test('暂停提交和结束本轮由管理员控制，未提交游客在结束后查看答案', async () => {
   const s = setup(); const room = await createRound(s);
   await s.handler(control(room, 'open'));
   await s.handler(submit(room));
@@ -148,7 +164,7 @@ test('同一二维码持续下一轮；旧提交和旧控制请求不能影响�
   assert.equal((await s.handler(control(room, 'open'))).error, 'STALE_GAME_ROUND');
 });
 
-test('候选歌曲仅来自共享听歌识曲库，少于10首无法开局', async () => {
+test('候选歌曲仅来自共享听歌识曲库，少于16首无法开局', async () => {
   const s = setup(); const room = await createRound(s);
   await s.handler(control(room, 'reveal'));
   delete s.documents[idFor(owner.alias)].quizLibraryAssignments['song-0'];
@@ -223,7 +239,7 @@ test('新设备无需房间编号或本地缓存即可加入管理员创建的�
   const current = await s.handler({ action: 'listeningGame:current' });
   assert.equal(current.ok, true);
   assert.equal(current.room.id, room.id);
-  assert.equal(current.room.options.length, 10);
+  assert.equal(current.room.options.length, 16);
   assert.equal(current.room.answerSongId, undefined);
   assert.equal(current.room.counts, undefined);
   assert.equal(current.room.submission, null);
@@ -237,7 +253,9 @@ test('管理员通过当前游戏恢复控制台，游客刷新当前网址恢�
   await s.handler(submit(room));
   const current = await s.handler({ action: 'listeningGame:current' });
   assert.equal(current.room.submission.songId, 'song-0');
-  assert.equal(current.room.answerSongId, undefined);
+  assert.equal(current.room.submission.correct, true);
+  assert.equal(current.room.answerSongId, 'song-0');
+  s.setCaller('ordinary-device');
   const ordinary = await s.handler({ action: 'listeningGame:current', alias: 'visitor', password: 'test-secret' });
   assert.equal(ordinary.room.answerSongId, undefined);
 });
@@ -275,4 +293,26 @@ test('发布当前游戏失败时房间写入一并回滚，不产生孤立新�
 test('当前游戏读取失败不会假装没有开场', async () => {
   const handler = createHandler({ getWorkspace: async () => { throw new Error('NETWORK_FAILED'); } });
   assert.deepEqual(await handler({ action: 'listeningGame:current' }), { ok: false, error: 'SYNC_FAILED' });
+});
+
+test('答错后立即返回错误结果和正确歌名，不依赖管理员结束本轮', async () => {
+  const s = setup(); const room = await createRound(s);
+  await s.handler(control(room, 'open'));
+  const wrong = room.options.find(song => song.id !== 'song-0');
+  const result = await s.handler({ ...submit(room, wrong.id), correct: true, answerSongId: wrong.id });
+  assert.equal(result.ok, true);
+  assert.equal(result.room.phase, 'open');
+  assert.equal(result.room.submission.correct, false);
+  assert.equal(result.room.answerSongId, 'song-0');
+  const restored = await s.handler({ action: 'listeningGame:current' });
+  assert.equal(restored.room.submission.correct, false);
+  assert.equal(restored.room.answerSongId, 'song-0');
+  const retry = await s.handler(submit(room));
+  assert.equal(retry.room.submission.songId, wrong.id);
+  assert.equal(retry.room.submission.correct, false);
+  assert.equal(retry.room.submissionCount, 1);
+  s.setCaller('not-submitted');
+  const other = await s.handler({ action: 'listeningGame:current' });
+  assert.equal(other.room.answerSongId, undefined);
+  assert.equal(other.room.submission, null);
 });

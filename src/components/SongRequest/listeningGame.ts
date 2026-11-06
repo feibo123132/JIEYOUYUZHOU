@@ -9,8 +9,11 @@ export interface ListeningGameRoom {
   answerSongId?: string | null;
   counts?: Record<string, number>;
   submissionCount: number;
-  submission: { songId: string; submittedAt: string } | null;
+  submission: { songId: string; submittedAt: string; correct: boolean } | null;
 }
+
+// 填入两张结果图片的地址后，弹窗会按 1:1 显示；未配置时使用内置图案。
+export const LISTENING_GAME_RESULT_IMAGES = { correct: '', incorrect: '' };
 
 export const shouldOpenListeningGame = (manager: boolean, search: string): boolean => !manager || new URLSearchParams(search).has('game');
 export const isGameRoomId = (value: string | null): value is string => Boolean(value && /^[a-f0-9]{32}$/.test(value));
@@ -22,7 +25,7 @@ export const gameErrorMessage = (error: unknown): string => {
     STALE_GAME_ROUND: '管理员已切换题目，请在新一轮中重新选择。',
     INVALID_GAME_PHASE: '游戏状态已变化，已为你刷新当前进度。',
     INVALID_QUIZ_SONG: '这首歌不在当前听歌识曲题库中，请刷新后重选。',
-    INSUFFICIENT_QUIZ_SONGS: '听歌识曲题库至少需要 10 首歌曲才能开始。',
+    INSUFFICIENT_QUIZ_SONGS: '听歌识曲题库至少需要 16 首歌曲才能开始。',
     SUBMISSIONS_CLOSED: '管理员尚未开放提交，或已经结束本轮。',
     AUTH_FAILED: '账号验证失败，请重新登录管理员账号。',
     NOT_REGISTERED: '账号验证失败，请重新登录管理员账号。',

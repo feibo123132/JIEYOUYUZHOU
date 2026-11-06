@@ -37,8 +37,15 @@ function selectGameOptions(songs, correctId) {
   const pool = [...new Map(songs.map(s => [s.id, { id: s.id, title: s.title, artist: s.artist }])).values()];
   const answer = pool.find(s => s.id === correctId);
   if (!answer) throw new Error('INVALID_QUIZ_SONG');
-  if (pool.length < 10) throw new Error('INSUFFICIENT_QUIZ_SONGS');
-  return shuffle([answer, ...shuffle(pool.filter(s => s.id !== correctId)).slice(0, 9)]);
+  const titles = new Set([answer.title.trim().toLocaleLowerCase()]);
+  const distractors = pool.filter(song => {
+    const title = song.title.trim().toLocaleLowerCase();
+    if (titles.has(title)) return false;
+    titles.add(title);
+    return true;
+  });
+  if (distractors.length < 15) throw new Error('INSUFFICIENT_QUIZ_SONGS');
+  return shuffle([answer, ...shuffle(distractors).slice(0, 15)]);
 }
 const readDocument = async ref => {
   try {
@@ -58,8 +65,9 @@ function publicGameRoom(room, submission, owner = false) {
   return {
     id: room.id, roundId: room.roundId, roundNumber: room.roundNumber, phase: room.phase,
     options: room.options, revision: room.revision, submissionCount: room.submissionCount,
-    ...(owner || revealed ? { answerSongId: room.answerSongId, counts: room.counts } : {}),
-    submission: submission ? { songId: submission.songId, submittedAt: submission.submittedAt } : null,
+    ...(owner || revealed || submission ? { answerSongId: room.answerSongId } : {}),
+    ...(owner || revealed ? { counts: room.counts } : {}),
+    submission: submission ? { songId: submission.songId, submittedAt: submission.submittedAt, correct: submission.songId === room.answerSongId } : null,
   };
 }
 async function readListeningGame(store, roomId, uid, owner) {
