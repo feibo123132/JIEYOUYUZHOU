@@ -84,14 +84,21 @@ function App() {
 
   useEffect(() => {
     const url = new URL(window.location.href);
+    if (url.searchParams.has('game')) {
+      enterSongRequestStation();
+      return;
+    }
     const view = url.searchParams.get('view') ?? '';
-    if (!['keepsake', 'enough'].includes(view)) return;
+    if (!['keepsake', 'enough'].includes(view)) {
+      enterSongRequestStation();
+      return;
+    }
 
     if (view === 'keepsake') enterKeepsakeStudio();
     else enterEnoughJournal();
     url.searchParams.delete('view');
     window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
-  }, [enterEnoughJournal, enterKeepsakeStudio]);
+  }, [enterEnoughJournal, enterKeepsakeStudio, enterSongRequestStation]);
 
   useEffect(() => {
     const audio = new Audio();

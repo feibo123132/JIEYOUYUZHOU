@@ -5,8 +5,11 @@ const { saveSongGroupsAtomically } = require('./songGroups');
 const { saveJournal } = require('./enoughJournal');
 const { ownerStars } = require('./ownerStars');
 const { invitationId, registerWithInvitation, revokeInvitation } = require('./invitations');
+const { selectGameOptions, readListeningGame, readCurrentListeningGame, mutateListeningGame } = require('./listeningGame');
 
 const PUBLIC_ERRORS = new Set([
+  'INVALID_GAME', 'GAME_NOT_FOUND', 'STALE_GAME_ROUND', 'INVALID_GAME_PHASE',
+  'INVALID_QUIZ_SONG', 'INSUFFICIENT_QUIZ_SONGS', 'SUBMISSIONS_CLOSED',
   'INVALID_STAR',
   'INVALID_JOURNAL',
   'INVALID_INVITATION',
@@ -479,6 +482,34 @@ function createHandler(store) {
   return async (event) => {
     try {
       const request = validateRequest(event);
+      if (request.action.startsWith('listeningGame:')) {
+        const uid = store.getGameCallerId?.() || '';
+        if (request.action === 'listeningGame:submit') {
+          if (!uid) throw new Error('AUTH_FAILED');
+          return { ok: true, room: await store.mutateListeningGame(request, uid) };
+        }
+        let owner = false;
+        if (request.alias) {
+          const account = await authenticate(store, request.alias, request.password);
+          owner = account.id === workspaceId(FEATURED_SONGS_OWNER_ALIAS);
+        }
+        if (request.action === 'listeningGame:pull') {
+          return { ok: true, room: await readListeningGame(store, request.roomId, uid, owner) };
+        }
+        if (request.action === 'listeningGame:current') {
+          return { ok: true, room: await readCurrentListeningGame(store, uid, owner) };
+        }
+        if (!owner) throw new Error('AUTH_FAILED');
+        if (request.action === 'listeningGame:start') {
+          const workspace = await store.getWorkspace(workspaceId(FEATURED_SONGS_OWNER_ALIAS));
+          const settings = await store.getArtistSettings();
+          const catalog = settings?.catalog?.songs ?? require('./quizCatalog.json');
+          const levels = new Set(['warmup', 'standard', 'hard', 'hell']);
+          const songs = catalog.filter(song => levels.has(workspace?.quizLibraryAssignments?.[song.id]));
+          request.options = selectGameOptions(songs, request.songId);
+        }
+        return { ok: true, room: await store.mutateListeningGame(request, uid) };
+      }
       if (request.action === 'votes:pull') {
         const owner = await store.getWorkspace(workspaceId(FEATURED_SONGS_OWNER_ALIAS));
         const locationKey = request.location ? ROADSHOW_LOCATION_KEYS[request.location] : null;
@@ -904,6 +935,8 @@ exports.main = async (event) => {
       }
     };
     defaultHandler = createHandler({
+      getGameCallerId: () => app.auth().getUserInfo().uid,
+      mutateListeningGame: (request, uid) => mutateListeningGame(db, request, uid, new Date().toISOString()),
       async getWorkspace(id) {
         try {
           const result = await workspaces.doc(id).get();

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent } from 'react';
 import {
   ArrowLeft, ArrowUpDown, CalendarDays, Check, ChevronLeft, ChevronRight, Disc3, Eye, Guitar,
-  GripVertical, Library, ListOrdered, LogIn, LogOut, Menu, Mic2, PenLine, Plus, RotateCcw, Search, SlidersHorizontal, Sparkles, Target, Trash2, Trophy, Upload, UserRound, X,
+  GripVertical, Library, ListOrdered, LogIn, LogOut, Menu, Mic2, PenLine, Play, Plus, RotateCcw, Search, SlidersHorizontal, Sparkles, Target, Trash2, Trophy, Upload, UserRound, X,
 } from 'lucide-react';
 import useAppStore from '../../store/appStore';
 import { SONGS, type Song } from './songCatalog';
@@ -27,6 +27,8 @@ import {
 import RoadshowPanel, { type RoadshowEditorTab } from './RoadshowPanel';
 import SongDetailPanel from './SongDetailPanel';
 import SongRequestEntryDialog from './SongRequestEntryDialog';
+import ListeningGamePage from './ListeningGamePage';
+import { shouldOpenListeningGame } from './listeningGame';
 import ArtistTagsDialog from './ArtistTagsDialog';
 import TagDirectory from './TagDirectory';
 import InquiryPage from './InquiryPage';
@@ -217,6 +219,7 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
   const [catalogReady, setCatalogReady] = useState(false);
   const nickname = useAppStore((state) => state.user?.nickname || '');
   const [activeSection, setActiveSection] = useState<SectionId | null>(null);
+  const [gameOpen, setGameOpen] = useState(() => shouldOpenListeningGame(isFeaturedSongManager(accountAlias), window.location.search));
   const [rankingView, setRankingView] = useState<RankingView>('requests');
   const [requestVoteView, setRequestVoteView] = useState<RequestVoteView>('pending');
   const [sungStatsSource, setSungStatsSource] = useState<SungStatsSource>('requests');
@@ -2022,6 +2025,28 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
   const popularImmersive = activeSection === 'playlists' && !selectedSong;
   const showBackButton = canReturnToUniverse || activeSection !== null || Boolean(selectedSong || tagDirectoryOpen || inquiriesOpen);
 
+  if (gameOpen) return <>
+    {loginDialogOpen && <SongRequestEntryDialog
+      onClose={() => setLoginDialogOpen(false)}
+      onGuest={() => setLoginDialogOpen(false)}
+      onAuthenticated={() => setLoginDialogOpen(false)}
+    />}
+    <ListeningGamePage
+    session={songRecordSession}
+    manager={canManageFeaturedSongs}
+    songs={catalogSongs}
+    assignments={quizAssignments}
+    initialRoomId={new URL(window.location.href).searchParams.get('game')}
+    onLogin={() => setLoginDialogOpen(true)}
+    onBack={() => {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('game');
+      window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+      setActiveSection(canManageFeaturedSongs ? 'quiz' : null);
+      setGameOpen(false);
+    }}
+  /></>;
+
   return (
     <main className={`relative z-20 min-h-screen text-white ${popularImmersive ? 'h-screen overflow-hidden bg-transparent' : 'overflow-y-auto bg-[radial-gradient(circle_at_15%_0%,rgba(249,115,22,.14),transparent_30%),radial-gradient(circle_at_88%_18%,rgba(124,58,237,.12),transparent_28%)] px-4 py-5 sm:px-7 lg:px-10 lg:py-8'}`}>
       <div className="pointer-events-none fixed inset-0 opacity-[.16] [background-image:linear-gradient(rgba(255,255,255,.035)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.035)_1px,transparent_1px)] [background-size:42px_42px]" />
@@ -2221,11 +2246,16 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
                 </div>
               )}
               {activeSection === 'quiz' && (
+                <div className="flex shrink-0 flex-wrap items-center gap-2">
                 <button type="button" onClick={() => { void addQuizBatchToLatestRoadshow(); }} disabled={Boolean(roadshowBusyId)}
                   title="简单6 · 常规10 · 较难10 · 很难4" aria-label="一键选歌：简单6首、常规10首、较难10首、很难4首"
                   className="inline-flex shrink-0 items-center gap-2 rounded-full border border-sky-200/25 bg-sky-300/10 px-4 py-2.5 text-xs font-black text-sky-100 shadow-[0_10px_30px_rgba(56,189,248,.08)] transition hover:border-sky-100/45 hover:bg-sky-300/20 disabled:cursor-wait disabled:opacity-45">
                   <Sparkles className="h-4 w-4" />{roadshowBusyId === 'quiz-batch' ? '选取中' : '一键选歌'}
                 </button>
+                <button type="button" onClick={() => setGameOpen(true)} className="inline-flex shrink-0 items-center gap-2 rounded-full border border-orange-200/30 bg-orange-200/10 px-4 py-2.5 text-xs font-black text-orange-100 transition hover:border-orange-100/50 hover:bg-orange-200/20">
+                  <Play className="h-4 w-4" />开始游戏
+                </button>
+                </div>
               )}
             </div>
             )}

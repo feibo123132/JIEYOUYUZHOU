@@ -387,6 +387,17 @@ const validateRecording = (value) => {
 };
 
 function validateRequest(event) {
+  if (typeof event?.action === 'string' && event.action.startsWith('listeningGame:')) {
+    if (Buffer.byteLength(JSON.stringify(event), 'utf8') > DEFAULT_REQUEST_LIMIT) throw new Error('PAYLOAD_TOO_LARGE');
+    const publicAction = event.action === 'listeningGame:submit' || (['listeningGame:current', 'listeningGame:pull'].includes(event.action) && event.alias === undefined && event.password === undefined);
+    let credentials = {};
+    if (!publicAction) {
+      const alias = cleanText(event.alias, 30, 'INVALID_ALIAS');
+      if (typeof event.password !== 'string' || event.password.length < 6 || event.password.length > 64) throw new Error('INVALID_PASSWORD');
+      credentials = { alias, password: event.password };
+    }
+    return require('./listeningGame').validateGameRequest(event, credentials);
+  }
   if (!event || typeof event !== 'object' || !ACTIONS.has(event.action)) throw new Error('INVALID_ACTION');
   const requestLimit = event.action === 'enough:save' ? 650000 : event.action === 'feelingsNotebook:save' ? 4 * 1024 * 1024 : (event.action === 'artistSettings:push' || event.action === 'artistSettings:privatePull')
     ? ARTIST_SETTINGS_REQUEST_LIMIT

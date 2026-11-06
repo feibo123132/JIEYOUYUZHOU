@@ -13,6 +13,7 @@ import {
 } from './songScores';
 import type { ArtistSettingsPayload, ArtistSettingsSnapshot } from './artistSettings';
 import type { QuizAssignments } from './songQuizLibrary';
+import type { ListeningGameRoom } from './listeningGame';
 import type { SongGroupsSnapshot } from './songGroups';
 import type { JournalEntry, JournalSnapshot } from '../Enough/journalModel';
 
@@ -57,6 +58,18 @@ const callSync = async <T>(data: Record<string, unknown>): Promise<CloudResult<T
     throw error instanceof Error ? error : new Error('SYNC_FAILED');
   }
 };
+
+export const callListeningGame = async (
+  action: 'create' | 'pull' | 'start' | 'open' | 'lock' | 'reveal' | 'end' | 'submit',
+  payload: { roomId?: string; roundId?: string | null; songId?: string } = {},
+  credentials?: Credentials | null,
+): Promise<ListeningGameRoom> => (
+  await callSync<{ room: ListeningGameRoom }>({ ...payload, ...(credentials ?? {}), action: `listeningGame:${action}` })
+).room;
+
+export const pullCurrentListeningGame = async (credentials?: Credentials | null): Promise<ListeningGameRoom | null> => (
+  await callSync<{ room: ListeningGameRoom | null }>({ ...(credentials ?? {}), action: 'listeningGame:current' })
+).room;
 
 export const pullCloudVoteState = async (location?: RoadshowLocation): Promise<CloudVoteState> => {
   const result = await callSync<{ counts: VoteCounts; sungCounts?: VoteCounts; requesterNames?: VoteRequesters }>({ action: 'votes:pull', ...(location ? { location } : {}) });
