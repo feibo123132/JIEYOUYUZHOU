@@ -138,6 +138,9 @@ try {
   assert.equal(await host.evaluate(`document.querySelectorAll('input[aria-label="游客游戏链接"]').length`), 0);
   const guest = await page(base);
   await guest.wait(`document.body.innerText.includes('你已到场')`);
+  const guestPet = 'button[aria-label="和鲸鱼娘互动"]';
+  await guest.wait(`document.querySelector('${guestPet} img')?.naturalWidth > 0`);
+  assert.equal(await guest.evaluate(`!!document.querySelector('${guestPet} [role="status"]')`), true);
   await host.evaluate(`[...document.querySelectorAll('button')].find(b=>b.textContent.includes(${JSON.stringify(songs[0].title)})&&b.textContent.includes('简单')).click()`);
   await guest.wait(`document.querySelectorAll('[role="radio"]').length===16`);
   assert.equal(await guest.evaluate('window.lastCloud.room.answerSongId'), undefined);
@@ -146,9 +149,19 @@ try {
   assert.equal(await guest.evaluate(`[...document.querySelectorAll('button')].find(b=>b.textContent.includes('等待管理员开放提交')).disabled`), true);
   await guest.capture('listening-game-mobile.png', 390, 844);
   assert.equal(await guest.evaluate('document.documentElement.scrollWidth<=innerWidth'), true, 'mobile layout must not overflow');
+  const petPoint = await guest.evaluate(`(() => {
+    const pet = document.querySelector('${guestPet}').getBoundingClientRect();
+    const options = document.querySelector('[role="radiogroup"]').getBoundingClientRect();
+    return pet.bottom <= options.top ? { x: pet.left + 22, y: pet.top + 22 } : null;
+  })()`);
+  assert.ok(petPoint, 'the mascot stays above the song choices on mobile');
+  await call('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [petPoint] }, guest.sessionId);
+  await call('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }, guest.sessionId);
+  await guest.wait(`document.querySelector('${guestPet} [role="status"]').textContent === '听到熟悉的旋律了吗？'`);
   await host.capture('listening-game-host.png', 1280, 900);
   await host.click('开放提交');
   await guest.wait(`[...document.querySelectorAll('button')].some(b=>b.textContent.trim()==='提交答案'&&!b.disabled)`);
+  assert.equal(await guest.evaluate(`document.querySelector('${guestPet} [role="status"]').textContent`), '选好那首歌，就可以提交啦！');
   await guest.click('提交答案');
   await guest.wait(`!!document.querySelector('dialog[open]')`);
   assert.equal(await guest.evaluate('window.lastCloud.room.submission.correct'), true);

@@ -4,6 +4,7 @@ import { callListeningGame, pullCurrentListeningGame, type Credentials } from '.
 import { gameErrorMessage, isGameRoomId, LISTENING_GAME_RESULT_IMAGES, type ListeningGameRoom } from './listeningGame';
 import { QUIZ_LEVELS, type QuizAssignments } from './songQuizLibrary';
 import type { Song } from './songCatalog';
+import ListeningGameGuestPet from './ListeningGameGuestPet';
 
 const ListeningGamePet = lazy(() => import('./ListeningGamePet'));
 
@@ -146,6 +147,8 @@ export default function ListeningGamePage({ session, manager, songs, assignments
           {!manager && onLogin && <button type="button" onClick={onLogin} className="min-h-10 text-xs text-white/55 transition hover:text-white">管理员登录</button>}
         </div>
       </header>
+
+      {!manager && <ListeningGameGuestPet room={room} />}
 
       {error && <div role="alert" className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-red-200/20 bg-red-950/25 px-5 py-4 text-sm text-red-100"><span>{error}</span><button type="button" onClick={() => setRetry(value => value + 1)} className="inline-flex min-h-9 items-center gap-2 text-xs font-bold"><RotateCcw className="h-3.5 w-3.5" />重新连接</button></div>}
 
