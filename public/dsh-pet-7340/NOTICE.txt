@@ -1,0 +1,4 @@
+Original dsh-pet v0.3.8 assets by PC2005-cloud.
+https://github.com/PC2005-cloud/dsh-pet
+The upstream project permits open-source use of these assets and prohibits
+commercial use. See https://github.com/PC2005-cloud/dsh-pet/blob/main/dsh-pet/README.md

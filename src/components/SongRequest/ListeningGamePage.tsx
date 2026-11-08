@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Check, Disc3, Headphones, LockKeyhole, Pause, Play, Radio, RotateCcw, Search, Send, Users, X } from 'lucide-react';
 import { callListeningGame, pullCurrentListeningGame, type Credentials } from './songRequestCloud';
 import { gameErrorMessage, isGameRoomId, LISTENING_GAME_RESULT_IMAGES, type ListeningGameRoom } from './listeningGame';
 import { QUIZ_LEVELS, type QuizAssignments } from './songQuizLibrary';
 import type { Song } from './songCatalog';
+
+const ListeningGamePet = lazy(() => import('./ListeningGamePet'));
 
 const actionStyle = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-full border px-5 py-2.5 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-35';
 const primaryStyle = `${actionStyle} border-orange-200/40 bg-orange-200 text-[#25180e] hover:bg-orange-100`;
@@ -138,7 +140,11 @@ export default function ListeningGamePage({ session, manager, songs, assignments
     <div className="mx-auto max-w-6xl">
       <header className="mb-3 flex items-center justify-between gap-3 sm:mb-5">
         <button type="button" onClick={onBack} className={secondaryStyle}><ArrowLeft className="h-4 w-4" />{manager ? '听歌识曲' : '点歌台'}</button>
-        <div className="flex items-center gap-4"><span className="flex items-center gap-2 text-xs text-white/45"><span className={`h-1.5 w-1.5 rounded-full ${connected ? 'bg-emerald-300' : 'bg-white/30'}`} />{manager ? '管理员控制台' : '现场猜歌'}</span>{!manager && onLogin && <button type="button" onClick={onLogin} className="min-h-10 text-xs text-white/55 transition hover:text-white">管理员登录</button>}</div>
+        <div className="flex items-center gap-4">
+          <span className="flex items-center gap-2 text-xs text-white/45"><span className={`h-1.5 w-1.5 rounded-full ${connected ? 'bg-emerald-300' : 'bg-white/30'}`} />{manager ? '管理员控制台' : '现场猜歌'}</span>
+          {manager && <Suspense fallback={null}><ListeningGamePet room={room} /></Suspense>}
+          {!manager && onLogin && <button type="button" onClick={onLogin} className="min-h-10 text-xs text-white/55 transition hover:text-white">管理员登录</button>}
+        </div>
       </header>
 
       {error && <div role="alert" className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-red-200/20 bg-red-950/25 px-5 py-4 text-sm text-red-100"><span>{error}</span><button type="button" onClick={() => setRetry(value => value + 1)} className="inline-flex min-h-9 items-center gap-2 text-xs font-bold"><RotateCcw className="h-3.5 w-3.5" />重新连接</button></div>}

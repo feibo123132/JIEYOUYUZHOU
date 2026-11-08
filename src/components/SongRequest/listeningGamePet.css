@@ -1,0 +1,107 @@
+.listening-game-pet-settings {
+  --dsw-alias-bg-layer-1: #fff;
+  --dsw-alias-border-l1: #ebecef;
+  --dsw-alias-border-l2: #d9dbe0;
+  --dsw-alias-button-info-fill: #3569e6;
+  --dsw-alias-button-info-hover: #2458ce;
+  --dsw-alias-interactive-bg-active: #eef2ff;
+  --dsw-alias-interactive-bg-hover: #f0f2f6;
+  --dsw-alias-label-caption: #6b7280;
+  --dsw-alias-label-dimmed: #9ca3af;
+  --dsw-alias-label-primary: #202124;
+  --dsw-alias-label-secondary: #505661;
+  --dsw-alias-label-tertiary: #6b7280;
+  --dsw-alias-state-business-primary: #3569e6;
+  --dsw-alias-state-error-primary: #ad352d;
+  --dsw-alias-state-error-secondary: #e9bdb9;
+  --dsw-alias-state-success-primary: #247847;
+  --dsw-alias-tooltip-bg: #2c2f37;
+  --dsw-elevation-prominent: 0 8px 28px #161e3324;
+  --dsw-focus-ring-color: #3569e6;
+  --dsw-radius-md: 8px;
+  --dsw-radius-sm: 6px;
+  margin: auto;
+  width: min(820px, calc(100% - 24px));
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 0;
+  border-radius: 18px;
+  padding: 18px 20px;
+  background: #fcfcfd;
+  color: var(--dsw-alias-label-primary);
+  box-shadow: 0 20px 80px #0006;
+  color-scheme: light;
+}
+
+.listening-game-pet-settings::backdrop {
+  background: #0008;
+}
+
+.listening-game-pet-settings__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.listening-game-pet-settings__header h2 {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.listening-game-pet-settings__header p,
+.listening-game-pet-settings__credit,
+.listening-game-pet-settings__sound p {
+  margin-top: 6px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.listening-game-pet-settings__header > button {
+  display: grid;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 9px;
+  background: #eceef2;
+}
+
+.listening-game-pet-settings__sound {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 12px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: var(--dsw-radius-md);
+  font-size: 13px;
+}
+
+.listening-game-pet-settings__sound label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.listening-game-pet-settings__sound select,
+.listening-game-pet-settings__sound input::file-selector-button {
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-sm);
+  padding: 4px 8px;
+  background: #fff;
+}
+
+.listening-game-pet-settings__sound input {
+  max-width: 100%;
+}
+
+.listening-game-pet-settings__sound p {
+  margin: 0;
+}
+
+.listening-game-pet-settings__credit {
+  margin-top: 14px;
+}

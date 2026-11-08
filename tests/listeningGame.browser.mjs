@@ -2,8 +2,8 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync, statSync, createReadStream } from 'node:fs';
+import { extname, resolve, sep } from 'node:path';
 import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 
@@ -42,11 +42,27 @@ const bundle = await build({
         let uid=sessionStorage.getItem('fixture-uid');if(!uid){uid=crypto.randomUUID();sessionStorage.setItem('fixture-uid',uid)}
         const result=await fetch('/sync',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({data,uid})}).then(r=>r.json());
         window.lastCloud=result;return {result};}};`, loader: 'js' }));
-  } }], bundle: true, write: false, format: 'esm', jsx: 'automatic',
+  } }], bundle: true, write: false, format: 'esm', jsx: 'automatic', loader: { '.css': 'empty' },
 });
 const assets = resolve('dist/assets');
-const css = readFileSync(resolve(assets, readdirSync(assets).find(file => file.endsWith('.css'))));
+const css = readdirSync(assets).filter(file => file.endsWith('.css'))
+  .map(file => readFileSync(resolve(assets, file), 'utf8')).join('\n');
+const petAssets = resolve('public/dsh-pet-7340');
+const petTypes = { '.webm': 'video/webm', '.png': 'image/png', '.ttf': 'font/ttf' };
 const server = createServer((request, response) => {
+  if (request.url?.startsWith('/dsh-pet-7340/')) {
+    try {
+      const path = decodeURIComponent(new URL(request.url, 'http://localhost').pathname);
+      const file = resolve(petAssets, path.slice('/dsh-pet-7340/'.length));
+      if (file.startsWith(petAssets + sep) && statSync(file, { throwIfNoEntry: false })?.isFile()) {
+        response.setHeader('Content-Type', petTypes[extname(file)] ?? 'application/octet-stream');
+        createReadStream(file).pipe(response);
+        return;
+      }
+    } catch {}
+    response.writeHead(404).end();
+    return;
+  }
   if (request.url === '/sync') {
     let body = ''; request.on('data', chunk => { body += chunk; }); request.on('end', async () => {
       try { const { data, uid } = JSON.parse(body); response.setHeader('Content-Type', 'application/json'); response.end(JSON.stringify(await handlerFor(uid)(data))); }
