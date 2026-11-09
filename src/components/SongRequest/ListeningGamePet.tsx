@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { jsx } from 'react/jsx-runtime';
 import { createPortal } from 'react-dom';
-import { PawPrint, X } from 'lucide-react';
+import { PawPrint, Timer, X } from 'lucide-react';
 import { initNotify, makePetConfigSection, makePetUI, zh } from '../../../vendor/dsh-pet/client';
 import { updatePetGame } from '../../../vendor/dsh-pet/browserHost';
 import type { ListeningGameRoom } from './listeningGame';
@@ -22,6 +22,7 @@ const guestReplies = {
   waiting: '嗨，待会儿一起猜歌吧！',
   listening: '听到熟悉的旋律了吗？',
   open: '选好那首歌，就可以提交啦！',
+  timedOut: '答题时间到啦，等管理员公布答案。',
   revealed: '下一首再一起猜！',
   ended: '下次路演见！',
 };
@@ -33,14 +34,14 @@ function prefersPetImage() {
     || (/AppleWebKit.*Safari/i.test(userAgent) && !/Chrome|Chromium|Edg|OPR/i.test(userAgent));
 }
 
-export default function ListeningGamePet({ room, manager }: { room: ListeningGameRoom | null; manager: boolean }) {
+export default function ListeningGamePet({ room, manager, seconds }: { room: ListeningGameRoom | null; manager: boolean; seconds: number | null }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [soundSettings, setSoundSettings] = useState(readPetSoundSettings);
   const [soundStatus, setSoundStatus] = useState('');
   const [importingSound, setImportingSound] = useState(false);
   const [petSound] = useState(createPetSound);
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const phase = room?.phase ?? 'waiting';
+  const phase = seconds === 0 ? 'timedOut' : room?.phase ?? 'waiting';
   const roundId = room?.roundId ?? null;
   const submissions = room?.submissionCount ?? 0;
   const soundPair = getPetSoundPair(soundSettings);
@@ -104,7 +105,12 @@ export default function ListeningGamePet({ room, manager }: { room: ListeningGam
       <PawPrint className="h-4 w-4" aria-hidden="true" /> 桌宠
     </button>}
     {createPortal(<>
-      <PetOverlay guest={!manager} guestReply={guestReply} imageMode={prefersPetImage()} sound={{
+      <PetOverlay guest={!manager} guestReply={guestReply} imageMode={prefersPetImage()} headContent={seconds === null ? null : (
+        <div className={`listening-game-pet-countdown${seconds <= 5 ? ' is-urgent' : ''}`} role="timer" aria-label={seconds === 0 ? '答题时间到' : '答题倒计时'}>
+          <Timer className="h-4 w-4" aria-hidden="true" />
+          <span>00:{String(seconds).padStart(2, '0')}</span>
+        </div>
+      )} sound={{
         press: (pointerId: number) => petSound.press(pointerId, manager ? soundPair : guestSoundPair),
         release: petSound.release,
       }} />

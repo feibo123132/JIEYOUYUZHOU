@@ -11,6 +11,7 @@ const songs = Array.from({ length: 24 }, (_, i) => ({ id: `song-${i}`, title: `�
 function setup() {
   let documents = {};
   let caller = 'guest-1';
+  let now = '2026-11-06T12:00:00.000Z';
   let failWrites = false;
   let queue = Promise.resolve();
   const db = { runTransaction(run) {
@@ -36,10 +37,10 @@ function setup() {
     getWorkspace: async id => documents[id] ?? null,
     getArtistSettings: async () => ({ catalog: { songs } }),
     getGameCallerId: () => caller,
-    mutateListeningGame: (request, uid) => game.mutateListeningGame(db, request, uid, '2026-11-06T12:00:00.000Z'),
-    now: () => '2026-11-06T12:00:00.000Z',
+    mutateListeningGame: (request, uid) => game.mutateListeningGame(db, request, uid, now),
+    now: () => now,
   });
-  return { handler, db, setCaller: id => { caller = id; }, setFailWrites: value => { failWrites = value; }, get documents() { return documents; } };
+  return { handler, db, setCaller: id => { caller = id; }, setNow: value => { now = value; }, setFailWrites: value => { failWrites = value; }, get documents() { return documents; } };
 }
 async function createRound(s) {
   const created = await s.handler({ action: 'listeningGame:create', ...owner });
@@ -92,7 +93,7 @@ test('仅指定管理员及正确口令能够创建和控制游戏', async () =>
   assert.equal((await s.handler({ ...control(room, 'open'), alias: 'visitor' })).error, 'AUTH_FAILED');
 });
 
-test('开放前服务端拒绝提交；游客读取不泄露答案、统计或管理员信息', async () => {
+test('开放前服务端拒绝提交；游客读取不泄露选项、答案、统计或管理员信息', async () => {
   const s = setup(); const room = await createRound(s);
   assert.equal(room.phase, 'listening');
   assert.equal(room.answerSongId, 'song-0');
@@ -100,9 +101,33 @@ test('开放前服务端拒绝提交；游客读取不泄露答案、统计或�
   const pulled = await s.handler({ action: 'listeningGame:pull', roomId: room.id });
   assert.equal(pulled.room.answerSongId, undefined);
   assert.equal(pulled.room.counts, undefined);
-  assert.equal(pulled.room.options.length, 16);
+  assert.equal(pulled.room.options.length, 0);
   assert.equal(JSON.stringify(pulled).includes(owner.alias), false);
   assert.equal(JSON.stringify(pulled).includes('password'), false);
+});
+
+test('所有游客共用 30 秒截止时间，归零后拒绝新提交，下一轮重新隐藏选项', async () => {
+  const s = setup(); const room = await createRound(s);
+  const opened = (await s.handler(control(room, 'open'))).room;
+  assert.equal(opened.submissionDeadlineMs - opened.serverNowMs, 30_000);
+  s.setNow('2026-11-06T12:00:29.999Z');
+  const guest = (await s.handler({ action: 'listeningGame:current' })).room;
+  assert.equal(guest.options.length, 16);
+  assert.equal(guest.answerSongId, undefined);
+  assert.equal(guest.submissionDeadlineMs, opened.submissionDeadlineMs);
+  assert.equal(guest.submissionDeadlineMs - guest.serverNowMs, 1);
+  assert.equal((await s.handler(submit(room))).room.submission.correct, true);
+
+  s.setNow('2026-11-06T12:00:30.000Z');
+  assert.equal((await s.handler(submit(room, 'song-1'))).room.submission.songId, 'song-0');
+  s.setCaller('late-guest');
+  assert.equal((await s.handler(submit(room))).error, 'SUBMISSIONS_CLOSED');
+  assert.equal((await s.handler({ action: 'listeningGame:current' })).room.options.length, 16);
+  assert.equal((await s.handler(control(room, 'reveal'))).room.phase, 'revealed');
+  await s.handler({ ...control(room, 'start'), songId: 'song-1' });
+  const next = (await s.handler({ action: 'listeningGame:current' })).room;
+  assert.equal(next.options.length, 0);
+  assert.equal(next.submissionDeadlineMs, null);
 });
 
 test('开放后一次提交，重试幂等且不能改答案；刷新可恢复本人提交', async () => {
@@ -143,6 +168,7 @@ test('暂停提交和结束本轮由管理员控制，未提交游客在结束�
   await s.handler(control(room, 'lock'));
   s.setCaller('guest-2');
   assert.equal((await s.handler(submit(room))).error, 'SUBMISSIONS_CLOSED');
+  assert.equal((await s.handler({ action: 'listeningGame:current' })).room.options.length, 16);
   await s.handler(control(room, 'reveal'));
   const result = await s.handler({ action: 'listeningGame:pull', roomId: room.id });
   assert.equal(result.room.phase, 'revealed');
@@ -176,7 +202,7 @@ test('候选歌曲仅来自共享听歌识曲库，少于16首无法开局', asy
 test('多游客并发提交不丢统计，结束后拒绝新提交', async () => {
   const s = setup(); const room = await createRound(s);
   await s.handler(control(room, 'open'));
-  await Promise.all(Array.from({ length: 12 }, (_, i) => game.mutateListeningGame(s.db, submit(room), `guest-${i}`, '2026-11-06T12:01:00.000Z')));
+  await Promise.all(Array.from({ length: 12 }, (_, i) => game.mutateListeningGame(s.db, submit(room), `guest-${i}`, '2026-11-06T12:00:15.000Z')));
   const state = await s.handler({ action: 'listeningGame:pull', ...owner, roomId: room.id });
   assert.equal(state.room.submissionCount, 12);
   assert.equal(state.room.counts['song-0'], 12);
@@ -239,7 +265,7 @@ test('新设备无需房间编号或本地缓存即可加入管理员创建的�
   const current = await s.handler({ action: 'listeningGame:current' });
   assert.equal(current.ok, true);
   assert.equal(current.room.id, room.id);
-  assert.equal(current.room.options.length, 16);
+  assert.equal(current.room.options.length, 0);
   assert.equal(current.room.answerSongId, undefined);
   assert.equal(current.room.counts, undefined);
   assert.equal(current.room.submission, null);

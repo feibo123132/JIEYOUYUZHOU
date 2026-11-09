@@ -33,6 +33,7 @@ const cues = {
   waiting: { state: 'waiting', task: '等大家到齐就开场。' },
   listening: { state: 'thinking', task: '演奏开始啦，我也在认真听。' },
   open: { state: 'working', task: '可以提交答案啦！' },
+  timedOut: { state: 'result', task: '答题时间到！' },
   revealed: { state: 'success', task: '本轮结束，下一首见！' },
   ended: { state: 'success', task: '今天的猜歌到这里啦。' },
 };

@@ -1,0 +1,7 @@
+Countdown audio from Kenney's Interface Sounds (CC0 1.0):
+https://kenney.nl/assets/interface-sounds
+https://creativecommons.org/publicdomain/zero/1.0/
+
+tick.wav: tick_001.ogg, converted to WAV.
+time-up.wav: confirmation_003.ogg, converted to WAV.
+Source mirror: https://github.com/GeorgeQLe/assets-sfx-ui

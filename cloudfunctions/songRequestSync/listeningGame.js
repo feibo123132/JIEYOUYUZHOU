@@ -2,6 +2,7 @@ const crypto = require('node:crypto');
 
 const GAME_ACTIONS = new Set(['create', 'current', 'pull', 'start', 'open', 'lock', 'reveal', 'end', 'submit']);
 const ACTIVE_GAME_DOCUMENT_ID = 'listening-game-active';
+const ANSWER_WINDOW_MS = 30_000;
 const roomDocumentId = id => `listening-game-${id}`;
 const answerDocumentId = (roomId, roundId, uid) => `listening-answer-${crypto.createHash('sha256').update(JSON.stringify([roomId, roundId, uid])).digest('hex')}`;
 const gameId = value => {
@@ -59,12 +60,15 @@ const readDocument = async ref => {
     throw error;
   }
 };
-function publicGameRoom(room, submission, owner = false) {
+function publicGameRoom(room, submission, owner, serverNowMs) {
   if (!room) throw new Error('GAME_NOT_FOUND');
   const revealed = ['revealed', 'ended'].includes(room.phase);
+  const optionsVisible = owner || submission || room.phase === 'open' || room.submissionDeadlineMs != null
+    || (revealed && room.submissionDeadlineMs === undefined);
   return {
     id: room.id, roundId: room.roundId, roundNumber: room.roundNumber, phase: room.phase,
-    options: room.options, revision: room.revision, submissionCount: room.submissionCount,
+    options: optionsVisible ? room.options : [], revision: room.revision, submissionCount: room.submissionCount,
+    submissionDeadlineMs: room.submissionDeadlineMs ?? null, serverNowMs,
     ...(owner || revealed || submission ? { answerSongId: room.answerSongId } : {}),
     ...(owner || revealed ? { counts: room.counts } : {}),
     submission: submission ? { songId: submission.songId, submittedAt: submission.submittedAt, correct: submission.songId === room.answerSongId } : null,
@@ -74,7 +78,7 @@ async function readListeningGame(store, roomId, uid, owner) {
   const room = await store.getWorkspace(roomDocumentId(roomId));
   if (!room) throw new Error('GAME_NOT_FOUND');
   const submission = uid && room.roundId ? await store.getWorkspace(answerDocumentId(roomId, room.roundId, uid)) : null;
-  return publicGameRoom(room, submission, owner);
+  return publicGameRoom(room, submission, owner, store.now ? Date.parse(store.now()) : Date.now());
 }
 
 async function readCurrentListeningGame(store, uid, owner) {
@@ -85,6 +89,7 @@ async function readCurrentListeningGame(store, uid, owner) {
 
 function mutateListeningGame(db, request, uid, now) {
   const action = request.action.slice('listeningGame:'.length);
+  const nowMs = Date.parse(now);
   const roomId = action === 'create' ? crypto.randomBytes(16).toString('hex') : request.roomId;
   // 题目与提交记录在同一个事务中读写，使暂停、换题与并发提交互斥。
   return db.runTransaction(async transaction => {
@@ -96,11 +101,11 @@ function mutateListeningGame(db, request, uid, now) {
       const activeRef = collection.doc(ACTIVE_GAME_DOCUMENT_ID);
       await readDocument(activeRef);
       const room = { id: roomId, roundId: null, roundNumber: 0, phase: 'waiting', options: [], counts: {},
-        answerSongId: null, submissionCount: 0, revision: 1, createdAt: now, updatedAt: now };
+        answerSongId: null, submissionCount: 0, submissionDeadlineMs: null, revision: 1, createdAt: now, updatedAt: now };
       await ref.set(room);
       // 与房间一起提交，固定网址不会指向尚未创建成功的场次。
       await activeRef.set({ roomId, updatedAt: now });
-      return publicGameRoom(room, null, true);
+      return publicGameRoom(room, null, true, nowMs);
     }
     if (!current) throw new Error('GAME_NOT_FOUND');
     if (current.roundId !== request.roundId) throw new Error('STALE_GAME_ROUND');
@@ -109,28 +114,31 @@ function mutateListeningGame(db, request, uid, now) {
       const answerRef = collection.doc(answerDocumentId(roomId, current.roundId, uid));
       const previous = await readDocument(answerRef);
       // 网络重试保持第一次答案，每个云端匿名身份每轮只能提交一次。
-      if (previous) return publicGameRoom(current, previous);
-      if (current.phase !== 'open') throw new Error('SUBMISSIONS_CLOSED');
+      if (previous) return publicGameRoom(current, previous, false, nowMs);
+      if (current.phase !== 'open' || (current.submissionDeadlineMs != null && nowMs >= current.submissionDeadlineMs)) {
+        throw new Error('SUBMISSIONS_CLOSED');
+      }
       if (!current.options.some(s => s.id === request.songId)) throw new Error('INVALID_QUIZ_SONG');
       const submission = { songId: request.songId, submittedAt: now };
       const next = { ...current, counts: { ...current.counts, [request.songId]: (current.counts[request.songId] ?? 0) + 1 },
         submissionCount: current.submissionCount + 1, revision: current.revision + 1, updatedAt: now };
       await answerRef.set(submission);
       await ref.set(next);
-      return publicGameRoom(next, submission);
+      return publicGameRoom(next, submission, false, nowMs);
     }
     let next = { ...current, revision: current.revision + 1, updatedAt: now };
     if (action === 'start') {
       if (!['waiting', 'revealed'].includes(current.phase)) throw new Error('INVALID_GAME_PHASE');
       next = { ...next, roundId: crypto.randomBytes(16).toString('hex'), roundNumber: current.roundNumber + 1,
-        phase: 'listening', answerSongId: request.songId, options: request.options, counts: {}, submissionCount: 0 };
+        phase: 'listening', answerSongId: request.songId, options: request.options, counts: {}, submissionCount: 0, submissionDeadlineMs: null };
     } else {
       const transitions = { open: ['listening'], lock: ['open'], reveal: ['listening', 'open'], end: ['listening', 'open', 'revealed'] };
       if (!transitions[action]?.includes(current.phase)) throw new Error('INVALID_GAME_PHASE');
       next.phase = { open: 'open', lock: 'listening', reveal: 'revealed', end: 'ended' }[action];
+      if (action === 'open') next.submissionDeadlineMs = nowMs + ANSWER_WINDOW_MS;
     }
     await ref.set(next);
-    return publicGameRoom(next, null, true);
+    return publicGameRoom(next, null, true, nowMs);
   });
 }
 

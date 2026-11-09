@@ -55,6 +55,11 @@ const css = readdirSync(assets).filter(file => file.endsWith('.css'))
 const petAssets = resolve('public/dsh-pet-7340');
 const petTypes = { '.webm': 'video/webm', '.webp': 'image/webp', '.png': 'image/png', '.ttf': 'font/ttf' };
 const server = createServer((request, response) => {
+  if (request.url === '/listening-game/countdown/tick.wav' || request.url === '/listening-game/countdown/time-up.wav') {
+    response.setHeader('Content-Type', 'audio/wav');
+    createReadStream(resolve('public' + request.url)).pipe(response);
+    return;
+  }
   if (request.url?.startsWith('/dsh-pet-7340/')) {
     try {
       const path = decodeURIComponent(new URL(request.url, 'http://localhost').pathname);
@@ -145,22 +150,26 @@ try {
   await host.wait(`document.body.innerText.includes('选择本轮演奏歌曲')`);
   assert.equal(await host.evaluate(`document.body.innerText.includes('游客扫码加入')`), false);
   assert.equal(await host.evaluate(`document.querySelectorAll('input[aria-label="游客游戏链接"]').length`), 0);
-  const guest = await page(base, true);
+  const guest = await page(base + '?ipad=1', true);
   await guest.wait(`document.body.innerText.includes('你已到场')`);
   const guestPet = 'button[aria-label="和鲸鱼娘互动"]';
+  const petImageLoaded = animation => `(() => {
+    const image = document.querySelector('.dsh-pet-root picture img');
+    return image?.complete && image.naturalWidth > 0 && decodeURI(image.currentSrc).includes(${JSON.stringify('/' + animation)});
+  })()`;
   await guest.wait(`document.querySelector('.dsh-pet-root[data-surface="guest"] ${guestPet}')`);
+  await guest.wait(petImageLoaded('工作状态-原地踱步张望'));
   assert.equal(await guest.evaluate(`document.querySelector('.dsh-pet-root[data-surface="guest"]').style.getPropertyValue('--dsh-pet-size')`), '360px');
   assert.equal(await guest.evaluate(`!!document.querySelector('button[aria-haspopup="dialog"]')`), false);
   const ipad = await page(base + '?host=1&ipad=1');
   await ipad.wait(`document.querySelector('.dsh-pet-root[data-surface="manager"] picture img')?.naturalWidth > 0`);
   assert.equal(await ipad.evaluate(`document.querySelectorAll('.dsh-pet-root video').length`), 0);
   await host.evaluate(`[...document.querySelectorAll('button')].find(b=>b.textContent.includes(${JSON.stringify(songs[0].title)})&&b.textContent.includes('简单')).click()`);
-  await guest.wait(`document.querySelectorAll('[role="radio"]').length===16`);
+  await guest.wait(`document.body.innerText.includes('等待管理员开放答题权限')`);
+  await guest.wait(petImageLoaded('工作状态-思考冒泡'));
   assert.equal(await guest.evaluate('window.lastCloud.room.answerSongId'), undefined);
-  await guest.evaluate(`[...document.querySelectorAll('[role="radio"]')].find(b=>b.textContent.includes(${JSON.stringify(songs[0].title)})).click()`);
-  await guest.wait(`!!document.querySelector('[role="radio"][aria-checked="true"]')`);
-  assert.equal(await guest.evaluate(`[...document.querySelectorAll('button')].find(b=>b.textContent.includes('等待管理员开放提交')).disabled`), true);
-  await guest.capture('listening-game-mobile.png', 390, 844);
+  assert.equal(await guest.evaluate('window.lastCloud.room.options.length'), 0);
+  assert.equal(await guest.evaluate(`document.querySelectorAll('[role="radio"], [role="timer"]').length`), 0);
   assert.equal(await guest.evaluate('document.documentElement.scrollWidth<=innerWidth'), true, 'mobile layout must not overflow');
   const petPoint = await guest.evaluate(`(() => {
     const pet = document.querySelector('${guestPet}').getBoundingClientRect();
@@ -172,8 +181,17 @@ try {
   await call('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [petPoint] }, guest.sessionId);
   await call('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }, guest.sessionId);
   await guest.wait(`document.querySelector('.dsh-pet-root[data-surface="guest"] [role="status"]')?.textContent.includes('听到熟悉的旋律了吗？')`);
+  await guest.wait(petImageLoaded('点击回应-'));
   await host.capture('listening-game-host.png', 1280, 900);
-  await host.click('开放提交');
+  await host.click('开放答题权限');
+  await guest.wait(`document.querySelectorAll('[role="radio"]').length===16`);
+  await guest.wait(petImageLoaded('工作状态-忙碌点按'));
+  const timerText = `document.querySelector('.dsh-pet-root [role="timer"]').textContent`;
+  const firstTime = await guest.evaluate(timerText);
+  assert.match(firstTime, /^00:(?:30|[12]\d|0[1-9])$/);
+  await guest.wait(`${timerText} < ${JSON.stringify(firstTime)}`);
+  await guest.capture('listening-game-mobile.png', 390, 844);
+  await guest.evaluate(`[...document.querySelectorAll('[role="radio"]')].find(b=>b.textContent.includes(${JSON.stringify(songs[0].title)})).click()`);
   await guest.wait(`[...document.querySelectorAll('button')].some(b=>b.textContent.trim()==='提交答案'&&!b.disabled)`);
   await guest.click('提交答案');
   await guest.wait(`document.querySelector('dialog[open] h2')?.textContent === '你确定吗？'`);
@@ -192,8 +210,9 @@ try {
   await guest.click('知道了');
   assert.equal(await guest.evaluate(`document.querySelectorAll('[role="radio"]:not(:disabled)').length`), 0);
   await host.wait(`document.body.innerText.includes('1 人已提交')`);
-  const wrongGuest = await page(base);
+  const wrongGuest = await page(base + '?ipad=1', true);
   await wrongGuest.wait(`document.querySelectorAll('[role="radio"]').length===16`);
+  await wrongGuest.wait(petImageLoaded('工作状态-忙碌点按'));
   await wrongGuest.evaluate(`localStorage.removeItem('jieyou-game-confirm:' + window.lastCloud.room.id + ':0')`);
   await wrongGuest.evaluate(`[...document.querySelectorAll('[role="radio"]')].find(b=>!b.textContent.includes(${JSON.stringify(songs[0].title)})).click()`);
   await wrongGuest.click('提交答案');
@@ -206,6 +225,7 @@ try {
   await host.click('暂停提交');
   await host.click('结束本轮');
   await guest.wait(`document.body.innerText.includes('本轮已结束')`);
+  await guest.wait(petImageLoaded('工作状态-雀跃庆祝'));
   assert.equal(await guest.evaluate('window.lastCloud.room.answerSongId'), songs[0].id);
   await host.click('选择下一首');
   await host.evaluate(`[...document.querySelectorAll('button')].find(b=>b.textContent.includes(${JSON.stringify(songs[1].title)})&&b.textContent.includes('简单')).click()`);
@@ -223,7 +243,7 @@ try {
   await guest.click('重新连接');
   await guest.wait(`!document.querySelector('[role="alert"]')`);
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ ok: true, checks: ['real cloud handler with multiple browser pages', 'no QR settings', 'bare URL joins current game without login', '16 options and hidden answer before submission', 'can select before permission', 'submit locked before opening', 'mobile no overflow', 'immediate correct and incorrect result dialogs', 'submitted result restored after reload', 'open/submit/lock/end', 'same bare URL across rounds and new games', 'round selection reset', 'network failure and retry', 'no browser exceptions'], screenshots: ['listening-game-mobile.png', 'listening-game-host.png'] }));
+  console.log(JSON.stringify({ ok: true, checks: ['real cloud handler with multiple browser pages', 'no QR settings', 'bare URL joins current game without login', 'options hidden until permission', '16 options and pet countdown once opened', 'mobile no overflow', 'immediate correct and incorrect result dialogs', 'submitted result restored after reload', 'open/submit/lock/end', 'same bare URL across rounds and new games', 'round selection reset', 'network failure and retry', 'no browser exceptions'], screenshots: ['listening-game-mobile.png', 'listening-game-host.png'] }));
 } finally {
   if (socket?.readyState === WebSocket.OPEN) {
     socket.send(JSON.stringify({ id: 999999, method: 'Browser.close' })); socket.close();

@@ -1,17 +1,18 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Check, Disc3, Headphones, LockKeyhole, Pause, Play, Radio, RotateCcw, Search, Send, Users, X } from 'lucide-react';
 import { callListeningGame, pullCurrentListeningGame, type Credentials } from './songRequestCloud';
-import { gameErrorMessage, isGameRoomId, listeningGameConfirmationKey, type ListeningGameRoom } from './listeningGame';
+import { gameErrorMessage, isGameRoomId, listeningGameConfirmationKey, localAnswerDeadline, type ListeningGameRoom } from './listeningGame';
 import ListeningGameFeedbackDialog, { unlockListeningGameFeedbackAudio } from './ListeningGameFeedbackDialog';
 import { QUIZ_LEVELS, type QuizAssignments } from './songQuizLibrary';
 import type { Song } from './songCatalog';
+import { useListeningGameCountdown } from './useListeningGameCountdown';
 
 const ListeningGamePet = lazy(() => import('./ListeningGamePet'));
 
 const actionStyle = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-full border px-5 py-2.5 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-35';
 const primaryStyle = `${actionStyle} border-orange-200/40 bg-orange-200 text-[#25180e] hover:bg-orange-100`;
 const secondaryStyle = `${actionStyle} border-white/15 bg-white/[.04] text-white/75 hover:border-white/30 hover:text-white`;
-const phaseText = { waiting: '等候开场', listening: '正在演奏 · 可先选歌', open: '已开放提交', revealed: '本轮已结束', ended: '本场游戏已结束' };
+const phaseText = { waiting: '等候开场', listening: '正在演奏 · 答题未开放', open: '答题权限已开放', revealed: '本轮已结束', ended: '本场游戏已结束' };
 
 export default function ListeningGamePage({ session, manager, songs, assignments, initialRoomId, onBack, onLogin }: {
   session: Credentials | null; manager: boolean; songs: Song[]; assignments: QuizAssignments;
@@ -19,7 +20,9 @@ export default function ListeningGamePage({ session, manager, songs, assignments
 }) {
   const credentials = manager ? session : null;
   const [roomId, setRoomId] = useState<string | null>(() => isGameRoomId(initialRoomId) ? initialRoomId : null);
-  const [room, setRoom] = useState<ListeningGameRoom | null>(null);
+  const [{ room, deadline, receivedAt }, setRoomSnapshot] = useState<{
+    room: ListeningGameRoom | null; deadline: number | null; receivedAt: number;
+  }>({ room: null, deadline: null, receivedAt: 0 });
   const [selection, setSelection] = useState({ roundId: '', songId: '' });
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
@@ -35,8 +38,20 @@ export default function ListeningGamePage({ session, manager, songs, assignments
   const seenConfirmations = useRef(new Set<string>());
   const shownResultRef = useRef<string | null>(null);
   const mutationVersionRef = useRef(0);
-  const applyRoom = (next: ListeningGameRoom | null) => {
-    setRoom(previous => previous && next && previous.id === next.id && previous.revision > next.revision ? previous : next);
+  const applyRoom = (next: ListeningGameRoom | null, requestedAt: number) => {
+    const received = performance.now();
+    const estimate = localAnswerDeadline(next, requestedAt, received);
+    setRoomSnapshot(previous => {
+      const sameRoom = next && previous.room?.id === next.id;
+      if (sameRoom && previous.room.revision > next.revision) return previous;
+      const sameWindow = sameRoom && previous.room.roundId === next.roundId
+        && previous.room.submissionDeadlineMs === next.submissionDeadlineMs;
+      return {
+        room: next,
+        deadline: sameWindow && previous.deadline !== null && estimate !== null ? Math.min(previous.deadline, estimate) : estimate,
+        receivedAt: received,
+      };
+    });
     setConnected(true);
     setLoaded(true);
     setMissingRoom(false);
@@ -52,9 +67,10 @@ export default function ListeningGamePage({ session, manager, songs, assignments
       if (document.hidden) { timer = setTimeout(refresh, 3000); return; }
       inFlight = true;
       const version = mutationVersionRef.current;
+      const requestedAt = performance.now();
       try {
         const next = roomId ? await callListeningGame('pull', { roomId }, credentials) : await pullCurrentListeningGame(credentials);
-        if (active && version === mutationVersionRef.current) { applyRoom(next); setError(''); }
+        if (active && version === mutationVersionRef.current) { applyRoom(next, requestedAt); setError(''); }
       } catch (cause) {
         if (active && version === mutationVersionRef.current) {
           setConnected(false);
@@ -86,10 +102,11 @@ export default function ListeningGamePage({ session, manager, songs, assignments
     busyRef.current = true;
     ++mutationVersionRef.current;
     setBusy(true); setError('');
+    const requestedAt = performance.now();
     try {
       const next = await callListeningGame(action, action === 'create' ? {} : { roomId: room!.id, roundId: room?.roundId ?? null, ...(songId ? { songId } : {}) }, action === 'submit' ? null : credentials);
       ++mutationVersionRef.current;
-      applyRoom(next);
+      applyRoom(next, requestedAt);
       if (action === 'create') setRoomId(null);
       if (action === 'start') { setChoosingNext(false); setQuery(''); }
     } catch (cause) {
@@ -107,9 +124,16 @@ export default function ListeningGamePage({ session, manager, songs, assignments
   const resultKey = room?.roundId && hasResult ? `${room.id}:${room.roundId}` : null;
   const selectedId = submitted?.songId ?? (selection.roundId === room?.roundId ? selection.songId : '');
   const selectedSong = room?.options.find(song => song.id === selectedId);
-  const canSubmit = !manager && !busy && connected && room?.phase === 'open' && !submitted && Boolean(selectedSong);
+  const timerKey = deadline !== null && room ? `${room.id}:${room.roundId}:${room.submissionDeadlineMs}` : null;
+  const seconds = useListeningGameCountdown(deadline, receivedAt, timerKey);
+  const timedOut = seconds === 0;
+  const answering = room?.phase === 'open' && !timedOut;
+  const canSelect = !manager && !busy && connected && answering && !submitted;
+  const canSubmit = canSelect && Boolean(selectedSong);
   const showConfirmation = canSubmit && confirmation?.roundId === room?.roundId && confirmation?.songId === selectedId;
   const revealed = room?.phase === 'revealed' || room?.phase === 'ended';
+  const optionsVisible = manager || Boolean(room?.options.length
+    && (room.phase === 'open' || room.submissionDeadlineMs != null || revealed || submitted));
   const choosingSong = manager && (room?.phase === 'waiting' || (room?.phase === 'revealed' && choosingNext));
   useEffect(() => {
     if (!manager && resultKey && shownResultRef.current !== resultKey) {
@@ -122,7 +146,7 @@ export default function ListeningGamePage({ session, manager, songs, assignments
   }, [confirmation, showConfirmation]);
 
   const submitSelection = () => {
-    if (!canSubmit || !room?.roundId || confirmation) return;
+    if (!canSubmit || !room?.roundId || confirmation || (deadline !== null && performance.now() >= deadline)) return;
     unlockListeningGameFeedbackAudio();
     const key = listeningGameConfirmationKey(room.id, room.roundNumber);
     if (!seenConfirmations.current.has(key)) {
@@ -140,7 +164,7 @@ export default function ListeningGamePage({ session, manager, songs, assignments
     void act('submit', selectedId);
   };
   const confirmSubmission = () => {
-    if (!showConfirmation || !confirmation) return;
+    if (!showConfirmation || !confirmation || (deadline !== null && performance.now() >= deadline)) return;
     unlockListeningGameFeedbackAudio();
     setConfirmation(null);
     void act('submit', confirmation.songId);
@@ -150,7 +174,7 @@ export default function ListeningGamePage({ session, manager, songs, assignments
     setResultDialogKey(resultKey);
   };
   const selectOption = (songId: string) => {
-    if (!room?.roundId || submitted || revealed) return;
+    if (!room?.roundId || !canSelect) return;
     setSelection({ roundId: room.roundId, songId });
     try { sessionStorage.setItem(`jieyou-game-choice:${room.id}:${room.roundId}`, songId); } catch {}
   };
@@ -161,7 +185,7 @@ export default function ListeningGamePage({ session, manager, songs, assignments
         <button type="button" onClick={onBack} className={secondaryStyle}><ArrowLeft className="h-4 w-4" />{manager ? '听歌识曲' : '点歌台'}</button>
         <div className="flex items-center gap-4">
           <span className="flex items-center gap-2 text-xs text-white/45"><span className={`h-1.5 w-1.5 rounded-full ${connected ? 'bg-emerald-300' : 'bg-white/30'}`} />{manager ? '管理员控制台' : '现场猜歌'}</span>
-          <Suspense fallback={null}><ListeningGamePet key={manager ? 'manager' : 'guest'} manager={manager} room={room} /></Suspense>
+          <Suspense fallback={null}><ListeningGamePet key={manager ? 'manager' : 'guest'} manager={manager} room={room} seconds={seconds} /></Suspense>
           {!manager && onLogin && <button type="button" onClick={onLogin} className="min-h-10 text-xs text-white/55 transition hover:text-white">管理员登录</button>}
         </div>
       </header>
@@ -173,7 +197,7 @@ export default function ListeningGamePage({ session, manager, songs, assignments
       </section> : !room ? <div role="status" className="grid min-h-80 place-items-center text-sm text-white/50">正在连接现场游戏…</div> : <div className="grid items-start gap-6">
         <section className="overflow-hidden rounded-2xl border border-white/10 bg-black/35 sm:rounded-[2rem]">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[.07] px-3 py-3 sm:px-7 sm:py-5">
-            <span role="status" aria-live="polite" className="inline-flex items-center gap-2 text-xs font-bold text-orange-100 sm:text-sm"><Radio className={`h-4 w-4 ${room.phase === 'open' ? 'text-emerald-300' : 'text-orange-200/65'}`} />{phaseText[room.phase]}</span>
+            <span role="status" aria-live="polite" className="inline-flex items-center gap-2 text-xs font-bold text-orange-100 sm:text-sm"><Radio className={`h-4 w-4 ${answering ? 'text-emerald-300' : 'text-orange-200/65'}`} />{timedOut ? '答题时间到' : phaseText[room.phase]}</span>
             <span className="flex items-center gap-2 text-xs text-white/45 sm:gap-4"><span className="tabular-nums">第 {room.roundNumber || 1} 轮</span><span className="inline-flex items-center gap-1.5 tabular-nums"><Users className="h-3.5 w-3.5" />{room.submissionCount} 人已提交</span></span>
           </div>
           <div className="p-3 sm:p-7">
@@ -187,24 +211,36 @@ export default function ListeningGamePage({ session, manager, songs, assignments
               {library.length > 0 && library.length < 16 && <p className="mt-4 text-sm text-orange-200">题库至少需要 16 首歌曲，才能生成完整选项。</p>}
             </div> : room.phase === 'waiting' ? <div className="py-16 text-center"><Disc3 className="mx-auto h-12 w-12 text-orange-200/40" /><h2 className="mt-6 font-serif text-2xl font-bold">你已到场，好歌即将开始。</h2><p className="mt-3 text-sm text-white/40">等待管理员选定演奏歌曲，页面会自动更新。</p></div> : <>
               {!manager && revealed && !submitted && answer && <div className="mb-6 text-center"><p className="text-xs text-orange-200/60">本轮正确答案</p><h2 className="mt-3 font-serif text-3xl font-black">{answer.title}</h2><p className="mt-4 text-sm text-white/60">本轮你还没有提交答案。</p></div>}
-              <div role={manager ? 'group' : 'radiogroup'} aria-label="本轮歌曲选项" className="grid grid-cols-2 gap-1.5 sm:gap-2.5">{room.options.map((song, index) => {
+              {optionsVisible ? <div role={manager ? 'group' : 'radiogroup'} aria-label="本轮歌曲选项" className="grid grid-cols-2 gap-1.5 sm:gap-2.5">{room.options.map((song, index) => {
                 const selected = selectedId === song.id;
                 const correct = (revealed || hasResult) && room.answerSongId === song.id;
-                return <button key={song.id} type="button" role={manager ? undefined : 'radio'} aria-checked={manager ? undefined : selected} disabled={manager || Boolean(submitted) || revealed || busy} onClick={() => selectOption(song.id)} className={`relative flex min-h-11 items-center gap-2 overflow-hidden rounded-xl border px-2.5 py-1.5 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-200 disabled:cursor-default sm:min-h-16 sm:gap-3 sm:rounded-2xl sm:px-4 sm:py-3 ${correct ? 'border-emerald-200/50 bg-emerald-200/10' : selected ? 'border-orange-200/60 bg-orange-200/10' : 'border-white/10 bg-white/[.025] enabled:hover:border-white/25 enabled:hover:bg-white/[.05]'}`}>
+                return <button key={song.id} type="button" role={manager ? undefined : 'radio'} aria-checked={manager ? undefined : selected} disabled={!canSelect} onClick={() => selectOption(song.id)} className={`relative flex min-h-11 items-center gap-2 overflow-hidden rounded-xl border px-2.5 py-1.5 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-200 disabled:cursor-default sm:min-h-16 sm:gap-3 sm:rounded-2xl sm:px-4 sm:py-3 ${correct ? 'border-emerald-200/50 bg-emerald-200/10' : selected ? 'border-orange-200/60 bg-orange-200/10' : 'border-white/10 bg-white/[.025] enabled:hover:border-white/25 enabled:hover:bg-white/[.05]'}`}>
                   <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full border text-[10px] font-bold sm:h-8 sm:w-8 sm:text-xs ${correct ? 'border-emerald-200/30 text-emerald-200' : selected ? 'border-orange-200/40 text-orange-100' : 'border-white/10 text-white/30'}`}>{correct || selected ? <Check className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> : String.fromCharCode(65 + index)}</span>
                   <span className="min-w-0 flex-1 break-words text-[13px] font-bold leading-5 sm:text-sm">{song.title}</span>
                   {(manager || revealed) && <span className="shrink-0 text-[10px] tabular-nums text-white/40 sm:text-xs">{room.counts?.[song.id] ?? 0} 人</span>}
                 </button>;
-              })}</div>
+              })}</div> : !revealed && <div className="py-12 text-center">
+                <LockKeyhole className="mx-auto h-7 w-7 text-orange-200/60" />
+                <p className="mt-4 font-bold text-orange-100">等待管理员开放答题权限</p>
+                <p className="mt-2 text-sm leading-6 text-white/45">开放后显示选项，答题时间为 30 秒。轻点页面可开启计时音效。</p>
+              </div>}
               {manager ? <div className="mt-7 flex flex-wrap gap-3 border-t border-white/10 pt-6">
-                {room.phase === 'listening' && <button type="button" disabled={busy || !connected} onClick={() => void act('open')} className={primaryStyle}><Send className="h-4 w-4" />开放提交</button>}
-                {room.phase === 'open' && <button type="button" disabled={busy || !connected} onClick={() => void act('lock')} className={secondaryStyle}><Pause className="h-4 w-4" />暂停提交</button>}
+                {room.phase === 'listening' && <button type="button" disabled={busy || !connected} onClick={() => void act('open')} className={primaryStyle}><Send className="h-4 w-4" />开放答题权限</button>}
+                {answering && <button type="button" disabled={busy || !connected} onClick={() => void act('lock')} className={secondaryStyle}><Pause className="h-4 w-4" />暂停提交</button>}
                 {['listening', 'open'].includes(room.phase) && <button type="button" disabled={busy || !connected} onClick={() => void act('reveal')} className={secondaryStyle}><Check className="h-4 w-4" />结束本轮</button>}
                 {room.phase === 'revealed' && <><button type="button" disabled={busy || !connected} onClick={() => setChoosingNext(true)} className={primaryStyle}><Play className="h-4 w-4" />选择下一首</button><button type="button" disabled={busy || !connected} onClick={() => void act('end')} className={secondaryStyle}><X className="h-4 w-4" />结束本场</button></>}
                 {room.phase === 'ended' && <button type="button" disabled={busy} onClick={() => void act('create')} className={primaryStyle}><Play className="h-4 w-4" />创建新游戏</button>}
                 {busy && <span role="status" className="self-center text-xs text-white/40">正在同步…</span>}
-              </div> : <div className="mt-4 border-t border-white/10 pt-3 sm:mt-7 sm:pt-6">
-                {submitted ? <div className="flex flex-wrap items-center justify-center gap-3"><p role="status" className={`text-sm font-bold ${hasResult && submitted.correct ? 'text-emerald-200' : 'text-orange-100'}`}>{hasResult ? submitted.correct ? '答对了！等待下一首歌。' : '答错了，下一首继续加油。' : '答案已提交，正在同步结果…'}</p>{hasResult && <button type="button" data-custom-click-sound="" onClick={reopenResult} className="min-h-10 rounded-full border border-white/15 px-4 text-xs font-bold text-white/70 transition hover:text-white">查看结果</button>}</div> : !revealed ? <><button type="button" data-custom-click-sound="" disabled={!canSubmit} onClick={submitSelection} className={`${primaryStyle} w-full`}>{room.phase === 'open' ? <Send className="h-4 w-4" /> : <LockKeyhole className="h-4 w-4" />}{busy ? '正在提交…' : room.phase === 'open' ? '提交答案' : '等待管理员开放提交'}</button><p className="mt-2 text-center text-[11px] leading-5 text-white/40 sm:mt-3 sm:text-xs sm:leading-6">{room.phase === 'open' ? '每轮只能提交一次，确认后不能修改。' : '现在可以自由选择和修改，开放后再确认提交。'}</p></> : <p role="status" className="text-center text-sm leading-6 text-white/40">{room.phase === 'ended' ? '谢谢参与，我们下一场路演见。' : '等待下一首歌，页面会自动更新。'}</p>}
+              </div> : (optionsVisible || revealed) && <div className="mt-4 border-t border-white/10 pt-3 sm:mt-7 sm:pt-6">
+                {submitted ? <div className="flex flex-wrap items-center justify-center gap-3">
+                  <p role="status" className={`text-sm font-bold ${hasResult && submitted.correct ? 'text-emerald-200' : 'text-orange-100'}`}>{hasResult ? submitted.correct ? '答对了！等待下一首歌。' : '答错了，下一首继续加油。' : '答案已提交，正在同步结果…'}</p>
+                  {hasResult && <button type="button" data-custom-click-sound="" onClick={reopenResult} className="min-h-10 rounded-full border border-white/15 px-4 text-xs font-bold text-white/70 transition hover:text-white">查看结果</button>}
+                </div> : answering ? <>
+                  <button type="button" data-custom-click-sound="" disabled={!canSubmit} onClick={submitSelection} className={`${primaryStyle} w-full`}><Send className="h-4 w-4" />{busy ? '正在提交…' : '提交答案'}</button>
+                  <p className="mt-2 text-center text-[11px] leading-5 text-white/40 sm:mt-3 sm:text-xs sm:leading-6">每轮只能提交一次，确认后不能修改。</p>
+                </> : <p role="status" className="text-center text-sm leading-6 text-white/55">
+                  {room.phase === 'ended' ? '谢谢参与，我们下一场路演见。' : revealed ? '等待下一首歌，页面会自动更新。' : timedOut ? '答题时间到，等待管理员公布答案。' : '答题已暂停，等待管理员重新开放。'}
+                </p>}
               </div>}
             </>}
           </div>

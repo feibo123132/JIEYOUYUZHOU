@@ -1,3 +1,34 @@
+.listening-game-pet-countdown {
+  position: absolute;
+  bottom: calc(100% - max(32px, var(--dsh-pet-size) * .108));
+  left: 50%;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid #f6d7a0;
+  border-radius: 12px;
+  background: #fff3d9;
+  color: #563812;
+  box-shadow: 0 4px 14px #0005;
+  font: 800 15px/1.2 system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.listening-game-pet-countdown + .dsh-pet-bubble {
+  margin-bottom: 36px;
+}
+
+.listening-game-pet-countdown.is-urgent {
+  border-color: #f1b6a4;
+  background: #ffe4db;
+  color: #9a3824;
+}
+
 .listening-game-pet-settings {
   --dsw-alias-bg-layer-1: #fff;
   --dsw-alias-border-l1: #ebecef;

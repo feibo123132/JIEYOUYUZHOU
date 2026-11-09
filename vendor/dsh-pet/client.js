@@ -1,5 +1,6 @@
 // dsh-pet 0.3.8, PC2005-cloud, MIT. See LICENSE and NOTICE.
 import { petFetch as fetch } from "./browserHost";
+import mobileAnimationDurations from "./mobileAnimationDurations.json";
 
 
 //#region src/shared/pickers.ts
@@ -3718,7 +3719,7 @@ function makePetUI(rt) {
 	/** 碎碎念气泡（哑组件：文本与显隐由 PetCard 传入） */
 	const WhisperBubble = makeWhisperBubble({ h });
 	/** 单个宠物实例（配置由容器 PetMulti 传入；碎碎念轮询/触发/气泡完全自理） */
-	function PetCard({ cfg, balance, balanceTick, balanceNoticeTick, balanceManual, workStatus, workStatusTick, say, sayTick, animCue, animCueTick, posCue, posCueTick, throwCue, throwCueTick, lock, lockTick, menuItemsRef, arena, sound, guest, guestReply, imageMode }) {
+	function PetCard({ cfg, balance, balanceTick, balanceNoticeTick, balanceManual, workStatus, workStatusTick, say, sayTick, animCue, animCueTick, posCue, posCueTick, throwCue, throwCueTick, lock, lockTick, menuItemsRef, arena, sound, guest, guestReply, imageMode, headContent }) {
 		const [size, setSize] = useState(cfg.size);
 		const fontPx = resolveFontPx(cfg.font, size);
 		const halfW = size / 2;
@@ -3727,6 +3728,11 @@ function makePetUI(rt) {
 		const petAnims = cfg.animations;
 		const petWeights = cfg.animationWeights;
 		const [anim, setAnim] = useState(petAnims.idle[0] ?? "");
+		const [failedImage, setFailedImage] = useState(null);
+		const imageDuration = imageMode && anim !== failedImage ? mobileAnimationDurations[anim] : void 0;
+		const imageBase = imageDuration
+			? "./dsh-pet-7340/thumb/mobile/" + encodeURIComponent(anim)
+			: "./dsh-pet-7340/pic/idle-transparent";
 		const [once, setOnce] = useState(true);
 		const [facing, setFacing] = useState("left");
 		const [dragging, setDragging] = useState(false);
@@ -3944,13 +3950,35 @@ function makePetUI(rt) {
 			el.addEventListener("loadeddata", onReady);
 		};
 		useEffect(() => {
-			if (!imageMode) switchTo(anim, once, cuePlayback);
+			if (!imageMode) {
+				switchTo(anim, once, cuePlayback);
+				return;
+			}
+			const image = petImageRef.current;
+			if (!image || !once || !imageDuration) return;
+			// Animated images have no ended event. Start the clock after the selected asset loads.
+			const animatedUrl = new URL(imageBase + ".webp", document.baseURI).href;
+			const stillUrl = new URL(imageBase + ".png", document.baseURI).href;
+			let timer;
+			const scheduleEnd = () => {
+				if (timer !== void 0 || !image.complete || !image.naturalWidth) return;
+				if (image.currentSrc !== animatedUrl && image.currentSrc !== stillUrl) return;
+				timer = window.setTimeout(() => handleEnded(), imageDuration);
+			};
+			image.addEventListener("load", scheduleEnd);
+			scheduleEnd();
+			return () => {
+				image.removeEventListener("load", scheduleEnd);
+				window.clearTimeout(timer);
+			};
 		}, [
 			anim,
 			once,
 			seq,
 			cuePlayback,
-			imageMode
+			imageMode,
+			imageBase,
+			imageDuration
 		]);
 		useEffect(() => {
 			mountedRef.current = true;
@@ -4066,6 +4094,7 @@ function makePetUI(rt) {
 				console.log("[dsh-pet] " + new Date().toTimeString().slice(0, 8) + " pet=" + cfg.id + " " + (prevWorkStateRef.current ?? "null") + "->null    播完即停（回待机，收起气泡）");
 				prevWorkStateRef.current = null;
 				if (poolIncludes(petAnims.events?.workStatus ?? [], animRef.current)) {
+					if (imageMode) setAnim(petAnims.idle[0] ?? "");
 					const front = frontRef.current === 0 ? videoARef.current : videoBRef.current;
 					if (front) {
 						front.loop = false;
@@ -5027,15 +5056,13 @@ function makePetUI(rt) {
 				window.clearTimeout(whisperBubbleTimerRef.current);
 				whisperBubbleTimerRef.current = window.setTimeout(() => setWhisperBubbleOn(false), BUBBLE_DURATION_MS);
 			}
-			if (imageMode) {
-				if (petImageRef.current) startSquash(petImageRef.current);
-				return;
-			}
 			setOnce(true);
 			if (!petAnims.clicks.length) return;
-			const name = pick(petAnims.clicks);
+			const name = pick(petAnims.clicks, animRef.current);
 			console.log("[dsh-pet] " + new Date().toTimeString().slice(0, 8) + " pet=" + cfg.id + " -> [CLICK] " + name);
-			pendingSquashRef.current = true;
+			if (imageMode) {
+				if (petImageRef.current) startSquash(petImageRef.current);
+			} else pendingSquashRef.current = true;
 			setSeq((s) => s + 1);
 			setAnim(name);
 		};
@@ -5261,6 +5288,7 @@ function makePetUI(rt) {
 				"--dsh-pet-font-tip": fontPx.tip + "px"
 			}, rootStyle),
 			children: [
+				headContent,
 				bubbleNode,
 				h("div", {
 					ref: stageRef,
@@ -5272,12 +5300,13 @@ function makePetUI(rt) {
 								h("source", {
 									type: "image/webp",
 									media: "(prefers-reduced-motion: no-preference)",
-									srcSet: "./dsh-pet-7340/pic/idle-transparent.webp"
+									srcSet: imageBase + ".webp"
 								}),
 								h("img", {
 									ref: petImageRef,
 									className: "dsh-pet-video is-front",
-									src: "./dsh-pet-7340/pic/idle-transparent.png",
+									src: imageBase + ".png",
+									onError: imageDuration ? () => setFailedImage(anim) : void 0,
 									alt: ""
 								})
 							]
@@ -5304,7 +5333,7 @@ function makePetUI(rt) {
 		});
 	}
 	/** 多开容器：一次拉取成品配置 → 拍平 → 渲染多个 PetCard */
-	function PetMulti({ sound, guest, guestReply, imageMode }) {
+	function PetMulti({ sound, guest, guestReply, imageMode, headContent }) {
 		const [pets, setPets] = useState([]);
 		const [ready, setReady] = useState(false);
 		const arenaRef = useRef({ slots: {} });
@@ -5396,11 +5425,18 @@ function makePetUI(rt) {
 			let baseline = null;
 			let since;
 			let longPoll = true;
-			/** 应用一份 S：首拉只记基线，之后按 counter 变化逐个分发 */
+			const applyWorkStatus = (leaf) => {
+				const snap = leaf && readWorkStatus(leaf);
+				if (!snap) return;
+				setWorkStatus(snap);
+				setWorkStatusTick((t) => t + 1);
+			};
+			/** The current stage also applies to guests who join an active game. */
 			const applyState = (s) => {
 				if (baseline === null) {
 					baseline = flattenCounters(s);
 					menuItemsRef.current = readMenuItems(s.sections.menu?.data);
+					applyWorkStatus(s.sections.workStatus);
 					return;
 				}
 				for (const { path, leaf: leaf$1 } of takeChanged(s, baseline)) {
@@ -5409,13 +5445,8 @@ function makePetUI(rt) {
 					else if (path === "sections.balance") {
 						const hit = readBalance(leaf$1);
 						if (hit) applyBalanceRef.current(hit.state, hit.manual);
-					} else if (path === "sections.workStatus") {
-						const snap = readWorkStatus(leaf$1);
-						if (snap) {
-							setWorkStatus(snap);
-							setWorkStatusTick((t) => t + 1);
-						}
-					} else if (path === "sections.notify") notifyFromFrame(leaf$1.data);
+					} else if (path === "sections.workStatus") applyWorkStatus(leaf$1);
+					else if (path === "sections.notify") notifyFromFrame(leaf$1.data);
 					else if (path === "sections.menu") menuItemsRef.current = readMenuItems(leaf$1.data);
 					else if (path.startsWith("pets.") && path.endsWith(".say")) {
 						const petId = path.slice(5, -4);
@@ -5517,7 +5548,8 @@ function makePetUI(rt) {
 			sound,
 			guest,
 			guestReply,
-			imageMode
+			imageMode,
+			headContent
 		})) : null;
 	}
 	return PetMulti;
