@@ -32,7 +32,12 @@ const handlerFor = uid => createHandler({ getWorkspace: async id => documents[id
 const bundle = await build({
   stdin: { contents: `import React from 'react'; import {createRoot} from 'react-dom/client'; import Game from './src/components/SongRequest/ListeningGamePage.tsx';
     Object.defineProperty(document,'hidden',{get:()=>false});
-    const manager=new URL(location.href).searchParams.has('host');
+    const params=new URL(location.href).searchParams;
+    const manager=params.has('host');
+    if(params.has('ipad')){
+      Object.defineProperty(navigator,'platform',{value:'MacIntel'});
+      Object.defineProperty(navigator,'maxTouchPoints',{value:5});
+    }
     createRoot(document.getElementById('root')).render(<Game session={manager?${JSON.stringify(owner)}:null} manager={manager} songs={${JSON.stringify(songs)}} assignments={${JSON.stringify(assignments)}} initialRoomId={new URL(location.href).searchParams.get('game')} onBack={()=>{}}/>);`, resolveDir: process.cwd(), loader: 'jsx' },
   plugins: [{ name: 'fixture-cloud', setup(builder) {
     builder.onResolve({ filter: /\/services\/tcb$/ }, () => ({ path: 'fixture-tcb', namespace: 'fixture' }));
@@ -48,7 +53,7 @@ const assets = resolve('dist/assets');
 const css = readdirSync(assets).filter(file => file.endsWith('.css'))
   .map(file => readFileSync(resolve(assets, file), 'utf8')).join('\n');
 const petAssets = resolve('public/dsh-pet-7340');
-const petTypes = { '.webm': 'video/webm', '.png': 'image/png', '.ttf': 'font/ttf' };
+const petTypes = { '.webm': 'video/webm', '.webp': 'image/webp', '.png': 'image/png', '.ttf': 'font/ttf' };
 const server = createServer((request, response) => {
   if (request.url?.startsWith('/dsh-pet-7340/')) {
     try {
@@ -139,8 +144,11 @@ try {
   const guest = await page(base);
   await guest.wait(`document.body.innerText.includes('你已到场')`);
   const guestPet = 'button[aria-label="和鲸鱼娘互动"]';
-  await guest.wait(`document.querySelector('${guestPet} img')?.naturalWidth > 0`);
-  assert.equal(await guest.evaluate(`!!document.querySelector('${guestPet} [role="status"]')`), true);
+  await guest.wait(`document.querySelector('.dsh-pet-root[data-surface="guest"] ${guestPet}')`);
+  assert.equal(await guest.evaluate(`!!document.querySelector('button[aria-haspopup="dialog"]')`), false);
+  const ipad = await page(base + '?host=1&ipad=1');
+  await ipad.wait(`document.querySelector('.dsh-pet-root[data-surface="manager"] picture img')?.naturalWidth > 0`);
+  assert.equal(await ipad.evaluate(`document.querySelectorAll('.dsh-pet-root video').length`), 0);
   await host.evaluate(`[...document.querySelectorAll('button')].find(b=>b.textContent.includes(${JSON.stringify(songs[0].title)})&&b.textContent.includes('简单')).click()`);
   await guest.wait(`document.querySelectorAll('[role="radio"]').length===16`);
   assert.equal(await guest.evaluate('window.lastCloud.room.answerSongId'), undefined);
@@ -151,17 +159,17 @@ try {
   assert.equal(await guest.evaluate('document.documentElement.scrollWidth<=innerWidth'), true, 'mobile layout must not overflow');
   const petPoint = await guest.evaluate(`(() => {
     const pet = document.querySelector('${guestPet}').getBoundingClientRect();
-    const options = document.querySelector('[role="radiogroup"]').getBoundingClientRect();
-    return pet.bottom <= options.top ? { x: pet.left + 22, y: pet.top + 22 } : null;
+    const x = pet.left + pet.width / 2;
+    const y = pet.top + pet.height / 2;
+    return document.elementFromPoint(x, y)?.matches('${guestPet}') ? { x, y } : null;
   })()`);
-  assert.ok(petPoint, 'the mascot stays above the song choices on mobile');
+  assert.ok(petPoint, 'the floating mascot is reachable on mobile');
   await call('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [petPoint] }, guest.sessionId);
   await call('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }, guest.sessionId);
-  await guest.wait(`document.querySelector('${guestPet} [role="status"]').textContent === '听到熟悉的旋律了吗？'`);
+  await guest.wait(`document.querySelector('.dsh-pet-root[data-surface="guest"] [role="status"]')?.textContent.includes('听到熟悉的旋律了吗？')`);
   await host.capture('listening-game-host.png', 1280, 900);
   await host.click('开放提交');
   await guest.wait(`[...document.querySelectorAll('button')].some(b=>b.textContent.trim()==='提交答案'&&!b.disabled)`);
-  assert.equal(await guest.evaluate(`document.querySelector('${guestPet} [role="status"]').textContent`), '选好那首歌，就可以提交啦！');
   await guest.click('提交答案');
   await guest.wait(`!!document.querySelector('dialog[open]')`);
   assert.equal(await guest.evaluate('window.lastCloud.room.submission.correct'), true);

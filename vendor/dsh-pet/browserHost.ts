@@ -13,6 +13,22 @@ const sections: Record<string, StateLeaf> = {};
 const petStates: Record<string, { say: StateLeaf }> = Object.create(null);
 let counter = 0;
 
+const guestConfig = {
+  ...defaults,
+  confineToScreen: true,
+  font: { ...defaults.font, size: 16, followPet: false },
+  pets: [{
+    ...defaults.pets[0],
+    name: '鲸鱼娘',
+    size: 240,
+    display: 'web',
+    fixedEnabled: true,
+    balanceEnabled: false,
+    whisperEnabled: false,
+    position: { corner: 'bottom-right', marginX: -42, marginY: 24 },
+  }],
+};
+
 const cues = {
   waiting: { state: 'waiting', task: '等大家到齐就开场。' },
   listening: { state: 'thinking', task: '演奏开始啦，我也在认真听。' },
@@ -53,7 +69,11 @@ function loadSettings(): Settings {
 
 function saveSettings(settings: Settings) {
   localStorage.setItem(storageKey, JSON.stringify(settings));
-  return Response.json({ main: { ...defaults, ...settings } });
+  return jsonResponse({ main: { ...defaults, ...settings } });
+}
+
+function jsonResponse(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
 }
 
 // The vendored client uses this fetch binding. The rest of the game uses its own transport.
@@ -66,9 +86,11 @@ export async function petFetch(input: string, init?: RequestInit): Promise<Respo
   const method = init?.method ?? 'GET';
 
   if (method === 'GET') {
-    if (route === 'config') return Response.json({ main: { ...defaults, ...loadSettings() } });
+    if (route === 'config') {
+      return jsonResponse({ main: url.searchParams.has('guest') ? guestConfig : { ...defaults, ...loadSettings() } });
+    }
     if (route === 'config/meta') {
-      return Response.json({
+      return jsonResponse({
         user: '当前浏览器',
         default: 'dsh-pet v0.3.8 内置配置',
         animations: './dsh-pet-7340/thumb/main/',
@@ -76,8 +98,8 @@ export async function petFetch(input: string, init?: RequestInit): Promise<Respo
         storage: [],
       });
     }
-    if (route === 'models') return Response.json({ providers: [] });
-    if (route === 'state') return Response.json({ sections, pets: petStates });
+    if (route === 'models') return jsonResponse({ providers: [] });
+    if (route === 'state') return jsonResponse({ sections, pets: petStates });
     if (route.startsWith('thumb/main/')) {
       // The upstream host also falls back to WebM when no MOV pack is present.
       url.pathname = url.pathname.replace(/\.mov$/, '.webm');
@@ -96,7 +118,7 @@ export async function petFetch(input: string, init?: RequestInit): Promise<Respo
       const settings = loadSettings();
       const pets = settings.pets ?? defaults.pets;
       if (!['web', 'desktop', 'both', 'none'].includes(display) || !pets.some(pet => pet.id === id)) {
-        return Response.json({ ok: false, reason: 'invalid-pet-display' }, { status: 400 });
+        return jsonResponse({ ok: false, reason: 'invalid-pet-display' }, 400);
       }
       return saveSettings({ ...settings, pets: pets.map(pet => pet.id === id ? { ...pet, display } : pet) });
     }
@@ -112,20 +134,20 @@ export async function petFetch(input: string, init?: RequestInit): Promise<Respo
           data: { text: cues[phase].task, image: settings.whisperImageEnabled ? image : undefined },
         },
       };
-      return Response.json({ ok: true });
+      return jsonResponse({ ok: true });
     }
     if (route === 'balance' && method === 'POST') {
       sections.balance = {
         counter: ++counter,
         data: { ok: false, reason: 'unsupported', provider: 'DSH', manual: true },
       };
-      return Response.json({ ok: true });
+      return jsonResponse({ ok: true });
     }
     if (route === 'chat' && method === 'POST') {
-      return Response.json({ ok: false, reason: 'provider-missing', message: '当前网页未接入对话模型。' });
+      return jsonResponse({ ok: false, reason: 'provider-missing', message: '当前网页未接入对话模型。' });
     }
   } catch {
-    return Response.json({ ok: false }, { status: 500 });
+    return jsonResponse({ ok: false }, 500);
   }
 
   return new Response(null, { status: 404 });

@@ -4,7 +4,6 @@ import { callListeningGame, pullCurrentListeningGame, type Credentials } from '.
 import { gameErrorMessage, isGameRoomId, LISTENING_GAME_RESULT_IMAGES, type ListeningGameRoom } from './listeningGame';
 import { QUIZ_LEVELS, type QuizAssignments } from './songQuizLibrary';
 import type { Song } from './songCatalog';
-import ListeningGameGuestPet from './ListeningGameGuestPet';
 
 const ListeningGamePet = lazy(() => import('./ListeningGamePet'));
 
@@ -137,18 +136,16 @@ export default function ListeningGamePage({ session, manager, songs, assignments
     try { sessionStorage.setItem(`jieyou-game-choice:${room.id}:${room.roundId}`, songId); } catch {}
   };
 
-  return <main className="relative z-20 min-h-screen bg-[radial-gradient(ellipse_at_20%_0%,rgba(194,114,55,.13),transparent_55%)] px-3 py-3 text-white sm:px-8 sm:py-6">
+  return <main className={`relative z-20 min-h-screen bg-[radial-gradient(ellipse_at_20%_0%,rgba(194,114,55,.13),transparent_55%)] px-3 pt-3 text-white sm:px-8 sm:pt-6 ${manager ? 'pb-3 sm:pb-6' : 'pb-28'}`}>
     <div className="mx-auto max-w-6xl">
       <header className="mb-3 flex items-center justify-between gap-3 sm:mb-5">
         <button type="button" onClick={onBack} className={secondaryStyle}><ArrowLeft className="h-4 w-4" />{manager ? '听歌识曲' : '点歌台'}</button>
         <div className="flex items-center gap-4">
           <span className="flex items-center gap-2 text-xs text-white/45"><span className={`h-1.5 w-1.5 rounded-full ${connected ? 'bg-emerald-300' : 'bg-white/30'}`} />{manager ? '管理员控制台' : '现场猜歌'}</span>
-          {manager && <Suspense fallback={null}><ListeningGamePet room={room} /></Suspense>}
+          <Suspense fallback={null}><ListeningGamePet key={manager ? 'manager' : 'guest'} manager={manager} room={room} /></Suspense>
           {!manager && onLogin && <button type="button" onClick={onLogin} className="min-h-10 text-xs text-white/55 transition hover:text-white">管理员登录</button>}
         </div>
       </header>
-
-      {!manager && <ListeningGameGuestPet room={room} />}
 
       {error && <div role="alert" className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-red-200/20 bg-red-950/25 px-5 py-4 text-sm text-red-100"><span>{error}</span><button type="button" onClick={() => setRetry(value => value + 1)} className="inline-flex min-h-9 items-center gap-2 text-xs font-bold"><RotateCcw className="h-3.5 w-3.5" />重新连接</button></div>}
 

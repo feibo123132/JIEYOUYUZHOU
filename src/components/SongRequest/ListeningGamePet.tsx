@@ -18,7 +18,22 @@ const PetSettings = makePetConfigSection({
   t: (key: string) => zh[key] ?? key,
 });
 
-export default function ListeningGamePet({ room }: { room: ListeningGameRoom | null }) {
+const guestReplies = {
+  waiting: '嗨，待会儿一起猜歌吧！',
+  listening: '听到熟悉的旋律了吗？',
+  open: '选好那首歌，就可以提交啦！',
+  revealed: '下一首再一起猜！',
+  ended: '下次路演见！',
+};
+
+function prefersPetImage() {
+  const { userAgent, platform, maxTouchPoints } = navigator;
+  return /iPad|iPhone|iPod|MQQBrowser|MicroMessenger/i.test(userAgent)
+    || (platform === 'MacIntel' && maxTouchPoints > 1)
+    || (/AppleWebKit.*Safari/i.test(userAgent) && !/Chrome|Chromium|Edg|OPR/i.test(userAgent));
+}
+
+export default function ListeningGamePet({ room, manager }: { room: ListeningGameRoom | null; manager: boolean }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [soundSettings, setSoundSettings] = useState(readPetSoundSettings);
   const [soundStatus, setSoundStatus] = useState('');
@@ -29,8 +44,11 @@ export default function ListeningGamePet({ room }: { room: ListeningGameRoom | n
   const roundId = room?.roundId ?? null;
   const submissions = room?.submissionCount ?? 0;
   const soundPair = getPetSoundPair(soundSettings);
+  const guestReply = room?.submission && (phase === 'open' || phase === 'listening')
+    ? '收到答案啦，等下一首吧。'
+    : guestReplies[phase];
 
-  useEffect(() => initNotify(), []);
+  useEffect(() => { if (manager) initNotify(); }, [manager]);
   useEffect(() => petSound.dispose, [petSound]);
   useEffect(() => {
     updatePetGame(phase, roundId, submissions);
@@ -76,20 +94,20 @@ export default function ListeningGamePet({ room }: { room: ListeningGameRoom | n
     }
   }
   return <>
-    <button
+    {manager && <button
       type="button"
       onClick={() => setSettingsOpen(true)}
       className="inline-flex min-h-10 items-center gap-1.5 rounded-full border border-white/15 px-3 text-xs font-bold text-white/70 transition hover:border-white/35 hover:text-white"
       aria-haspopup="dialog"
     >
       <PawPrint className="h-4 w-4" aria-hidden="true" /> 桌宠
-    </button>
+    </button>}
     {createPortal(<>
-      <PetOverlay sound={{
+      <PetOverlay guest={!manager} guestReply={guestReply} imageMode={prefersPetImage()} sound={{
         press: (pointerId: number) => petSound.press(pointerId, soundPair),
         release: petSound.release,
       }} />
-      {settingsOpen && <dialog
+      {manager && settingsOpen && <dialog
         ref={dialogRef}
         aria-labelledby="listening-game-pet-settings"
         className="listening-game-pet-settings"

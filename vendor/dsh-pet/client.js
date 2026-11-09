@@ -894,7 +894,7 @@ function makeWhisperBubble(rt) {
 	const { h } = rt;
 	injectBubbleCss();
 	injectMemeBubbleCss();
-	return function WhisperBubble({ text, image, url, assetRoot, on }) {
+	return function WhisperBubble({ text, image, url, assetRoot, on, role }) {
 		const rows = whisperBubbleView({
 			ok: true,
 			text,
@@ -904,6 +904,7 @@ function makeWhisperBubble(rt) {
 		const href = String(url ?? "").trim();
 		const src = href || (key ? memeImageUrl(key, "./dsh-pet-7340", assetRoot) : "");
 		return h("div", {
+			role,
 			className: "dsh-pet-bubble dsh-pet-whisper" + (src ? " " + MEME_BUBBLE_CLASS : "") + (on ? " is-on" : ""),
 			children: src ? [h("img", {
 				key: "img",
@@ -3689,7 +3690,7 @@ const css = [
 	".dsh-pet-stage{position:relative;width:var(--dsh-pet-size,462px);height:calc(var(--dsh-pet-size,462px)*9/16);pointer-events:none}",
 	".dsh-pet-video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;pointer-events:none;opacity:0;transition:opacity .18s ease;transform-origin:center}",
 	".dsh-pet-video.is-front{opacity:1}",
-	".dsh-pet-hit{position:absolute;pointer-events:auto;cursor:url(\"./dsh-pet-7340/pic/cursor-grab.png\") 16 16, grab;z-index:1;touch-action:none;-webkit-user-select:none;-webkit-touch-callout:none}",
+	".dsh-pet-hit{position:absolute;pointer-events:auto;cursor:url(\"./dsh-pet-7340/pic/cursor-grab.png\") 16 16, grab;z-index:1;touch-action:none;-webkit-user-select:none;-webkit-touch-callout:none;padding:0;border:0;background:none}",
 	".dsh-pet-hit.dragging{cursor:url(\"./dsh-pet-7340/pic/cursor-grabbing.png\") 16 16, grabbing}",
 	"@media (prefers-reduced-motion: reduce){.dsh-pet-video{transition:none}}",
 	MENU_CSS,
@@ -3717,7 +3718,7 @@ function makePetUI(rt) {
 	/** 碎碎念气泡（哑组件：文本与显隐由 PetCard 传入） */
 	const WhisperBubble = makeWhisperBubble({ h });
 	/** 单个宠物实例（配置由容器 PetMulti 传入；碎碎念轮询/触发/气泡完全自理） */
-	function PetCard({ cfg, balance, balanceTick, balanceNoticeTick, balanceManual, workStatus, workStatusTick, say, sayTick, animCue, animCueTick, posCue, posCueTick, throwCue, throwCueTick, lock, lockTick, menuItemsRef, arena, sound }) {
+	function PetCard({ cfg, balance, balanceTick, balanceNoticeTick, balanceManual, workStatus, workStatusTick, say, sayTick, animCue, animCueTick, posCue, posCueTick, throwCue, throwCueTick, lock, lockTick, menuItemsRef, arena, sound, guest, guestReply, imageMode }) {
 		const [size, setSize] = useState(cfg.size);
 		const fontPx = resolveFontPx(cfg.font, size);
 		const halfW = size / 2;
@@ -3769,6 +3770,7 @@ function makePetUI(rt) {
 		const stageRef = useRef(null);
 		const videoARef = useRef(null);
 		const videoBRef = useRef(null);
+		const petImageRef = useRef(null);
 		const frontRef = useRef(0);
 		const pendingRef = useRef(null);
 		/** 「这一段直接播这个地址」的一次性交接位（POST /anim 的 url 形态，issue #122 第 1 条）。
@@ -3942,12 +3944,13 @@ function makePetUI(rt) {
 			el.addEventListener("loadeddata", onReady);
 		};
 		useEffect(() => {
-			switchTo(anim, once, cuePlayback);
+			if (!imageMode) switchTo(anim, once, cuePlayback);
 		}, [
 			anim,
 			once,
 			seq,
-			cuePlayback
+			cuePlayback,
+			imageMode
 		]);
 		useEffect(() => {
 			mountedRef.current = true;
@@ -4893,7 +4896,7 @@ function makePetUI(rt) {
 				anchorX: anchor ? anchor.x + halfW : e.clientX,
 				anchorY: anchor ? anchor.y + halfH : e.clientY
 			};
-			if (e.pointerType !== "mouse" && e.pointerType !== "pen") {
+			if (!guest && e.pointerType !== "mouse" && e.pointerType !== "pen") {
 				const lpEl = e.currentTarget;
 				const lpId = e.pointerId;
 				const lpX = e.clientX;
@@ -5018,6 +5021,16 @@ function makePetUI(rt) {
 			}
 			stopThrow();
 			stopMove();
+			if (guest) {
+				setWhisperText(guestReply);
+				setWhisperBubbleOn(true);
+				window.clearTimeout(whisperBubbleTimerRef.current);
+				whisperBubbleTimerRef.current = window.setTimeout(() => setWhisperBubbleOn(false), BUBBLE_DURATION_MS);
+			}
+			if (imageMode) {
+				if (petImageRef.current) startSquash(petImageRef.current);
+				return;
+			}
 			setOnce(true);
 			if (!petAnims.clicks.length) return;
 			const name = pick(petAnims.clicks);
@@ -5113,6 +5126,10 @@ function makePetUI(rt) {
 			setCuePlayback(cuePlaybackId);
 		};
 		const handleContextMenu = (e) => {
+			if (guest) {
+				e.preventDefault();
+				return;
+			}
 			const more = buildMoreBranch(menuItemsRef.current);
 			const tools = [
 				{
@@ -5177,7 +5194,7 @@ function makePetUI(rt) {
 		};
 		const workTerminal = workStatus?.state === "success" || workStatus?.state === "error";
 		const bubbleNode = (() => {
-			if (workTerminal && workBubbleOn && workText && cfg.workStatusEnabled) return h(WhisperBubble, {
+			if (!guest && workTerminal && workBubbleOn && workText && cfg.workStatusEnabled) return h(WhisperBubble, {
 				text: workText,
 				on: workBubbleOn
 			});
@@ -5186,6 +5203,7 @@ function makePetUI(rt) {
 				image: whisperImage,
 				url: whisperUrl,
 				assetRoot: cfg.assetRoot,
+				role: guest ? "status" : void 0,
 				on: whisperBubbleOn
 			});
 			if (bubbleOn && balance && (cfg.balanceEnabled || balanceManual)) return h(BalanceBubble, {
@@ -5206,6 +5224,7 @@ function makePetUI(rt) {
 			autoPlay: true
 		};
 		const hitProps = {
+			type: guest ? "button" : void 0,
 			className: "dsh-pet-hit",
 			style: {
 				left: HIT_BOX.x0 / 640 * 100 + "%",
@@ -5225,11 +5244,12 @@ function makePetUI(rt) {
 			},
 			onPointerLeave: () => setTipOn(false),
 			onContextMenu: handleContextMenu,
-			"aria-label": cfg.name
+			"aria-label": guest ? "和鲸鱼娘互动" : cfg.name
 		};
 		return h("div", {
 			ref: rootRef,
 			className: "dsh-pet-root",
+			"data-surface": guest ? "guest" : "manager",
 			"data-corner": corner,
 			"data-facing": facing,
 			style: Object.assign({
@@ -5246,15 +5266,31 @@ function makePetUI(rt) {
 					className: "dsh-pet-stage",
 					style: stageStyle,
 					children: [
-						h("video", Object.assign({}, commonVideoProps, {
-							ref: videoARef,
-							className: "dsh-pet-video is-front"
-						})),
-						h("video", Object.assign({}, commonVideoProps, {
-							ref: videoBRef,
-							className: "dsh-pet-video"
-						})),
-						h("div", hitProps)
+						...(imageMode ? [h("picture", {
+							children: [
+								h("source", {
+									type: "image/webp",
+									media: "(prefers-reduced-motion: no-preference)",
+									srcSet: "./dsh-pet-7340/pic/idle-transparent.webp"
+								}),
+								h("img", {
+									ref: petImageRef,
+									className: "dsh-pet-video is-front",
+									src: "./dsh-pet-7340/pic/idle-transparent.png",
+									alt: ""
+								})
+							]
+						})] : [
+							h("video", Object.assign({}, commonVideoProps, {
+								ref: videoARef,
+								className: "dsh-pet-video is-front"
+							})),
+							h("video", Object.assign({}, commonVideoProps, {
+								ref: videoBRef,
+								className: "dsh-pet-video"
+							}))
+						]),
+						h(guest ? "button" : "div", hitProps)
 					]
 				}),
 				h("div", {
@@ -5267,7 +5303,7 @@ function makePetUI(rt) {
 		});
 	}
 	/** 多开容器：一次拉取成品配置 → 拍平 → 渲染多个 PetCard */
-	function PetMulti({ sound }) {
+	function PetMulti({ sound, guest, guestReply, imageMode }) {
 		const [pets, setPets] = useState([]);
 		const [ready, setReady] = useState(false);
 		const arenaRef = useRef({ slots: {} });
@@ -5311,7 +5347,7 @@ function makePetUI(rt) {
 			};
 			/** 拉成品聚合：host readAllConfig 的输出（字段填满、绝对正确），客户端零校验零兜底 */
 			const loadMerged = async () => {
-				const r = await fetch("./dsh-pet-7340/config", { cache: "no-store" });
+				const r = await fetch("./dsh-pet-7340/config" + (guest ? "?guest=1" : ""), { cache: "no-store" });
 				if (!r.ok) throw new Error("config HTTP " + r.status);
 				return await r.json();
 			};
@@ -5340,7 +5376,7 @@ function makePetUI(rt) {
 				alive = false;
 				petBridge.reload = () => {};
 			};
-		}, []);
+		}, [guest]);
 		const visiblePets = pets.filter((p) => isWebVisible(p.display));
 		const [sayTick, setSayTick] = useState(0);
 		const sayRef = useRef({});
@@ -5477,7 +5513,10 @@ function makePetUI(rt) {
 			lockTick,
 			menuItemsRef,
 			arena: arenaRef,
-			sound
+			sound,
+			guest,
+			guestReply,
+			imageMode
 		})) : null;
 	}
 	return PetMulti;
