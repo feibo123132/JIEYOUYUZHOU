@@ -1,7 +1,8 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Check, Disc3, Headphones, LockKeyhole, Pause, Play, Radio, RotateCcw, Search, Send, Users, X } from 'lucide-react';
 import { callListeningGame, pullCurrentListeningGame, type Credentials } from './songRequestCloud';
-import { gameErrorMessage, isGameRoomId, LISTENING_GAME_RESULT_IMAGES, type ListeningGameRoom } from './listeningGame';
+import { gameErrorMessage, isGameRoomId, listeningGameConfirmationKey, type ListeningGameRoom } from './listeningGame';
+import ListeningGameFeedbackDialog, { unlockListeningGameFeedbackAudio } from './ListeningGameFeedbackDialog';
 import { QUIZ_LEVELS, type QuizAssignments } from './songQuizLibrary';
 import type { Song } from './songCatalog';
 
@@ -11,25 +12,6 @@ const actionStyle = 'inline-flex min-h-11 items-center justify-center gap-2 roun
 const primaryStyle = `${actionStyle} border-orange-200/40 bg-orange-200 text-[#25180e] hover:bg-orange-100`;
 const secondaryStyle = `${actionStyle} border-white/15 bg-white/[.04] text-white/75 hover:border-white/30 hover:text-white`;
 const phaseText = { waiting: '等候开场', listening: '正在演奏 · 可先选歌', open: '已开放提交', revealed: '本轮已结束', ended: '本场游戏已结束' };
-
-function GameResultDialog({ correct, answerTitle, onClose }: { correct: boolean; answerTitle: string; onClose: () => void }) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
-  const [imageFailed, setImageFailed] = useState(false);
-  const image = correct ? LISTENING_GAME_RESULT_IMAGES.correct : LISTENING_GAME_RESULT_IMAGES.incorrect;
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-    dialog.showModal();
-    return () => { if (dialog.open) dialog.close(); };
-  }, []);
-  return <dialog ref={dialogRef} aria-labelledby="listening-game-result-title" onCancel={event => { event.preventDefault(); onClose(); }} className="m-auto max-h-[calc(100svh-2rem)] w-[calc(100%-2rem)] max-w-sm overflow-y-auto rounded-[1.5rem] border-0 bg-[#fffcf2] p-5 text-[#354239] shadow-[0_24px_100px_rgba(0,0,0,.4)] backdrop:bg-black/60 backdrop:backdrop-blur-sm">
-    <div className={`relative grid aspect-square w-full place-items-center overflow-hidden rounded-xl ${correct ? 'bg-[#e3edce]' : 'bg-[#f3e0c8]'}`}>
-      {image && !imageFailed ? <img src={image} alt={correct ? '答对了' : '答错了'} onError={() => setImageFailed(true)} className="h-full w-full object-cover" /> : <div className="text-center"><span className={`mx-auto grid h-24 w-24 place-items-center rounded-full border-2 ${correct ? 'border-[#638346]/25 bg-[#638346]/10 text-[#638346]' : 'border-[#bb7e47]/25 bg-[#bb7e47]/10 text-[#bb7e47]'}`}>{correct ? <Check className="h-14 w-14" strokeWidth={2.5} /> : <X className="h-14 w-14" strokeWidth={2.5} />}</span><p className="mt-5 font-serif text-2xl font-black tracking-widest">{correct ? '好耳力！' : '下首再战！'}</p></div>}
-    </div>
-    <div className="pb-1 pt-5 text-center"><h2 id="listening-game-result-title" className="text-2xl font-black">{correct ? '答对了！' : '答错了'}</h2><p className="mt-2 text-sm text-[#66715f]">{correct ? '这段旋律，被你认出来了。' : '差一点，下一首继续加油。'}</p><p className="mt-3 break-words text-sm leading-6">正确答案：<strong>{answerTitle}</strong></p></div>
-    <button type="button" autoFocus onClick={onClose} className="mt-4 min-h-11 w-full rounded-xl bg-[#e9c75b] px-4 py-3 text-sm font-black text-[#3e3c26] transition hover:bg-[#e3bc40] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#8e7834]">知道了</button>
-  </dialog>;
-}
 
 export default function ListeningGamePage({ session, manager, songs, assignments, initialRoomId, onBack, onLogin }: {
   session: Credentials | null; manager: boolean; songs: Song[]; assignments: QuizAssignments;
@@ -49,6 +31,8 @@ export default function ListeningGamePage({ session, manager, songs, assignments
   const [retry, setRetry] = useState(0);
   const [missingRoom, setMissingRoom] = useState(false);
   const [resultDialogKey, setResultDialogKey] = useState<string | null>(null);
+  const [confirmation, setConfirmation] = useState<{ roundId: string; songId: string } | null>(null);
+  const seenConfirmations = useRef(new Set<string>());
   const shownResultRef = useRef<string | null>(null);
   const mutationVersionRef = useRef(0);
   const applyRoom = (next: ListeningGameRoom | null) => {
@@ -122,6 +106,9 @@ export default function ListeningGamePage({ session, manager, songs, assignments
   const hasResult = typeof submitted?.correct === 'boolean';
   const resultKey = room?.roundId && hasResult ? `${room.id}:${room.roundId}` : null;
   const selectedId = submitted?.songId ?? (selection.roundId === room?.roundId ? selection.songId : '');
+  const selectedSong = room?.options.find(song => song.id === selectedId);
+  const canSubmit = !manager && !busy && connected && room?.phase === 'open' && !submitted && Boolean(selectedSong);
+  const showConfirmation = canSubmit && confirmation?.roundId === room?.roundId && confirmation?.songId === selectedId;
   const revealed = room?.phase === 'revealed' || room?.phase === 'ended';
   const choosingSong = manager && (room?.phase === 'waiting' || (room?.phase === 'revealed' && choosingNext));
   useEffect(() => {
@@ -130,13 +117,45 @@ export default function ListeningGamePage({ session, manager, songs, assignments
       setResultDialogKey(resultKey);
     }
   }, [manager, resultKey]);
+  useEffect(() => {
+    if (confirmation && !showConfirmation) setConfirmation(null);
+  }, [confirmation, showConfirmation]);
+
+  const submitSelection = () => {
+    if (!canSubmit || !room?.roundId || confirmation) return;
+    unlockListeningGameFeedbackAudio();
+    const key = listeningGameConfirmationKey(room.id, room.roundNumber);
+    if (!seenConfirmations.current.has(key)) {
+      seenConfirmations.current.add(key);
+      let alreadyShown = false;
+      try {
+        alreadyShown = localStorage.getItem(key) === '1';
+        if (!alreadyShown) localStorage.setItem(key, '1');
+      } catch {}
+      if (!alreadyShown) {
+        setConfirmation({ roundId: room.roundId, songId: selectedId });
+        return;
+      }
+    }
+    void act('submit', selectedId);
+  };
+  const confirmSubmission = () => {
+    if (!showConfirmation || !confirmation) return;
+    unlockListeningGameFeedbackAudio();
+    setConfirmation(null);
+    void act('submit', confirmation.songId);
+  };
+  const reopenResult = () => {
+    unlockListeningGameFeedbackAudio();
+    setResultDialogKey(resultKey);
+  };
   const selectOption = (songId: string) => {
     if (!room?.roundId || submitted || revealed) return;
     setSelection({ roundId: room.roundId, songId });
     try { sessionStorage.setItem(`jieyou-game-choice:${room.id}:${room.roundId}`, songId); } catch {}
   };
 
-  return <main className={`relative z-20 min-h-screen bg-[radial-gradient(ellipse_at_20%_0%,rgba(194,114,55,.13),transparent_55%)] px-3 pt-3 text-white sm:px-8 sm:pt-6 ${manager ? 'pb-3 sm:pb-6' : 'pb-28'}`}>
+  return <main className={`relative z-20 min-h-screen bg-[radial-gradient(ellipse_at_20%_0%,rgba(194,114,55,.13),transparent_55%)] px-3 pt-3 text-white sm:px-8 sm:pt-6 ${manager ? 'pb-3 sm:pb-6' : 'pb-48 sm:pb-28'}`}>
     <div className="mx-auto max-w-6xl">
       <header className="mb-3 flex items-center justify-between gap-3 sm:mb-5">
         <button type="button" onClick={onBack} className={secondaryStyle}><ArrowLeft className="h-4 w-4" />{manager ? '听歌识曲' : '点歌台'}</button>
@@ -185,13 +204,14 @@ export default function ListeningGamePage({ session, manager, songs, assignments
                 {room.phase === 'ended' && <button type="button" disabled={busy} onClick={() => void act('create')} className={primaryStyle}><Play className="h-4 w-4" />创建新游戏</button>}
                 {busy && <span role="status" className="self-center text-xs text-white/40">正在同步…</span>}
               </div> : <div className="mt-4 border-t border-white/10 pt-3 sm:mt-7 sm:pt-6">
-                {submitted ? <div className="flex flex-wrap items-center justify-center gap-3"><p role="status" className={`text-sm font-bold ${hasResult && submitted.correct ? 'text-emerald-200' : 'text-orange-100'}`}>{hasResult ? submitted.correct ? '答对了！等待下一首歌。' : '答错了，下一首继续加油。' : '答案已提交，正在同步结果…'}</p>{hasResult && <button type="button" onClick={() => setResultDialogKey(resultKey)} className="min-h-10 rounded-full border border-white/15 px-4 text-xs font-bold text-white/70 transition hover:text-white">查看结果</button>}</div> : !revealed ? <><button type="button" disabled={busy || !connected || room.phase !== 'open' || !selectedId} onClick={() => void act('submit', selectedId)} className={`${primaryStyle} w-full`}>{room.phase === 'open' ? <Send className="h-4 w-4" /> : <LockKeyhole className="h-4 w-4" />}{busy ? '正在提交…' : room.phase === 'open' ? '提交答案' : '等待管理员开放提交'}</button><p className="mt-2 text-center text-[11px] leading-5 text-white/40 sm:mt-3 sm:text-xs sm:leading-6">{room.phase === 'open' ? '每轮只能提交一次，确认后不能修改。' : '现在可以自由选择和修改，开放后再确认提交。'}</p></> : <p role="status" className="text-center text-sm leading-6 text-white/40">{room.phase === 'ended' ? '谢谢参与，我们下一场路演见。' : '等待下一首歌，页面会自动更新。'}</p>}
+                {submitted ? <div className="flex flex-wrap items-center justify-center gap-3"><p role="status" className={`text-sm font-bold ${hasResult && submitted.correct ? 'text-emerald-200' : 'text-orange-100'}`}>{hasResult ? submitted.correct ? '答对了！等待下一首歌。' : '答错了，下一首继续加油。' : '答案已提交，正在同步结果…'}</p>{hasResult && <button type="button" data-custom-click-sound="" onClick={reopenResult} className="min-h-10 rounded-full border border-white/15 px-4 text-xs font-bold text-white/70 transition hover:text-white">查看结果</button>}</div> : !revealed ? <><button type="button" data-custom-click-sound="" disabled={!canSubmit} onClick={submitSelection} className={`${primaryStyle} w-full`}>{room.phase === 'open' ? <Send className="h-4 w-4" /> : <LockKeyhole className="h-4 w-4" />}{busy ? '正在提交…' : room.phase === 'open' ? '提交答案' : '等待管理员开放提交'}</button><p className="mt-2 text-center text-[11px] leading-5 text-white/40 sm:mt-3 sm:text-xs sm:leading-6">{room.phase === 'open' ? '每轮只能提交一次，确认后不能修改。' : '现在可以自由选择和修改，开放后再确认提交。'}</p></> : <p role="status" className="text-center text-sm leading-6 text-white/40">{room.phase === 'ended' ? '谢谢参与，我们下一场路演见。' : '等待下一首歌，页面会自动更新。'}</p>}
               </div>}
             </>}
           </div>
         </section>
       </div>}
-      {!manager && resultKey && resultDialogKey === resultKey && submitted && answer && <GameResultDialog key={resultKey} correct={submitted.correct} answerTitle={answer.title} onClose={() => setResultDialogKey(null)} />}
+      {showConfirmation && confirmation && selectedSong && <ListeningGameFeedbackDialog key={`confirm:${confirmation.roundId}`} kind="confirm" songTitle={selectedSong.title} onClose={() => setConfirmation(null)} onConfirm={confirmSubmission} />}
+      {!manager && resultKey && resultDialogKey === resultKey && submitted && answer && <ListeningGameFeedbackDialog key={resultKey} kind={submitted.correct ? 'correct' : 'incorrect'} songTitle={answer.title} onClose={() => setResultDialogKey(null)} />}
     </div>
   </main>;
 }

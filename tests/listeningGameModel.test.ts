@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { SONGS } from '../src/components/SongRequest/songCatalog.ts';
-import { shouldOpenListeningGame, isGameRoomId, gameErrorMessage } from '../src/components/SongRequest/listeningGame.ts';
+import { shouldOpenListeningGame, isGameRoomId, gameErrorMessage, listeningGameConfirmationKey } from '../src/components/SongRequest/listeningGame.ts';
 
 test('固定网址对游客直接打开答题页，管理员默认仍进入点歌台', () => {
   assert.equal(shouldOpenListeningGame(false, ''), true);
@@ -15,6 +15,14 @@ test('旧房间链接仍只接受有效的房间编号', () => {
   const roomId = 'a'.repeat(32);
   assert.equal(isGameRoomId(roomId), true);
   for (const value of [null, '', '../test', 'x'.repeat(32)]) assert.equal(isGameRoomId(value), false);
+});
+
+test('确认提示在同场游戏每四轮共用一次记录', () => {
+  const firstGroup = listeningGameConfirmationKey('room-a', 1);
+  assert.equal(listeningGameConfirmationKey('room-a', 4), firstGroup);
+  assert.notEqual(listeningGameConfirmationKey('room-a', 5), firstGroup);
+  assert.equal(listeningGameConfirmationKey('room-a', 8), listeningGameConfirmationKey('room-a', 5));
+  assert.notEqual(listeningGameConfirmationKey('room-b', 1), firstGroup);
 });
 
 test('云函数默认曲目与前端默认歌库一致，避免备用曲库漂移', () => {

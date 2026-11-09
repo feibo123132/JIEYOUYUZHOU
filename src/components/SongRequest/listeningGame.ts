@@ -12,8 +12,8 @@ export interface ListeningGameRoom {
   submission: { songId: string; submittedAt: string; correct: boolean } | null;
 }
 
-// 填入两张结果图片的地址后，弹窗会按 1:1 显示；未配置时使用内置图案。
-export const LISTENING_GAME_RESULT_IMAGES = { correct: '', incorrect: '' };
+export const listeningGameConfirmationKey = (roomId: string, roundNumber: number): string =>
+  `jieyou-game-confirm:${roomId}:${Math.floor((roundNumber - 1) / 4)}`;
 
 export const shouldOpenListeningGame = (manager: boolean, search: string): boolean => !manager || new URLSearchParams(search).has('game');
 export const isGameRoomId = (value: string | null): value is string => Boolean(value && /^[a-f0-9]{32}$/.test(value));

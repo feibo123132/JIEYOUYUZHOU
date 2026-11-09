@@ -5225,6 +5225,7 @@ function makePetUI(rt) {
 		};
 		const hitProps = {
 			type: guest ? "button" : void 0,
+			"data-custom-click-sound": "",
 			className: "dsh-pet-hit",
 			style: {
 				left: HIT_BOX.x0 / 640 * 100 + "%",

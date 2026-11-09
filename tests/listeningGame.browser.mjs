@@ -114,11 +114,15 @@ try {
     const timeout = setTimeout(() => { pending.delete(id); reject(new Error(`CDP timed out: ${method}`)); }, 10000);
     pending.set(id, { resolve, reject, timeout }); socket.send(JSON.stringify({ id, method, params, sessionId }));
   });
-  const page = async url => {
-    const { targetId } = await call('Target.createTarget', { url });
+  const page = async (url, mobile = false) => {
+    const { targetId } = await call('Target.createTarget', { url: mobile ? 'about:blank' : url });
     const { sessionId } = await call('Target.attachToTarget', { targetId, flatten: true });
     sessions.push(sessionId);
     await call('Runtime.enable', {}, sessionId);
+    if (mobile) {
+      await call('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true }, sessionId);
+      await call('Page.navigate', { url }, sessionId);
+    }
     const evaluate = async expression => {
       const result = await call('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }, sessionId);
       if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description ?? result.exceptionDetails.text);
@@ -141,10 +145,11 @@ try {
   await host.wait(`document.body.innerText.includes('选择本轮演奏歌曲')`);
   assert.equal(await host.evaluate(`document.body.innerText.includes('游客扫码加入')`), false);
   assert.equal(await host.evaluate(`document.querySelectorAll('input[aria-label="游客游戏链接"]').length`), 0);
-  const guest = await page(base);
+  const guest = await page(base, true);
   await guest.wait(`document.body.innerText.includes('你已到场')`);
   const guestPet = 'button[aria-label="和鲸鱼娘互动"]';
   await guest.wait(`document.querySelector('.dsh-pet-root[data-surface="guest"] ${guestPet}')`);
+  assert.equal(await guest.evaluate(`document.querySelector('.dsh-pet-root[data-surface="guest"]').style.getPropertyValue('--dsh-pet-size')`), '360px');
   assert.equal(await guest.evaluate(`!!document.querySelector('button[aria-haspopup="dialog"]')`), false);
   const ipad = await page(base + '?host=1&ipad=1');
   await ipad.wait(`document.querySelector('.dsh-pet-root[data-surface="manager"] picture img')?.naturalWidth > 0`);
@@ -171,7 +176,12 @@ try {
   await host.click('开放提交');
   await guest.wait(`[...document.querySelectorAll('button')].some(b=>b.textContent.trim()==='提交答案'&&!b.disabled)`);
   await guest.click('提交答案');
-  await guest.wait(`!!document.querySelector('dialog[open]')`);
+  await guest.wait(`document.querySelector('dialog[open] h2')?.textContent === '你确定吗？'`);
+  assert.equal(await guest.evaluate('window.lastCloud.room.submission'), null);
+  await guest.click('重新选择');
+  await call('Page.reload', {}, guest.sessionId);
+  await guest.click('提交答案');
+  await guest.wait(`document.querySelector('dialog[open] h2')?.textContent === '答对了！'`);
   assert.equal(await guest.evaluate('window.lastCloud.room.submission.correct'), true);
   assert.equal(await guest.evaluate('window.lastCloud.room.phase'), 'open');
   await guest.click('知道了');
@@ -184,9 +194,12 @@ try {
   await host.wait(`document.body.innerText.includes('1 人已提交')`);
   const wrongGuest = await page(base);
   await wrongGuest.wait(`document.querySelectorAll('[role="radio"]').length===16`);
+  await wrongGuest.evaluate(`localStorage.removeItem('jieyou-game-confirm:' + window.lastCloud.room.id + ':0')`);
   await wrongGuest.evaluate(`[...document.querySelectorAll('[role="radio"]')].find(b=>!b.textContent.includes(${JSON.stringify(songs[0].title)})).click()`);
   await wrongGuest.click('提交答案');
-  await wrongGuest.wait(`!!document.querySelector('dialog[open]')`);
+  await wrongGuest.wait(`document.querySelector('dialog[open] h2')?.textContent === '你确定吗？'`);
+  await wrongGuest.click('确认提交');
+  await wrongGuest.wait(`document.querySelector('dialog[open] h2')?.textContent === '答错了'`);
   assert.equal(await wrongGuest.evaluate('window.lastCloud.room.submission.correct'), false);
   assert.equal(await wrongGuest.evaluate('window.lastCloud.room.answerSongId'), songs[0].id);
   await wrongGuest.click('知道了');

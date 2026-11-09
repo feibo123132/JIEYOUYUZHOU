@@ -71,7 +71,7 @@ const KEYBOARD_DIRECT_SOUND_SELECTOR = 'select, input[type="range"], [role="tab"
 
 function handleGlobalClickSound(event: MouseEvent) {
   const target = event.target instanceof Element ? event.target.closest(INTERACTION_SOUND_SELECTOR) : null
-  if (!target) return
+  if (!target || target.closest('[data-custom-click-sound]')) return
   playDelegatedSound()
 }
 

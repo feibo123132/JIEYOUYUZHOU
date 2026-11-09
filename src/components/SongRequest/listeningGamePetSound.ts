@@ -4,7 +4,8 @@ export const petSoundFiles = {
 } as const;
 
 type SoundFile = (typeof petSoundFiles)[keyof typeof petSoundFiles][number];
-type SoundPair = [press: string, release: string];
+type SoundClip = string | { url: string };
+type SoundPair = [press: SoundClip, release: SoundClip];
 type SoundPreset = keyof typeof petSoundFiles | 'muted';
 type SoundBuffers = [press: AudioBuffer, release: AudioBuffer];
 export type PetSoundSettings = {
@@ -17,6 +18,11 @@ const soundFileNames = Object.values(petSoundFiles).flat();
 const maxFileBytes = 128 * 1024;
 const releaseLeadSeconds = 0.04;
 const volume = 0.9;
+
+export const guestDuckSoundPair: SoundPair = [
+  { url: `./dsh-pet-7340/sound/${petSoundFiles.duck[0]}` },
+  { url: `./dsh-pet-7340/sound/${petSoundFiles.duck[1]}` },
+];
 
 export function readPetSoundSettings(): PetSoundSettings {
   try {
@@ -58,13 +64,23 @@ export function createPetSound() {
   let cached: { files: SoundPair; buffers: Promise<SoundBuffers> } | undefined;
 
   function context() {
-    if (!audio) audio = new AudioContext();
+    if (!audio) {
+      const Audio = globalThis.AudioContext
+        ?? (globalThis as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      audio = new Audio();
+    }
     return audio;
   }
 
-  async function decode(file: string) {
-    const bytes = Uint8Array.from(atob(file), character => character.charCodeAt(0));
-    return context().decodeAudioData(bytes.buffer);
+  async function decode(file: SoundClip) {
+    const ctx = context();
+    if (typeof file === 'string') {
+      const bytes = Uint8Array.from(atob(file), character => character.charCodeAt(0));
+      return ctx.decodeAudioData(bytes.buffer);
+    }
+    const response = await fetch(file.url);
+    if (!response.ok) throw new Error(`音效加载失败 (${response.status})`);
+    return ctx.decodeAudioData(await response.arrayBuffer());
   }
 
   function play(buffer: AudioBuffer, time: number) {
@@ -102,7 +118,7 @@ export function createPetSound() {
       return Object.fromEntries(clips);
     },
     press(pointerId: number, files: SoundPair | null) {
-      if (!files || typeof AudioContext === 'undefined') return;
+      if (!files) return;
       let ctx: AudioContext;
       try {
         ctx = context();

@@ -87,7 +87,13 @@ export async function petFetch(input: string, init?: RequestInit): Promise<Respo
 
   if (method === 'GET') {
     if (route === 'config') {
-      return jsonResponse({ main: url.searchParams.has('guest') ? guestConfig : { ...defaults, ...loadSettings() } });
+      if (!url.searchParams.has('guest')) return jsonResponse({ main: { ...defaults, ...loadSettings() } });
+      if (!window.matchMedia('(max-width: 639px)').matches) return jsonResponse({ main: guestConfig });
+      const pet = guestConfig.pets[0];
+      return jsonResponse({ main: {
+        ...guestConfig,
+        pets: [{ ...pet, size: pet.size * 1.5, position: { ...pet.position, marginX: -80 } }],
+      } });
     }
     if (route === 'config/meta') {
       return jsonResponse({

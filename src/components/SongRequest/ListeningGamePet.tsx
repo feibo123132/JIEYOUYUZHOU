@@ -5,7 +5,7 @@ import { PawPrint, X } from 'lucide-react';
 import { initNotify, makePetConfigSection, makePetUI, zh } from '../../../vendor/dsh-pet/client';
 import { updatePetGame } from '../../../vendor/dsh-pet/browserHost';
 import type { ListeningGameRoom } from './listeningGame';
-import { createPetSound, getPetSoundPair, petSoundFiles, readPetSoundSettings, savePetSoundSettings, type PetSoundSettings } from './listeningGamePetSound';
+import { createPetSound, getPetSoundPair, guestDuckSoundPair, petSoundFiles, readPetSoundSettings, savePetSoundSettings, type PetSoundSettings } from './listeningGamePetSound';
 import './listeningGamePet.css';
 
 const PetOverlay = makePetUI({ h: jsx, useState, useEffect, useRef });
@@ -44,6 +44,7 @@ export default function ListeningGamePet({ room, manager }: { room: ListeningGam
   const roundId = room?.roundId ?? null;
   const submissions = room?.submissionCount ?? 0;
   const soundPair = getPetSoundPair(soundSettings);
+  const guestSoundPair = getPetSoundPair({ preset: 'duck', files: soundSettings.files }) ?? guestDuckSoundPair;
   const guestReply = room?.submission && (phase === 'open' || phase === 'listening')
     ? '收到答案啦，等下一首吧。'
     : guestReplies[phase];
@@ -104,7 +105,7 @@ export default function ListeningGamePet({ room, manager }: { room: ListeningGam
     </button>}
     {createPortal(<>
       <PetOverlay guest={!manager} guestReply={guestReply} imageMode={prefersPetImage()} sound={{
-        press: (pointerId: number) => petSound.press(pointerId, soundPair),
+        press: (pointerId: number) => petSound.press(pointerId, manager ? soundPair : guestSoundPair),
         release: petSound.release,
       }} />
       {manager && settingsOpen && <dialog
