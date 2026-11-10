@@ -228,6 +228,8 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
   const [personalRankingArtist, setPersonalRankingArtist] = useState<string | null>(null);
   const [personalRankingMode, setPersonalRankingMode] = useState<RankingDisplayMode>('normal');
   const [personalRankingBoard, setPersonalRankingBoard] = useState<PracticeBoard>('practice');
+  // 从某首歌的详情跳进练习榜时记住它，榜单侧栏据此显示「回到这首歌」的按钮。
+  const [practiceRankingReturnSongId, setPracticeRankingReturnSongId] = useState<string | null>(null);
   const [personalRankingPage, setPersonalRankingPage] = useState(1);
   const [personalRankingSelectMode, setPersonalRankingSelectMode] = useState(false);
   const [selectedPersonalRankingSongIds, setSelectedPersonalRankingSongIds] = useState<string[]>([]);
@@ -847,9 +849,14 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
     chorusScore: entry.chorusScore,
     strumScore: entry.strumScore,
     strumBpm: entry.strumBpm,
+    stoolScore: entry.stoolScore,
     practiceCount: 0,
   })), [catalogSongs, publicPracticeRanking]);
   const personalRanking = songRecordSession ? privatePersonalRanking : publicPersonalRanking;
+  const practiceRankingReturnSong = useMemo(
+    () => (practiceRankingReturnSongId ? catalogSongs.find((song) => song.id === practiceRankingReturnSongId) ?? null : null),
+    [catalogSongs, practiceRankingReturnSongId],
+  );
   const personalRankingReversed = personalRankingMode === 'reverse';
   const visiblePersonalRanking = useMemo(() => {
     const base = personalRankingArtist
@@ -859,7 +866,10 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
       ? [...base].sort((left, right) => ((right.chorusScore ?? 0) - (left.chorusScore ?? 0)) || (right.score - left.score))
       : personalRankingBoard === 'strum'
         ? [...base].sort((left, right) => ((right.strumScore ?? 0) - (left.strumScore ?? 0)) || (right.score - left.score))
-        : base;
+        : personalRankingBoard === 'stool'
+          ? [...base].sort((left, right) => ((right.stoolScore ?? 0) - (left.stoolScore ?? 0)) || (right.score - left.score))
+          // 练习榜只看匹配指数：只评了其它指数的歌会出现在对应的合唱 / 狂扫 / 板凳榜里。
+          : base.filter((item) => item.score > 0);
     return orderPersonalRankingItems(ranked, personalRankingMode);
   }, [personalRanking, personalRankingArtist, personalRankingMode, personalRankingBoard]);
   const paginatedPersonalRanking = useMemo(
@@ -930,7 +940,7 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
   }, [catalogSongs, query]);
 
   const songPracticeStats = useMemo(() => {
-    const bySong = new Map<string, Array<{ matchScore: number }>>();
+    const bySong = new Map<string, Array<{ matchScore?: number }>>();
     for (const record of songRecords) {
       if (record.kind === 'practice') {
         bySong.set(record.songId, [...(bySong.get(record.songId) ?? []), record]);
@@ -986,11 +996,11 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
     const practiceRecords = songRecords.filter((record) => record.kind === 'practice');
     const sorted = sortCatalogByMatchScore(catalog, practiceRecords);
     if (sorted === catalog) {
-      showSyncMessage('当前歌单已按匹配度排序');
+      showSyncMessage('当前歌单已按匹配指数排序');
       return;
     }
     commitSongOrder(sorted);
-    showSyncMessage('已按匹配度重新排序并同步到站内');
+    showSyncMessage('已按匹配指数重新排序并同步到站内');
   };
 
   const commitSongRecords = (next: SongRecord[]) => {
@@ -1057,7 +1067,16 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
   };
   const canOpenPracticeDetails = Boolean(songRecordSession);
   const openPracticeSongDetail = (song: Song) => {
-    if (canOpenPracticeDetails) openSongDetail(song);
+    if (canOpenPracticeDetails) {
+      setPracticeRankingReturnSongId(song.id);
+      openSongDetail(song);
+    }
+  };
+  const returnToPracticeSong = () => {
+    if (!practiceRankingReturnSong) return;
+    // 与「练习榜」入口对称：进去和回来都回到页面顶部，保证先看到歌曲标题。
+    openPracticeSongDetail(practiceRankingReturnSong);
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'auto' });
   };
 
   const handleAddArtist = () => {
@@ -1919,7 +1938,7 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
     return (
       <span className="inline-flex shrink-0 items-center gap-1">
         {stats && <span className="rounded-md bg-white/[0.08] px-1 py-[1px] text-[10px] font-medium text-white/45">{stats.count}次</span>}
-        {stats && <span className="rounded-md bg-white/[0.08] px-1 py-[1px] text-[10px] font-medium text-white/45">{stats.score}</span>}
+        {stats && stats.score !== null && <span className="rounded-md bg-white/[0.08] px-1 py-[1px] text-[10px] font-medium text-white/45">{stats.score}</span>}
         {roadshowCount > 0 && (
           <span title={`本曲已收录于 ${roadshowCount} 场路演`} aria-label={`本曲已收录于 ${roadshowCount} 场路演`} className="inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-white/15 bg-white/[0.08] px-1 text-[10px] font-medium tabular-nums text-white/45">{roadshowCount}</span>
         )}
@@ -2007,8 +2026,8 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
   );
 
   const sectionTitle = activeSection === 'quiz' ? '听歌识曲' : HUB_DIRECTIONS.find((item) => item.id === activeSection)?.label;
-  const personalBoardLabel = personalRankingBoard === 'chorus' ? '合唱榜' : personalRankingBoard === 'strum' ? '狂扫榜' : '练习榜';
-  const personalBoardNoun = personalRankingBoard === 'chorus' ? '合唱' : personalRankingBoard === 'strum' ? '狂扫' : '练习';
+  const personalBoardLabel = personalRankingBoard === 'chorus' ? '合唱榜' : personalRankingBoard === 'strum' ? '狂扫榜' : personalRankingBoard === 'stool' ? '板凳榜' : '练习榜';
+  const personalBoardNoun = personalRankingBoard === 'chorus' ? '合唱' : personalRankingBoard === 'strum' ? '狂扫' : personalRankingBoard === 'stool' ? '板凳' : '练习';
   const rankingHeading = visibleRankingView === 'requests'
     ? '点歌榜'
     : visibleRankingView === 'personal'
@@ -2174,6 +2193,7 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
             onScoreChange={commitSongScore}
             onOpenPrivateSpace={openPrivateSpace}
             onOpenPracticeRanking={() => {
+              setPracticeRankingReturnSongId(selectedSong.id);
               setSelectedSong(null);
               setSelectedArtist(null);
               setPersonalRankingArtist(null);
@@ -2326,12 +2346,13 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
                       <ol
                         key={`practice-ranking-${personalRankingBoard}-${personalRankingMode}-${paginatedPersonalRanking.page}`}
                         tabIndex={paginatedPersonalRanking.items.length > PERSONAL_RANKING_SCROLL_THRESHOLD ? 0 : undefined}
-                        aria-label={paginatedPersonalRanking.items.length > PERSONAL_RANKING_SCROLL_THRESHOLD ? `${personalRankingArtist ?? '总榜'}${personalBoardLabel}${personalRankingBoard === 'chorus' ? '按合唱指数' : personalRankingBoard === 'strum' ? '按狂扫指数' : personalRankingReversed ? '倒序' : '按匹配度'}排行，可上下滚动` : undefined}
+                        aria-label={paginatedPersonalRanking.items.length > PERSONAL_RANKING_SCROLL_THRESHOLD ? `${personalRankingArtist ?? '总榜'}${personalBoardLabel}${personalRankingBoard === 'chorus' ? '按合唱指数' : personalRankingBoard === 'strum' ? '按狂扫指数' : personalRankingBoard === 'stool' ? '按板凳指数' : personalRankingReversed ? '倒序' : '按匹配指数'}排行，可上下滚动` : undefined}
                         className={`space-y-3 ${paginatedPersonalRanking.items.length > PERSONAL_RANKING_SCROLL_THRESHOLD ? 'max-h-[42rem] overflow-y-auto overscroll-contain pr-2' : ''}`}
-                      >{paginatedPersonalRanking.items.map(({ song, score, chorusScore, strumScore, strumBpm, practiceCount, originalRank }) => {
+                      >{paginatedPersonalRanking.items.map(({ song, score, chorusScore, strumScore, strumBpm, stoolScore, practiceCount, originalRank }) => {
                       const quality = getMatchQuality(Math.round(score));
                       const chorusQuality = chorusScore ? getMatchQuality(chorusScore) : null;
                       const strumQuality = strumScore ? getMatchQuality(strumScore) : null;
+                      const stoolQuality = stoolScore ? getMatchQuality(stoolScore) : null;
                       const isInLatestRoadshow = Boolean(latestRoadshow && prepareLatestRoadshowPerformanceSong([latestRoadshow], song).kind === 'duplicate');
                       const isSelectedForRoadshow = selectedPersonalRankingSongIds.includes(song.id);
                       return (
@@ -2368,10 +2389,19 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
                               ) : (
                                 <span className="text-sm leading-none text-white/25" title="还没评过狂扫指数" aria-label="还没评过狂扫指数">—</span>
                               )
+                            ) : personalRankingBoard === 'stool' ? (
+                              stoolScore ? (
+                                <>
+                                  <em className={`practice-quality ${stoolQuality?.tone ?? 'white'}`}>{stoolQuality?.label ?? '—'}</em>
+                                  <strong className="font-serif text-xl text-orange-200">{stoolScore}<small className="ml-1 font-sans text-[10px] font-normal text-white/30">板凳指数</small></strong>
+                                </>
+                              ) : (
+                                <span className="text-sm leading-none text-white/25" title="还没评过板凳指数" aria-label="还没评过板凳指数">—</span>
+                              )
                             ) : (
                               <>
                                 <em className={`practice-quality ${quality?.tone ?? 'white'}`}>{quality?.label ?? '—'}</em>
-                                <strong className="font-serif text-xl text-orange-200">{score}<small className="ml-1 font-sans text-[10px] font-normal text-white/30">匹配度</small></strong>
+                                <strong className="font-serif text-xl text-orange-200">{score}<small className="ml-1 font-sans text-[10px] font-normal text-white/30">匹配指数</small></strong>
                               </>
                             )}
                           </span>
@@ -2499,8 +2529,8 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
                   </aside>
                 ) : visibleRankingView === 'personal' ? (
                   <aside aria-label="练习榜歌手筛选" className="h-fit overflow-hidden rounded-[1.75rem] border border-orange-200/15 bg-orange-950/20 p-4 sm:p-5">
-                    <div className="grid grid-cols-2 gap-2">
-                      <label className="flex h-11 min-w-0 items-center gap-2 rounded-xl border border-white/10 bg-black/35 px-3 focus-within:border-orange-300/45">
+                    <div className="flex gap-2">
+                      <label className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-xl border border-white/10 bg-black/35 px-3 focus-within:border-orange-300/45">
                         <Search className="h-4 w-4 shrink-0 text-orange-200/55" />
                         <input value={rankingArtistQuery} onChange={(event) => setRankingArtistQuery(event.target.value)} placeholder="搜索歌手或歌曲" className="min-w-0 flex-1 bg-transparent text-xs text-white outline-none placeholder:text-white/28" />
                       </label>
@@ -2509,15 +2539,27 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
                         aria-label="切换练习榜正倒序"
                         aria-pressed={personalRankingReversed}
                         onClick={() => { setPersonalRankingMode(togglePersonalRankingReverse); setPersonalRankingPage(1); }}
-                        className={`inline-flex h-11 items-center justify-center gap-1.5 rounded-xl border px-3 text-xs font-black transition ${personalRankingReversed ? 'border-orange-200/40 bg-orange-300 text-black' : 'border-white/10 bg-black/30 text-white/55 hover:text-white'}`}
+                        className={`inline-flex h-11 shrink-0 items-center justify-center gap-1.5 rounded-xl border px-3 text-xs font-black transition ${personalRankingReversed ? 'border-orange-200/40 bg-orange-300 text-black' : 'border-white/10 bg-black/30 text-white/55 hover:text-white'}`}
                       >
                         <ArrowUpDown className="h-4 w-4" />{personalRankingReversed ? '倒序' : '正序'}
                       </button>
+                      {practiceRankingReturnSong && (
+                        <button
+                          type="button"
+                          aria-label={`返回《${practiceRankingReturnSong.title}》的练习记录`}
+                          title={`返回《${practiceRankingReturnSong.title}》的练习记录`}
+                          onClick={returnToPracticeSong}
+                          className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-orange-200/25 bg-orange-300/10 text-orange-100 transition hover:border-orange-200/45 hover:bg-orange-300/20"
+                        >
+                          <ArrowLeft className="h-4 w-4" />
+                        </button>
+                      )}
                     </div>
-                    <div className="mt-3 grid grid-cols-3 gap-2">
-                      <button type="button" aria-pressed={personalRankingBoard === 'practice' && personalRankingArtist === null} onClick={() => { setPersonalRankingBoard('practice'); setPersonalRankingArtist(null); setPersonalRankingPage(1); }} className={`rounded-xl border px-2 py-3 text-sm font-black transition ${personalRankingBoard === 'practice' && personalRankingArtist === null ? 'border-orange-300/45 bg-orange-300 text-black' : 'border-white/10 bg-black/25 text-white/65 hover:border-orange-200/25 hover:text-white'}`}>总榜</button>
-                      <button type="button" aria-pressed={personalRankingBoard === 'chorus'} onClick={() => { setPersonalRankingBoard((current) => (current === 'chorus' ? 'practice' : 'chorus')); setPersonalRankingPage(1); }} className={`rounded-xl border px-2 py-3 text-sm font-black transition ${personalRankingBoard === 'chorus' ? 'border-orange-300/45 bg-orange-300 text-black' : 'border-white/10 bg-black/25 text-white/65 hover:border-orange-200/25 hover:text-white'}`}>合唱榜</button>
-                      <button type="button" aria-pressed={personalRankingBoard === 'strum'} onClick={() => { setPersonalRankingBoard((current) => (current === 'strum' ? 'practice' : 'strum')); setPersonalRankingPage(1); }} className={`rounded-xl border px-2 py-3 text-sm font-black transition ${personalRankingBoard === 'strum' ? 'border-orange-300/45 bg-orange-300 text-black' : 'border-white/10 bg-black/25 text-white/65 hover:border-orange-200/25 hover:text-white'}`}>狂扫榜</button>
+                    <div className="mt-3 grid grid-cols-4 gap-1.5">
+                      <button type="button" aria-pressed={personalRankingBoard === 'practice' && personalRankingArtist === null} onClick={() => { setPersonalRankingBoard('practice'); setPersonalRankingArtist(null); setPersonalRankingPage(1); }} className={`rounded-xl border px-1 py-3 text-sm font-black transition ${personalRankingBoard === 'practice' && personalRankingArtist === null ? 'border-orange-300/45 bg-orange-300 text-black' : 'border-white/10 bg-black/25 text-white/65 hover:border-orange-200/25 hover:text-white'}`}>总榜</button>
+                      <button type="button" aria-pressed={personalRankingBoard === 'chorus'} onClick={() => { setPersonalRankingBoard((current) => (current === 'chorus' ? 'practice' : 'chorus')); setPersonalRankingPage(1); }} className={`rounded-xl border px-1 py-3 text-sm font-black transition ${personalRankingBoard === 'chorus' ? 'border-orange-300/45 bg-orange-300 text-black' : 'border-white/10 bg-black/25 text-white/65 hover:border-orange-200/25 hover:text-white'}`}>合唱榜</button>
+                      <button type="button" aria-pressed={personalRankingBoard === 'strum'} onClick={() => { setPersonalRankingBoard((current) => (current === 'strum' ? 'practice' : 'strum')); setPersonalRankingPage(1); }} className={`rounded-xl border px-1 py-3 text-sm font-black transition ${personalRankingBoard === 'strum' ? 'border-orange-300/45 bg-orange-300 text-black' : 'border-white/10 bg-black/25 text-white/65 hover:border-orange-200/25 hover:text-white'}`}>狂扫榜</button>
+                      <button type="button" aria-pressed={personalRankingBoard === 'stool'} onClick={() => { setPersonalRankingBoard((current) => (current === 'stool' ? 'practice' : 'stool')); setPersonalRankingPage(1); }} className={`rounded-xl border px-1 py-3 text-sm font-black transition ${personalRankingBoard === 'stool' ? 'border-orange-300/45 bg-orange-300 text-black' : 'border-white/10 bg-black/25 text-white/65 hover:border-orange-200/25 hover:text-white'}`}>板凳榜</button>
                     </div>
                     <div className="mt-3 grid max-h-[34rem] grid-cols-2 gap-2 overflow-y-auto overscroll-contain pr-1">
                       {personalRankingArtists.map(({ artist, songs }) => {
@@ -2640,7 +2682,7 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
                       )}
                       {selectedArtist && (
                         <button type="button" onClick={handleSortByMatch} className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/30 px-3.5 py-2 text-xs font-bold text-white/55 transition hover:border-orange-200/35 hover:text-orange-100">
-                          <ArrowUpDown className="h-4 w-4" />匹配度
+                          <ArrowUpDown className="h-4 w-4" />匹配指数
                         </button>
                       )}
                       {!selectedArtist && (
@@ -2653,7 +2695,7 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
                       </button>}
                       {!selectedArtist && (
                         <button type="button" onClick={handleSortByMatch} className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/30 px-3.5 py-2 text-xs font-bold text-white/55 transition hover:border-orange-200/35 hover:text-orange-100">
-                          <ArrowUpDown className="h-4 w-4" />匹配度
+                          <ArrowUpDown className="h-4 w-4" />匹配指数
                         </button>
                       )}
                     </div>

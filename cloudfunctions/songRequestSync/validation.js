@@ -82,6 +82,9 @@ const ROADSHOW_LOCATIONS = new Set(['医大（武鸣）', '医大（本部）', 
 // 狂扫速度的可填范围，与前端 songRecords.ts 的 STRUM_BPM_MIN/MAX 保持一致。
 const STRUM_BPM_MIN = 20;
 const STRUM_BPM_MAX = 300;
+// 附属指标（快乐指数 / 过耳）的可填范围，与前端 INDEX_METRIC_MIN/MAX 保持一致。
+const INDEX_METRIC_MIN = 80;
+const INDEX_METRIC_MAX = 100;
 
 const optionalRankingLocation = (value) => {
   if (value === undefined) return {};
@@ -209,7 +212,8 @@ const validateSongRecord = (value) => {
     updatedAt: typeof value.updatedAt === 'string' ? value.updatedAt : '',
   };
   if (value.kind === 'practice') {
-    if (!Number.isInteger(value.matchScore) || value.matchScore < 70 || value.matchScore > 100) throw new Error('INVALID_SONG_RECORD');
+    // 四大指数都不必填，只想记一句感想也可以；分数一旦填了就必须落在 70–100。
+    if (value.matchScore !== undefined && (!Number.isInteger(value.matchScore) || value.matchScore < 70 || value.matchScore > 100)) throw new Error('INVALID_SONG_RECORD');
     const feelings = cleanOptionalText(value.feelings, 2000, 'INVALID_SONG_RECORD');
     const problems = cleanOptionalText(value.problems, 2000, 'INVALID_SONG_RECORD');
     const improvements = cleanOptionalText(value.improvements, 2000, 'INVALID_SONG_RECORD');
@@ -218,13 +222,26 @@ const validateSongRecord = (value) => {
     if (value.chorusScore !== undefined && (!Number.isInteger(value.chorusScore) || value.chorusScore < 70 || value.chorusScore > 100)) throw new Error('INVALID_SONG_RECORD');
     if (value.strumScore !== undefined && (!Number.isInteger(value.strumScore) || value.strumScore < 70 || value.strumScore > 100)) throw new Error('INVALID_SONG_RECORD');
     if (value.strumBpm !== undefined && (!Number.isInteger(value.strumBpm) || value.strumBpm < STRUM_BPM_MIN || value.strumBpm > STRUM_BPM_MAX)) throw new Error('INVALID_SONG_RECORD');
+    if (value.stoolScore !== undefined && (!Number.isInteger(value.stoolScore) || value.stoolScore < 70 || value.stoolScore > 100)) throw new Error('INVALID_SONG_RECORD');
+    // 四大指数都可以不填（只想记一句内心感想时就是空的）；但记录本身得有内容，免得存下空壳。
+    const hasIndexScore = [value.matchScore, value.chorusScore, value.strumScore, value.stoolScore]
+      .some((score) => Number.isInteger(score) && score >= 70 && score <= 100);
+    if (!hasIndexScore && !feelings && !problems
+      && !(Array.isArray(value.singingMoods) && value.singingMoods.length > 0)) throw new Error('INVALID_SONG_RECORD');
+    // 附属指标：快乐指数 / 过耳 80–100（70–79 算不上快乐或好听），线下反馈只做记录。
+    for (const key of ['matchJoy', 'matchEar', 'chorusJoy', 'chorusEar', 'strumJoy', 'strumEar', 'stoolJoy', 'stoolEar']) {
+      if (value[key] !== undefined && (!Number.isInteger(value[key]) || value[key] < INDEX_METRIC_MIN || value[key] > INDEX_METRIC_MAX)) throw new Error('INVALID_SONG_RECORD');
+    }
+    if (value.chorusOffline !== undefined) cleanOptionalText(value.chorusOffline, 1000, 'INVALID_SONG_RECORD');
+    if (value.strumOffline !== undefined) cleanOptionalText(value.strumOffline, 1000, 'INVALID_SONG_RECORD');
+    if (value.stoolOffline !== undefined) cleanOptionalText(value.stoolOffline, 1000, 'INVALID_SONG_RECORD');
     if (value.needsMorePractice !== undefined && typeof value.needsMorePractice !== 'boolean') throw new Error('INVALID_SONG_RECORD');
     if (value.needsImprovement !== undefined && typeof value.needsImprovement !== 'boolean') throw new Error('INVALID_SONG_RECORD');
     if (value.singingMoods !== undefined && (!Array.isArray(value.singingMoods) || value.singingMoods.length > 9 || !value.singingMoods.every((mood) => ['快乐', '感动', '想哭', '爽歌', '舒服', '欢快', '音色', '歌词', '爆款'].includes(mood)))) throw new Error('INVALID_SONG_RECORD');
     return {
       ...base,
       kind: 'practice',
-      matchScore: value.matchScore,
+      ...(Number.isInteger(value.matchScore) ? { matchScore: value.matchScore } : {}),
       feelings,
       problems,
       improvements,
@@ -234,6 +251,18 @@ const validateSongRecord = (value) => {
       ...(Number.isInteger(value.chorusScore) ? { chorusScore: value.chorusScore } : {}),
       ...(Number.isInteger(value.strumScore) ? { strumScore: value.strumScore } : {}),
       ...(Number.isInteger(value.strumBpm) ? { strumBpm: value.strumBpm } : {}),
+      ...(Number.isInteger(value.stoolScore) ? { stoolScore: value.stoolScore } : {}),
+      ...(Number.isInteger(value.matchJoy) ? { matchJoy: value.matchJoy } : {}),
+      ...(Number.isInteger(value.matchEar) ? { matchEar: value.matchEar } : {}),
+      ...(Number.isInteger(value.chorusJoy) ? { chorusJoy: value.chorusJoy } : {}),
+      ...(Number.isInteger(value.chorusEar) ? { chorusEar: value.chorusEar } : {}),
+      ...(Number.isInteger(value.strumJoy) ? { strumJoy: value.strumJoy } : {}),
+      ...(Number.isInteger(value.strumEar) ? { strumEar: value.strumEar } : {}),
+      ...(Number.isInteger(value.stoolJoy) ? { stoolJoy: value.stoolJoy } : {}),
+      ...(Number.isInteger(value.stoolEar) ? { stoolEar: value.stoolEar } : {}),
+      ...(typeof value.chorusOffline === 'string' && value.chorusOffline.trim() ? { chorusOffline: value.chorusOffline.trim().slice(0, 1000) } : {}),
+      ...(typeof value.strumOffline === 'string' && value.strumOffline.trim() ? { strumOffline: value.strumOffline.trim().slice(0, 1000) } : {}),
+      ...(typeof value.stoolOffline === 'string' && value.stoolOffline.trim() ? { stoolOffline: value.stoolOffline.trim().slice(0, 1000) } : {}),
       ...(Number.isInteger(value.chorusStars) && value.chorusStars > 0 ? { chorusStars: value.chorusStars } : {}),
       ...(femaleKey ? { femaleKey } : {}),
     };

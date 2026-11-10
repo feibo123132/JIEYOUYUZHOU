@@ -689,7 +689,7 @@ const SongListEditor = ({ onIncrementSingCount, pendingSingCounts, title, descri
               </p>
             )}
           </div>
-          <p className="mt-2 text-[10px] leading-4 text-white/25">已练习的歌曲加入后自动按匹配度落入对应分组；未练习或 75 分以下的进入下方「未入框」区。</p>
+          <p className="mt-2 text-[10px] leading-4 text-white/25">已练习的歌曲加入后自动按匹配指数落入对应分组；未练习或 75 分以下的进入下方「未入框」区。</p>
           <div className="mt-3 flex justify-end">
             <button type="button" onClick={() => { setPickerOpen(false); setPickerQuery(''); }} className="inline-flex items-center gap-1.5 rounded-full border border-orange-200/25 bg-orange-300/10 px-4 py-2 text-xs font-bold text-orange-100 transition hover:bg-orange-300/20">
               <Check className="h-3.5 w-3.5" />完成

@@ -19,19 +19,38 @@ interface SongRecordBase {
 
 export interface PracticeRecord extends SongRecordBase {
   kind: 'practice';
-  matchScore: number;
+  /** 匹配指数：70–100 整数。四大指数都不必填，但至少要有其中一个。 */
+  matchScore?: number;
   feelings: string;
   problems: string;
   improvements: string;
   needsMorePractice: boolean;
   needsImprovement: boolean;
   singingMoods?: Array<'快乐' | '感动' | '想哭' | '爽歌' | '舒服' | '欢快' | '音色' | '歌词' | '爆款'>;
-  /** 合唱指数：70–100 整数，与匹配度同一套刻度；缺省表示这次没评。 */
+  /** 合唱指数：70–100 整数，与匹配指数同一套刻度；缺省表示这次没评。 */
   chorusScore?: number;
-  /** 狂扫指数：70–100 整数，与匹配度同一套刻度；缺省表示这次没评。 */
+  /** 狂扫指数：70–100 整数，与匹配指数同一套刻度；缺省表示这次没评。 */
   strumScore?: number;
   /** 狂扫速度 BPM：20–300 整数，跟狂扫指数一起填，缺省表示没记。 */
   strumBpm?: number;
+  /** 板凳指数：70–100 整数，与匹配指数同一套刻度；缺省表示这次没评。 */
+  stoolScore?: number;
+  /** 匹配指数的快乐指数：80–100 整数，附属指标，占匹配指数 80%（过耳未评时占 100%）。 */
+  matchJoy?: number;
+  /** 匹配指数的过耳：80–100 整数，占匹配指数 20%。 */
+  matchEar?: number;
+  /** 快乐指数：80–100 整数，附属指标，占所属指数总分 80%（过耳未评时占 100%）。 */
+  chorusJoy?: number;
+  /** 过耳：80–100 整数，附属指标，占所属指数总分 20%。 */
+  chorusEar?: number;
+  /** 线下反馈：只做记录，不参与折算。 */
+  chorusOffline?: string;
+  strumJoy?: number;
+  strumEar?: number;
+  strumOffline?: string;
+  stoolJoy?: number;
+  stoolEar?: number;
+  stoolOffline?: string;
   /** @deprecated 历史字段「合唱星级」（0–5）。读取时会换算成 chorusScore，新记录不再写入。 */
   chorusStars?: number;
   /** @deprecated 历史字段，仅用于兼容旧记录读取，新记录不再写入。 */
@@ -57,6 +76,8 @@ export interface PublicPracticeRankingItem {
   strumScore: number | null;
   /** 狂扫速度 BPM；null 表示没记。 */
   strumBpm: number | null;
+  /** 板凳指数 70–100；null 表示没评过。 */
+  stoolScore: number | null;
 }
 
 interface ReadableStorage { getItem: (key: string) => string | null; }
@@ -67,10 +88,59 @@ const CACHE_PREFIX = 'jieyou-song-records-v1:';
 /** 狂扫速度的可填范围，超出视为误填。 */
 export const STRUM_BPM_MIN = 20;
 export const STRUM_BPM_MAX = 300;
+/** 附属指标（快乐指数 / 过耳）的可填范围：70–79 算不上快乐，也算不上好听。 */
+export const INDEX_METRIC_MIN = 80;
+export const INDEX_METRIC_MAX = 100;
+/** 快乐指数在总分里的权重；过耳没评时它独占 100%。 */
+export const INDEX_JOY_WEIGHT = 0.8;
+export const INDEX_EAR_WEIGHT = 0.2;
 const isText = (value: unknown, max: number, required = true) => (
   typeof value === 'string' && value.length <= max && (!required || Boolean(value.trim()))
 );
 const isIsoTime = (value: unknown) => typeof value === 'string' && value.trim() !== '' && Number.isFinite(Date.parse(value));
+/** 附属指标允许缺省；一旦填了就必须是 80–100 的整数。 */
+const isMetricScore = (value: unknown) => (
+  value === undefined || (Number.isInteger(value) && Number(value) >= INDEX_METRIC_MIN && Number(value) <= INDEX_METRIC_MAX)
+);
+const isOptionalNote = (value: unknown) => value === undefined || isText(value, 1000, false);
+/** 四大指数共用 70–100 整数刻度，且都可以留空。 */
+const scoreInRange = (value: unknown): value is number => (
+  Number.isInteger(value) && Number(value) >= 70 && Number(value) <= 100
+);
+
+/** 一条练习记录里「主指数」的顺序：匹配指数优先，没评就由合唱 / 狂扫 / 板凳顺位顶上。 */
+export const PRACTICE_INDEX_ORDER = [
+  ['matchScore', '匹配指数'],
+  ['chorusScore', '合唱指数'],
+  ['strumScore', '狂扫指数'],
+  ['stoolScore', '板凳指数'],
+] as const;
+
+/** 时间线 / 榜单的「主指数」：第一个已评的指数，包含名称与分数。 */
+export const primaryPracticeIndex = (
+  record: Pick<PracticeRecord, 'matchScore' | 'chorusScore' | 'strumScore' | 'stoolScore'>,
+): { label: string; score: number } | null => {
+  for (const [field, label] of PRACTICE_INDEX_ORDER) {
+    const score = record[field];
+    if (scoreInRange(score)) return { label, score: Number(score) };
+  }
+  return null;
+};
+
+/**
+ * 由附属指标折算指数总分：快乐指数 80% + 过耳 20%；过耳没评时快乐指数独占 100%。
+ * 两个指标都在 80–100，折算结果必然落在 80–100，不会掉到指数下限 70 以下。
+ * 快乐指数也没填时返回 null，表示这次没有折算出总分。
+ */
+export const indexScoreFromMetrics = (joy?: number | '' | null, ear?: number | '' | null): number | null => {
+  if (joy === undefined || joy === null || joy === '') return null;
+  const joyValue = Number(joy);
+  if (!Number.isInteger(joyValue) || joyValue < INDEX_METRIC_MIN || joyValue > INDEX_METRIC_MAX) return null;
+  const hasEar = ear !== undefined && ear !== null && ear !== '';
+  const earValue = Number(ear);
+  if (hasEar && (!Number.isInteger(earValue) || earValue < INDEX_METRIC_MIN || earValue > INDEX_METRIC_MAX)) return null;
+  return Math.round(hasEar ? joyValue * INDEX_JOY_WEIGHT + earValue * INDEX_EAR_WEIGHT : joyValue);
+};
 
 export const isValidSongRecord = (value: unknown): value is SongRecord => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
@@ -83,7 +153,7 @@ export const isValidSongRecord = (value: unknown): value is SongRecord => {
     && isIsoTime(record.updatedAt);
   if (!commonValid) return false;
   if (record.kind === 'practice') {
-    return Number.isInteger(record.matchScore) && Number(record.matchScore) >= 70 && Number(record.matchScore) <= 100
+    return (record.matchScore === undefined || scoreInRange(record.matchScore))
       && isText(record.feelings, 2000, false) && isText(record.problems, 2000, false) && isText(record.improvements, 2000, false)
       && (record.needsMorePractice === undefined || typeof record.needsMorePractice === 'boolean')
       && (record.needsImprovement === undefined || typeof record.needsImprovement === 'boolean')
@@ -91,8 +161,19 @@ export const isValidSongRecord = (value: unknown): value is SongRecord => {
       && (record.chorusScore === undefined || (Number.isInteger(record.chorusScore) && Number(record.chorusScore) >= 70 && Number(record.chorusScore) <= 100))
       && (record.strumScore === undefined || (Number.isInteger(record.strumScore) && Number(record.strumScore) >= 70 && Number(record.strumScore) <= 100))
       && (record.strumBpm === undefined || (Number.isInteger(record.strumBpm) && Number(record.strumBpm) >= STRUM_BPM_MIN && Number(record.strumBpm) <= STRUM_BPM_MAX))
+      && (record.stoolScore === undefined || (Number.isInteger(record.stoolScore) && Number(record.stoolScore) >= 70 && Number(record.stoolScore) <= 100))
+      && isMetricScore(record.matchJoy) && isMetricScore(record.matchEar)
+      && isMetricScore(record.chorusJoy) && isMetricScore(record.chorusEar) && isOptionalNote(record.chorusOffline)
+      && isMetricScore(record.strumJoy) && isMetricScore(record.strumEar) && isOptionalNote(record.strumOffline)
+      && isMetricScore(record.stoolJoy) && isMetricScore(record.stoolEar) && isOptionalNote(record.stoolOffline)
       && (record.chorusStars === undefined || (Number.isInteger(record.chorusStars) && Number(record.chorusStars) >= 0 && Number(record.chorusStars) <= 5))
-      && (record.singingMoods === undefined || (Array.isArray(record.singingMoods) && record.singingMoods.length <= 9 && record.singingMoods.every((mood) => ['快乐', '感动', '想哭', '爽歌', '舒服', '欢快', '音色', '歌词', '爆款'].includes(mood))));
+      && (record.singingMoods === undefined || (Array.isArray(record.singingMoods) && record.singingMoods.length <= 9 && record.singingMoods.every((mood) => ['快乐', '感动', '想哭', '爽歌', '舒服', '欢快', '音色', '歌词', '爆款'].includes(mood))))
+      // 四大指数全部可留空——只想记一句内心感想的时候，一个指数都不填也算一次练习。
+      // 唯一的门槛是这条记录得有内容（任一指数、练习感受/线下反馈或弹唱感想），免得误触存下空壳。
+      && ([record.matchScore, record.chorusScore, record.strumScore, record.stoolScore].some(scoreInRange)
+        || (typeof record.feelings === 'string' && record.feelings.trim() !== '')
+        || (typeof record.problems === 'string' && record.problems.trim() !== '')
+        || (Array.isArray(record.singingMoods) && record.singingMoods.length > 0));
   }
   return record.kind === 'roadshow'
     && isText(record.audienceName, 100, false)
@@ -103,15 +184,18 @@ export const sortSongRecords = (records: SongRecord[]) => [...records]
   .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt) || right.updatedAt.localeCompare(left.updatedAt));
 
 export const averageMatchScore = (records: Array<Pick<PracticeRecord, 'matchScore'>>): number | null => {
-  if (!records.length) return null;
-  const average = records.reduce((sum, record) => sum + record.matchScore, 0) / records.length;
+  const scored = records.filter((record): record is { matchScore: number } => scoreInRange(record.matchScore));
+  if (!scored.length) return null;
+  const average = scored.reduce((sum, record) => sum + record.matchScore, 0) / scored.length;
   return Math.round(average * 10) / 10;
 };
 
 // 取多次练习中的最高匹配分（整数）。matchScore 本身是 70–100 整数，所以无需小数。
+// 没填匹配指数的练习不参与比较——它们只会计入各自的合唱 / 狂扫 / 板凳榜。
 export const bestMatchScore = (records: Array<Pick<PracticeRecord, 'matchScore'>>): number | null => {
-  if (!records.length) return null;
-  return records.reduce((top, record) => record.matchScore > top ? record.matchScore : top, records[0].matchScore);
+  const scored = records.filter((record): record is { matchScore: number } => scoreInRange(record.matchScore));
+  if (!scored.length) return null;
+  return scored.reduce((top, record) => (record.matchScore > top ? record.matchScore : top), scored[0].matchScore);
 };
 
 export const parseMatchScoreInput = (value: string): number | '' => value === '' ? '' : Number(value);
@@ -177,12 +261,37 @@ export const bestStrumBpm = (
   return best ? best.bpm : null;
 };
 
+/** 单条记录的板凳指数：只认合法的 70–100 整数，没评就是 null。 */
+const recordStoolScore = (record: Pick<PracticeRecord, 'stoolScore'>): number | null => (
+  Number.isInteger(record.stoolScore) && Number(record.stoolScore) >= 70 && Number(record.stoolScore) <= 100
+    ? Number(record.stoolScore)
+    : null
+);
+
+// 取多次练习中的最高板凳指数，没评过的记录不参与比较。
+export const bestStoolScore = (records: Array<Pick<PracticeRecord, 'stoolScore'>>): number | null => {
+  let top: number | null = null;
+  for (const record of records) {
+    const score = recordStoolScore(record);
+    if (score !== null && (top === null || score > top)) top = score;
+  }
+  return top;
+};
+
+/** 单条记录的附属指标：只认合法的 80–100 整数，没填就是 null。 */
+const metricScore = (value: unknown): number | null => (
+  Number.isInteger(value) && Number(value) >= INDEX_METRIC_MIN && Number(value) <= INDEX_METRIC_MAX ? Number(value) : null
+);
+const offlineNote = (value: unknown): string | null => (
+  typeof value === 'string' && value.trim() ? value.trim() : null
+);
+
 export type MatchQuality = {
   label: '普通' | '优秀' | '精良' | '稀有' | '传奇';
   tone: 'white' | 'green' | 'lightBlue' | 'darkBlue' | 'purple' | 'gold';
 };
 
-/** 匹配度与合唱指数共用同一套 70–100 品质分档。 */
+/** 匹配指数与合唱 / 狂扫 / 板凳指数共用同一套 70–100 品质分档。 */
 export const getMatchQuality = (score: number): MatchQuality | null => {
   if (!Number.isInteger(score) || score < 70 || score > 100) return null;
   if (score >= 96) return { label: '传奇', tone: 'gold' };
@@ -257,11 +366,12 @@ export const rankSongsByPracticeMatch = (songs: Song[], records: SongRecord[]) =
       chorusScore: bestChorusScore(practices),
       strumScore: bestStrumScore(practices),
       strumBpm: bestStrumBpm(practices),
+      stoolScore: bestStoolScore(practices),
       catalogIndex,
     };
   }).filter((item): item is typeof item & { score: number } => item.score !== null)
     .sort((left, right) => right.score - left.score || left.catalogIndex - right.catalogIndex)
-    .map(({ song, score, practiceCount, chorusScore, strumScore, strumBpm }) => ({ song, score, practiceCount, chorusScore, strumScore, strumBpm }));
+    .map(({ song, score, practiceCount, chorusScore, strumScore, strumBpm, stoolScore }) => ({ song, score, practiceCount, chorusScore, strumScore, strumBpm, stoolScore }));
 };
 
 export const parsePublicPracticeRanking = (value: unknown): PublicPracticeRankingItem[] => {
@@ -271,7 +381,8 @@ export const parsePublicPracticeRanking = (value: unknown): PublicPracticeRankin
     const entry = item as Record<string, unknown>;
     if (!isText(entry.songId, 100) || !isText(entry.songTitle, 100)
       || !isText(entry.songArtist, 100, false) || typeof entry.score !== 'number'
-      || !Number.isFinite(entry.score) || entry.score < 70 || entry.score > 100) return [];
+      || !Number.isFinite(entry.score) || entry.score < 0 || entry.score > 100) return [];
+    // 0 表示这首歌还没有评过匹配指数（只评了其它指数），仍要保留，好在合唱 / 狂扫 / 板凳榜里出现。
     return [{
       songId: String(entry.songId).trim(),
       songTitle: String(entry.songTitle).trim(),
@@ -286,6 +397,9 @@ export const parsePublicPracticeRanking = (value: unknown): PublicPracticeRankin
         : null,
       strumBpm: Number.isInteger(entry.strumBpm) && Number(entry.strumBpm) >= STRUM_BPM_MIN && Number(entry.strumBpm) <= STRUM_BPM_MAX
         ? Number(entry.strumBpm)
+        : null,
+      stoolScore: Number.isInteger(entry.stoolScore) && Number(entry.stoolScore) >= 70 && Number(entry.stoolScore) <= 100
+        ? Number(entry.stoolScore)
         : null,
     }];
   });
@@ -317,7 +431,7 @@ const cleanSongRecord = (record: SongRecord): SongRecord => {
   return {
     ...base,
     kind: 'practice',
-    matchScore: record.matchScore,
+    ...(scoreInRange(record.matchScore) ? { matchScore: Number(record.matchScore) } : {}),
     feelings: record.feelings,
     problems: record.problems,
     improvements: record.improvements,
@@ -328,6 +442,18 @@ const cleanSongRecord = (record: SongRecord): SongRecord => {
     ...(recordStrumScore(record) !== null ? { strumScore: recordStrumScore(record) as number } : {}),
     ...(Number.isInteger(record.strumBpm) && Number(record.strumBpm) >= STRUM_BPM_MIN && Number(record.strumBpm) <= STRUM_BPM_MAX
       ? { strumBpm: Number(record.strumBpm) } : {}),
+    ...(recordStoolScore(record) !== null ? { stoolScore: recordStoolScore(record) as number } : {}),
+    ...(metricScore(record.matchJoy) !== null ? { matchJoy: metricScore(record.matchJoy) as number } : {}),
+    ...(metricScore(record.matchEar) !== null ? { matchEar: metricScore(record.matchEar) as number } : {}),
+    ...(metricScore(record.chorusJoy) !== null ? { chorusJoy: metricScore(record.chorusJoy) as number } : {}),
+    ...(metricScore(record.chorusEar) !== null ? { chorusEar: metricScore(record.chorusEar) as number } : {}),
+    ...(offlineNote(record.chorusOffline) ? { chorusOffline: offlineNote(record.chorusOffline) as string } : {}),
+    ...(metricScore(record.strumJoy) !== null ? { strumJoy: metricScore(record.strumJoy) as number } : {}),
+    ...(metricScore(record.strumEar) !== null ? { strumEar: metricScore(record.strumEar) as number } : {}),
+    ...(offlineNote(record.strumOffline) ? { strumOffline: offlineNote(record.strumOffline) as string } : {}),
+    ...(metricScore(record.stoolJoy) !== null ? { stoolJoy: metricScore(record.stoolJoy) as number } : {}),
+    ...(metricScore(record.stoolEar) !== null ? { stoolEar: metricScore(record.stoolEar) as number } : {}),
+    ...(offlineNote(record.stoolOffline) ? { stoolOffline: offlineNote(record.stoolOffline) as string } : {}),
     ...(record.femaleKey?.trim() ? { femaleKey: record.femaleKey.trim() } : {}),
   };
 };

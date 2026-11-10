@@ -21,8 +21,13 @@ import {
   normalizeSingingMoods,
   getMatchQuality,
   getPracticeReflection,
+  indexScoreFromMetrics,
+  INDEX_METRIC_MAX,
+  INDEX_METRIC_MIN,
   isValidSongRecord,
+  PRACTICE_INDEX_ORDER,
   parseMatchScoreInput,
+  primaryPracticeIndex,
   sortSongRecords,
   STRUM_BPM_MAX,
   STRUM_BPM_MIN,
@@ -57,6 +62,19 @@ interface SongDetailPanelProps {
 }
 
 type JournalKind = 'practice' | 'roadshow' | 'score';
+/** 练习记录里的四大指数，同一时间只展示一个输入框，但值各自独立保存。 */
+type ScoreField = 'match' | 'chorus' | 'strum' | 'stool';
+/**
+ * 附属指标的草稿：快乐指数与过耳参与折算。
+ * offline 已经没有输入入口（线下反馈并入「练习感受/线下反馈」），留着只为把旧记录里已有的内容原样带回去。
+ */
+interface IndexMetricsDraft { joy: number | ''; ear: number | ''; offline: string; }
+const emptyMetricsDraft = (): Record<ScoreField, IndexMetricsDraft> => ({
+  match: { joy: '', ear: '', offline: '' },
+  chorus: { joy: '', ear: '', offline: '' },
+  strum: { joy: '', ear: '', offline: '' },
+  stool: { joy: '', ear: '', offline: '' },
+});
 
 const localDateTime = (value: string | Date = new Date()) => {
   const date = new Date(value);
@@ -100,10 +118,13 @@ const SongDetailPanel = ({
   const isOwner = isFeaturedSongManager(session?.alias);
   const activeJournal = session ? (journal === 'roadshow' && !isOwner ? 'practice' : journal) : 'score';
   const [practiceAt, setPracticeAt] = useState(localDateTime);
-  const [matchScore, setMatchScore] = useState<number | ''>(80);
+  const [matchScore, setMatchScore] = useState<number | ''>('');
   const [chorusScore, setChorusScore] = useState<number | ''>('');
   const [strumScore, setStrumScore] = useState<number | ''>('');
   const [strumBpm, setStrumBpm] = useState<number | ''>('');
+  const [stoolScore, setStoolScore] = useState<number | ''>('');
+  const [scoreField, setScoreField] = useState<ScoreField>('match');
+  const [metrics, setMetrics] = useState<Record<ScoreField, IndexMetricsDraft>>(emptyMetricsDraft);
   const [feelings, setFeelings] = useState('');
   const [singingReflection, setSingingReflection] = useState('');
   const [singingMoods, setSingingMoods] = useState<NonNullable<PracticeRecord['singingMoods']>>([]);
@@ -130,6 +151,12 @@ const SongDetailPanel = ({
   const matchQuality = getMatchQuality(Number(matchScore));
   const chorusQuality = getMatchQuality(Number(chorusScore));
   const strumQuality = getMatchQuality(Number(strumScore));
+  const stoolQuality = getMatchQuality(Number(stoolScore));
+  const activeScoreLabel = scoreField === 'match' ? '匹配指数' : scoreField === 'chorus' ? '合唱指数' : scoreField === 'strum' ? '狂扫指数' : '板凳指数';
+  const activeScoreQuality = scoreField === 'match' ? matchQuality : scoreField === 'chorus' ? chorusQuality : scoreField === 'strum' ? strumQuality : stoolQuality;
+  const activeMetrics = metrics[scoreField];
+  // 快乐指数有值时，总分由 80%/20% 折算得来；两个都没填就沿用直接打的分。
+  const activeComputedScore = indexScoreFromMetrics(activeMetrics.joy, activeMetrics.ear);
   const currentQuizLevel = QUIZ_LEVELS.find((level) => level.id === quizLevel);
   // 云端签名地址会过期，这里负责在挂载 / 回到前台 / 加载失败时自动换新，避免谱子变裂图。
   const { pages: scorePages, refresh: refreshScorePages } = useResolvedScorePages(
@@ -163,18 +190,51 @@ const SongDetailPanel = ({
     onRecordsChange(next);
   };
 
+  const setScoreOfActive = (value: number | '') => {
+    if (scoreField === 'match') setMatchScore(value);
+    else if (scoreField === 'chorus') setChorusScore(value);
+    else if (scoreField === 'strum') setStrumScore(value);
+    else setStoolScore(value);
+  };
+
+  /** 改快乐指数 / 过耳时总分立刻按 80% / 20% 重算；清空快乐指数则连总分一起清掉。 */
+  const updateMetric = (patch: Partial<IndexMetricsDraft>) => {
+    const merged = { ...metrics[scoreField], ...patch };
+    setMetrics((current) => ({ ...current, [scoreField]: merged }));
+    if ('joy' in patch || 'ear' in patch) {
+      setScoreOfActive(indexScoreFromMetrics(merged.joy, merged.ear) ?? '');
+    }
+  };
+
+  /** 直接打总分＝不采用指标折算，顺手清掉快乐指数与过耳，避免两套口径并存。 */
+  const updateActiveTotal = (value: number | '') => {
+    setScoreOfActive(value);
+    if (metrics[scoreField].joy !== '' || metrics[scoreField].ear !== '') {
+      setMetrics((current) => ({ ...current, [scoreField]: { ...current[scoreField], joy: '', ear: '' } }));
+    }
+  };
+
   const beginEdit = (record: SongRecord) => {
     setActiveJournal(record.kind);
     setEditingRecord(record);
     setMessage('正在编辑这条记录');
     if (record.kind === 'practice') {
       setPracticeAt(localDateTime(record.occurredAt));
-      setMatchScore(record.matchScore);
+      setMatchScore(record.matchScore ?? '');
       setFeelings(record.feelings);
       setSingingReflection(getPracticeReflection(record));
       setChorusScore(record.chorusScore ?? '');
       setStrumScore(record.strumScore ?? '');
       setStrumBpm(record.strumBpm ?? '');
+      setStoolScore(record.stoolScore ?? '');
+      // 编辑时优先展示这条记录里已经评过的那个指数，避免看到空输入框以为数据丢了。
+      setScoreField(record.chorusScore ? 'chorus' : record.strumScore ? 'strum' : record.stoolScore ? 'stool' : 'match');
+      setMetrics({
+        match: { joy: record.matchJoy ?? '', ear: record.matchEar ?? '', offline: '' },
+        chorus: { joy: record.chorusJoy ?? '', ear: record.chorusEar ?? '', offline: record.chorusOffline ?? '' },
+        strum: { joy: record.strumJoy ?? '', ear: record.strumEar ?? '', offline: record.strumOffline ?? '' },
+        stool: { joy: record.stoolJoy ?? '', ear: record.stoolEar ?? '', offline: record.stoolOffline ?? '' },
+      });
       setSingingMoods(normalizeSingingMoods(record.singingMoods ?? []));
     } else {
       setRoadshowAt(localDateTime(record.occurredAt));
@@ -203,37 +263,84 @@ const SongDetailPanel = ({
       return;
     }
     const now = new Date().toISOString();
+    const stoolValue = stoolScore === '' ? null : Number(stoolScore);
+    if (stoolValue !== null && (!Number.isInteger(stoolValue) || stoolValue < 70 || stoolValue > 100)) {
+      setMessage('板凳指数请填 70–100 的整数；没评过就留空。');
+      return;
+    }
+    for (const [label, draft] of [['匹配指数', metrics.match], ['合唱指数', metrics.chorus], ['狂扫指数', metrics.strum], ['板凳指数', metrics.stool]] as const) {
+      for (const [metricLabel, value] of [['快乐指数', draft.joy], ['过耳', draft.ear]] as const) {
+        if (value !== '' && (!Number.isInteger(Number(value)) || Number(value) < INDEX_METRIC_MIN || Number(value) > INDEX_METRIC_MAX)) {
+          setMessage(`${label}的${metricLabel}请填 ${INDEX_METRIC_MIN}–${INDEX_METRIC_MAX} 的整数；没评就留空。`);
+          return;
+        }
+      }
+      if (draft.offline.trim().length > 1000) {
+        setMessage(`${label}的线下反馈请控制在 1000 字以内。`);
+        return;
+      }
+    }
     const record: PracticeRecord = {
       id: editingRecord?.kind === 'practice' ? editingRecord.id : recordId('practice'), kind: 'practice', songId: song.id, songTitle: song.title, songArtist: song.artist,
-      occurredAt: new Date(practiceAt).toISOString(), matchScore: Number(matchScore),
+      occurredAt: new Date(practiceAt).toISOString(),
+      ...(matchScore === '' ? {} : { matchScore: Number(matchScore) }),
       feelings: feelings.trim(), problems: singingReflection.trim(), improvements: '',
       needsMorePractice: editingRecord?.kind === 'practice' ? editingRecord.needsMorePractice : false,
       needsImprovement: editingRecord?.kind === 'practice' ? editingRecord.needsImprovement : false,
       singingMoods, ...(chorusValue !== null ? { chorusScore: chorusValue } : {}),
       ...(strumValue !== null ? { strumScore: strumValue } : {}),
       ...(bpmValue !== null ? { strumBpm: bpmValue } : {}), updatedAt: now,
+      ...(stoolValue !== null ? { stoolScore: stoolValue } : {}),
+      ...(metrics.match.joy !== '' ? { matchJoy: Number(metrics.match.joy) } : {}),
+      ...(metrics.match.ear !== '' ? { matchEar: Number(metrics.match.ear) } : {}),
+      ...(metrics.chorus.joy !== '' ? { chorusJoy: Number(metrics.chorus.joy) } : {}),
+      ...(metrics.chorus.ear !== '' ? { chorusEar: Number(metrics.chorus.ear) } : {}),
+      ...(metrics.chorus.offline.trim() ? { chorusOffline: metrics.chorus.offline.trim() } : {}),
+      ...(metrics.strum.joy !== '' ? { strumJoy: Number(metrics.strum.joy) } : {}),
+      ...(metrics.strum.ear !== '' ? { strumEar: Number(metrics.strum.ear) } : {}),
+      ...(metrics.strum.offline.trim() ? { strumOffline: metrics.strum.offline.trim() } : {}),
+      ...(metrics.stool.joy !== '' ? { stoolJoy: Number(metrics.stool.joy) } : {}),
+      ...(metrics.stool.ear !== '' ? { stoolEar: Number(metrics.stool.ear) } : {}),
+      ...(metrics.stool.offline.trim() ? { stoolOffline: metrics.stool.offline.trim() } : {}),
     };
     if (!isValidSongRecord(record)) {
-      setMessage('请填写有效的时间和 70–100 分。');
+      setMessage('请选择有效的练习时间。四大指数都可以不填，但至少写一句练习感受/线下反馈再保存。');
       return;
     }
     setBusy('practice'); setMessage('');
     try {
       const saved = await saveSongRecord(session, record);
       commitSaved(saved);
+      // 附属指标也一并核对：云端还是旧版时这些字段会被丢掉，要明确告诉用户。
+      const localMetrics = JSON.stringify([
+        metrics.match.joy, metrics.match.ear,
+        metrics.chorus.joy, metrics.chorus.ear, metrics.chorus.offline.trim(),
+        metrics.strum.joy, metrics.strum.ear, metrics.strum.offline.trim(),
+        metrics.stool.joy, metrics.stool.ear, metrics.stool.offline.trim(),
+      ]);
+      const savedMetrics = saved.kind === 'practice' ? JSON.stringify([
+        saved.matchJoy ?? '', saved.matchEar ?? '',
+        saved.chorusJoy ?? '', saved.chorusEar ?? '', saved.chorusOffline ?? '',
+        saved.strumJoy ?? '', saved.strumEar ?? '', saved.strumOffline ?? '',
+        saved.stoolJoy ?? '', saved.stoolEar ?? '', saved.stoolOffline ?? '',
+      ]) : '';
       if (saved.kind !== 'practice'
         || JSON.stringify([...(saved.singingMoods ?? [])].sort()) !== JSON.stringify([...singingMoods].sort())
+        || (saved.matchScore ?? null) !== (matchScore === '' ? null : Number(matchScore))
         || (saved.chorusScore ?? null) !== chorusValue
         || (saved.strumScore ?? null) !== strumValue
-        || (saved.strumBpm ?? null) !== bpmValue) {
+        || (saved.strumBpm ?? null) !== bpmValue
+        || (saved.stoolScore ?? null) !== stoolValue
+        || localMetrics !== savedMetrics) {
         setEditingRecord(record);
-        setMessage('练习内容已保存，但优点勾选、合唱指数或狂扫指数未同步。已保留当前填写，请更新云端服务后再次保存。');
+        setMessage('练习内容已保存，但指数或附属指标未同步。已保留当前填写，请更新云端服务后再次保存。');
         return;
       }
       const wasEditing = editingRecord?.kind === 'practice';
       setEditingRecord(null);
-      setFeelings(''); setSingingReflection(''); setChorusScore('');
-      setStrumScore(''); setStrumBpm('');
+      setFeelings(''); setSingingReflection(''); setMatchScore(''); setChorusScore('');
+      setStrumScore(''); setStrumBpm(''); setStoolScore('');
+      setMetrics(emptyMetricsDraft());
       setSingingMoods([]);
       setMessage(wasEditing ? '练习记录修改已同步' : '练习记录已同步');
     } catch (error) { setMessage(mapSongRecordSyncError(error)); }
@@ -407,7 +514,7 @@ const SongDetailPanel = ({
               )}
               {activeJournal === 'practice' ? <>
                 <Stat label="练习" value={`${practices.length} 次`} />
-                <Stat label="匹配度" value={averageScore === null ? '—' : `${averageScore}`} />
+                <Stat label="匹配指数" value={averageScore === null ? '—' : `${averageScore}`} />
               </> : activeJournal === 'roadshow' ? <>
                 <Stat label="路演" value={`${roadshowHistory.length} 次`} />
                 <Stat label="次数" value={roadshowHistory.length ? `${roadshowHistory.length} 次` : '—'} />
@@ -606,12 +713,8 @@ const SongDetailPanel = ({
         <div ref={formRef}>
         <JournalColumn icon={activeJournal === 'practice' ? <Guitar className="h-5 w-5" /> : <MessageCircle className="h-5 w-5" />} title={activeJournal === 'practice' ? '练习记录' : '路演记录'} subtitle={activeJournal === 'practice' ? '每一次慢练，都是下一次从容的伏笔。' : '把现场真实的回声，留给下一次演唱。'} action={activeJournal === 'practice' ? <button type="button" onClick={onOpenPracticeRanking} className="inline-flex shrink-0 items-center rounded-full border border-orange-200/25 bg-orange-300/10 px-3 py-2 text-xs font-bold text-orange-100 transition hover:bg-orange-300/20">练习榜</button> : undefined}>
           {activeJournal === 'practice' ? <>
-            <div className="grid gap-3 sm:grid-cols-[minmax(0,1.4fr)_minmax(90px,.8fr)_minmax(90px,.8fr)]">
+            <div className="grid gap-3 sm:grid-cols-[minmax(0,1.35fr)_minmax(0,1.65fr)]">
               <Field label="练习时间"><input type="datetime-local" value={practiceAt} onClick={(event) => event.currentTarget.showPicker?.()} onChange={(event) => setPracticeAt(event.target.value)} className={dateTimeInputClass} /></Field>
-              <Field label="匹配度（70–100）"><input type="number" min="70" max="100" value={matchScore} onChange={(event) => setMatchScore(parseMatchScoreInput(event.target.value))} className={inputClass} /></Field>
-              <Field label="品质"><div aria-readonly="true" title="按匹配度换算" className={`${inputClass} flex items-center font-black ${matchQuality ? qualityTextClass[matchQuality.tone] : 'text-white/25'}`}>{matchQuality?.label ?? '—'}</div></Field>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-[minmax(0,1.4fr)_minmax(90px,.8fr)_minmax(90px,.8fr)]">
               <div>
                 <span className="mb-2 block text-xs font-bold text-white/45">优点勾选</span>
                 <details aria-label="优点勾选" className="group relative block">
@@ -623,15 +726,46 @@ const SongDetailPanel = ({
                   </div>
                 </details>
               </div>
-              <Field label="合唱指数（70–100）"><input type="number" inputMode="numeric" min="70" max="100" step="1" value={chorusScore} onChange={(event) => setChorusScore(parseMatchScoreInput(event.target.value))} placeholder="未评" className={inputClass} /></Field>
-              <Field label="品质"><div aria-readonly="true" title="按合唱指数换算" className={`${inputClass} flex items-center font-black ${chorusQuality ? qualityTextClass[chorusQuality.tone] : 'text-white/25'}`}>{chorusQuality?.label ?? '—'}</div></Field>
             </div>
-            <div className="grid gap-3 sm:grid-cols-[minmax(0,1.4fr)_minmax(90px,.8fr)_minmax(90px,.8fr)]">
-              <Field label="狂扫指数（70–100）"><input type="number" inputMode="numeric" min="70" max="100" step="1" value={strumScore} onChange={(event) => setStrumScore(parseMatchScoreInput(event.target.value))} placeholder="未评" className={inputClass} /></Field>
-              <Field label="BPM"><input type="number" inputMode="numeric" min={STRUM_BPM_MIN} max={STRUM_BPM_MAX} step="1" value={strumBpm} onChange={(event) => setStrumBpm(parseMatchScoreInput(event.target.value))} placeholder="未填" title={`狂扫速度，${STRUM_BPM_MIN}–${STRUM_BPM_MAX} BPM`} className={inputClass} /></Field>
-              <Field label="品质"><div aria-readonly="true" title="按狂扫指数换算" className={`${inputClass} flex items-center font-black ${strumQuality ? qualityTextClass[strumQuality.tone] : 'text-white/25'}`}>{strumQuality?.label ?? '—'}</div></Field>
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+              <div role="group" aria-label="选择要记录的指数" className="flex flex-wrap items-center gap-2">
+                {([
+                  { id: 'match', label: '匹配指数', value: matchScore, quality: matchQuality },
+                  { id: 'chorus', label: '合唱指数', value: chorusScore, quality: chorusQuality },
+                  { id: 'strum', label: '狂扫指数', value: strumScore, quality: strumQuality },
+                  { id: 'stool', label: '板凳指数', value: stoolScore, quality: stoolQuality },
+                ] as const).map(({ id, label, value, quality }) => {
+                  const active = scoreField === id;
+                  return (
+                    <button key={id} type="button" aria-pressed={active} onClick={() => setScoreField(id)} title={`${active ? '正在记录' : '点选记录'}${label}`} className={`inline-flex h-9 items-center gap-1.5 rounded-full border px-3 text-xs font-black transition ${active ? 'border-orange-300/55 bg-orange-300 text-black' : 'border-white/10 bg-white/[.04] text-white/60 hover:border-orange-200/30 hover:text-white'}`}>
+                      {label}
+                      {value === '' ? null : <em className={`rounded-full px-1.5 text-[11px] tabular-nums ${active ? 'bg-black/15 text-black' : quality ? qualityTextClass[quality.tone] : 'text-white/45'}`}>{value}</em>}
+                    </button>
+                  );
+                })}
+                <span
+                  className={`ml-auto text-[11px] ${activeComputedScore !== null ? 'font-black text-orange-300/80' : 'text-white/25'}`}
+                  title={activeComputedScore !== null
+                    ? `快乐指数 ${activeMetrics.joy} × 80%${activeMetrics.ear === '' ? '' : ` + 过耳 ${activeMetrics.ear} × 20%`} = ${activeComputedScore}`
+                    : '可以直接打总分，也可以用快乐指数 / 过耳折算'}
+                >
+                  {activeComputedScore !== null ? `由指标折算 ${activeComputedScore} 分` : '点选切换 · 可分别记录'}
+                </span>
+              </div>
+              <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1.4fr)_minmax(90px,.8fr)_minmax(90px,.8fr)]">
+                <div className={scoreField === 'match' ? 'sm:col-span-2' : 'hidden'}><Field label="匹配指数（70–100）"><input type="number" inputMode="numeric" min="70" max="100" step="1" value={matchScore} onChange={(event) => updateActiveTotal(parseMatchScoreInput(event.target.value))} placeholder="未评" className={inputClass} /></Field></div>
+                <div className={scoreField === 'chorus' ? 'sm:col-span-2' : 'hidden'}><Field label="合唱指数（70–100）"><input type="number" inputMode="numeric" min="70" max="100" step="1" value={chorusScore} onChange={(event) => updateActiveTotal(parseMatchScoreInput(event.target.value))} placeholder="未评" className={inputClass} /></Field></div>
+                <div className={scoreField === 'strum' ? '' : 'hidden'}><Field label="狂扫指数（70–100）"><input type="number" inputMode="numeric" min="70" max="100" step="1" value={strumScore} onChange={(event) => updateActiveTotal(parseMatchScoreInput(event.target.value))} placeholder="未评" className={inputClass} /></Field></div>
+                <div className={scoreField === 'strum' ? '' : 'hidden'}><Field label="BPM"><input type="number" inputMode="numeric" min={STRUM_BPM_MIN} max={STRUM_BPM_MAX} step="1" value={strumBpm} onChange={(event) => setStrumBpm(parseMatchScoreInput(event.target.value))} placeholder="未填" title={`狂扫速度，${STRUM_BPM_MIN}–${STRUM_BPM_MAX} BPM`} className={inputClass} /></Field></div>
+                <div className={scoreField === 'stool' ? 'sm:col-span-2' : 'hidden'}><Field label="板凳指数（70–100）"><input type="number" inputMode="numeric" min="70" max="100" step="1" value={stoolScore} onChange={(event) => updateActiveTotal(parseMatchScoreInput(event.target.value))} placeholder="未评" className={inputClass} /></Field></div>
+                <Field label="品质"><div aria-readonly="true" title={`按${activeScoreLabel}换算`} className={`${inputClass} flex items-center font-black ${activeScoreQuality ? qualityTextClass[activeScoreQuality.tone] : 'text-white/25'}`}>{activeScoreQuality?.label ?? '—'}</div></Field>
+              </div>
+              <div className="mt-3 grid gap-3 border-t border-white/[.06] pt-3 sm:grid-cols-2">
+                <Field label={`快乐指数（${INDEX_METRIC_MIN}–${INDEX_METRIC_MAX} · 占 80%）`}><input type="number" inputMode="numeric" min={INDEX_METRIC_MIN} max={INDEX_METRIC_MAX} step="1" value={activeMetrics.joy} onChange={(event) => updateMetric({ joy: parseMatchScoreInput(event.target.value) })} placeholder="未评" className={inputClass} /></Field>
+                <Field label={`过耳（${INDEX_METRIC_MIN}–${INDEX_METRIC_MAX} · 占 20%）`}><input type="number" inputMode="numeric" min={INDEX_METRIC_MIN} max={INDEX_METRIC_MAX} step="1" value={activeMetrics.ear} onChange={(event) => updateMetric({ ear: parseMatchScoreInput(event.target.value) })} placeholder="未评" title="留空时快乐指数占 100%" className={inputClass} /></Field>
+              </div>
             </div>
-            <Field label="练习感受"><textarea value={feelings} onChange={(event) => setFeelings(event.target.value)} placeholder="音色、情绪、舒适程度……" className={areaClass} /></Field>
+            <Field label="练习感受/线下反馈"><textarea value={feelings} onChange={(event) => setFeelings(event.target.value)} placeholder="音色、情绪、舒适程度，以及现场谁说了什么、谁跟着唱、有没有人点下一首……" className={areaClass} /></Field>
             <button type="button" disabled={Boolean(busy)} onClick={() => void submitPractice()} className="inline-flex h-11 items-center gap-2 rounded-full bg-orange-400 px-5 text-sm font-black text-black transition hover:bg-orange-300 disabled:opacity-40"><Save className="h-4 w-4" />{editingRecord?.kind === 'practice' ? '保存修改' : '保存练习记录'}</button>
           </> : <>
             <div className="grid gap-3 sm:grid-cols-2">
@@ -702,7 +836,16 @@ const ScoreBadge = ({ label, score }: { label: string; score: number }) => {
 
 const PracticeRecordDetails = ({ record }: { record: PracticeRecord }) => {
   const reflection = getPracticeReflection(record);
-  return <><div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1"><p className="text-sm font-bold text-orange-100">匹配度 {record.matchScore}</p>{record.chorusScore ? <ScoreBadge label="合唱指数" score={record.chorusScore} /> : null}{record.strumScore ? <ScoreBadge label="狂扫指数" score={record.strumScore} /> : null}{record.strumBpm ? <p className="text-xs leading-none text-white/45" aria-label={`狂扫速度 ${record.strumBpm} BPM`}>BPM {record.strumBpm}</p> : null}<PracticeMoodBadges record={record} /></div>{record.feelings && <RecordText label="感受" text={record.feelings} />}{reflection && <RecordText label="弹唱感想" text={reflection} />}</>;
+  // 四大指数都不必填：匹配指数没评时，由第一个已评的指数顶上主指数的位置，字体和样式完全一致。
+  const primary = primaryPracticeIndex(record);
+  const others = PRACTICE_INDEX_ORDER.flatMap(([field, label]) => {
+    const score = record[field];
+    if (!Number.isInteger(score) || (primary && label === primary.label)) return [];
+    return [{ label, score: Number(score) }];
+  });
+  // 只想记一句感想时，四大指数和情绪标签可能全是空的，这一行就整行不渲染，免得留出一条空白间距。
+  const hasIndexRow = Boolean(primary) || others.length > 0 || Boolean(record.strumBpm) || Boolean(record.singingMoods?.length);
+  return <>{hasIndexRow ? <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">{primary ? <p className="text-sm font-bold text-orange-100">{primary.label} {primary.score}</p> : null}{others.map(({ label, score }) => <ScoreBadge key={label} label={label} score={score} />)}{record.strumBpm ? <p className="text-xs leading-none text-white/45" aria-label={`狂扫速度 ${record.strumBpm} BPM`}>BPM {record.strumBpm}</p> : null}<PracticeMoodBadges record={record} /></div> : null}{record.feelings && <RecordText label="感受" text={record.feelings} />}{reflection && <RecordText label="弹唱感想" text={reflection} />}</>;
 };
 
 const PracticeMoodBadges = ({ record }: { record: PracticeRecord }) => (

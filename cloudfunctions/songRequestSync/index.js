@@ -367,7 +367,11 @@ const recordChorusScore = (record) => (
 const buildPublicPracticeRanking = (records) => {
   const groups = new Map();
   for (const record of records) {
-    if (record.kind !== 'practice' || record.deletedAt || !Number.isInteger(record.matchScore)) continue;
+    if (record.kind !== 'practice' || record.deletedAt) continue;
+    // 四大指数都不必填：只要有一项评分就收进榜单，否则整条记录忽略。
+    const hasAnyScore = [record.matchScore, record.chorusScore, record.strumScore, record.stoolScore]
+      .some((score) => Number.isInteger(score) && score >= 70 && score <= 100);
+    if (!hasAnyScore) continue;
     const current = groups.get(record.songId) || {
       songId: record.songId,
       songTitle: record.songTitle,
@@ -379,13 +383,19 @@ const buildPublicPracticeRanking = (records) => {
       strumBpm: 0,
       strumBpmScore: 0,
       strumBpmAt: '',
+      stoolScore: 0,
     };
-    current.total += record.matchScore;
-    current.count += 1;
+    // 匹配指数可以没评；没评就不参与平均分，score 记为 0（前端理解为「暂无匹配分」）。
+    if (Number.isInteger(record.matchScore) && record.matchScore >= 70 && record.matchScore <= 100) {
+      current.total += record.matchScore;
+      current.count += 1;
+    }
     const chorusScore = recordChorusScore(record);
     if (chorusScore > current.chorusScore) current.chorusScore = chorusScore;
     const strumScore = Number.isInteger(record.strumScore) && record.strumScore >= 70 && record.strumScore <= 100 ? record.strumScore : 0;
     if (strumScore > current.strumScore) current.strumScore = strumScore;
+    const stoolScore = Number.isInteger(record.stoolScore) && record.stoolScore >= 70 && record.stoolScore <= 100 ? record.stoolScore : 0;
+    if (stoolScore > current.stoolScore) current.stoolScore = stoolScore;
     // 狂扫速度跟着最高分那次走，与前端 bestStrumBpm 一致：同分取更晚的一次。
     if (strumScore > 0 && Number.isInteger(record.strumBpm) && record.strumBpm >= 20 && record.strumBpm <= 300) {
       const occurredAt = String(record.occurredAt || '');
@@ -398,14 +408,15 @@ const buildPublicPracticeRanking = (records) => {
     }
     groups.set(record.songId, current);
   }
-  return [...groups.values()].map(({ songId, songTitle, songArtist, total, count, chorusScore, strumScore, strumBpm }) => ({
+  return [...groups.values()].map(({ songId, songTitle, songArtist, total, count, chorusScore, strumScore, strumBpm, stoolScore }) => ({
     songId,
     songTitle,
     songArtist,
-    score: Math.round((total / count) * 10) / 10,
+    score: count ? Math.round((total / count) * 10) / 10 : 0,
     chorusScore,
     strumScore,
     strumBpm,
+    stoolScore,
   })).sort((left, right) => right.score - left.score || left.songTitle.localeCompare(right.songTitle, 'zh-CN')).slice(0, 500);
 };
 

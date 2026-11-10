@@ -5221,6 +5221,15 @@ function makePetUI(rt) {
 		};
 		const workTerminal = workStatus?.state === "success" || workStatus?.state === "error";
 		const bubbleNode = (() => {
+			if (headContent) return h("div", {
+				className: "dsh-pet-bubble dsh-pet-custom-head is-on",
+				children: [headContent, whisperBubbleOn && whisperText && h("span", {
+					key: "reply",
+					className: "dsh-pet-head-reply",
+					role: guest ? "status" : void 0,
+					children: whisperText
+				})]
+			});
 			if (!guest && workTerminal && workBubbleOn && workText && cfg.workStatusEnabled) return h(WhisperBubble, {
 				text: workText,
 				on: workBubbleOn
@@ -5288,7 +5297,6 @@ function makePetUI(rt) {
 				"--dsh-pet-font-tip": fontPx.tip + "px"
 			}, rootStyle),
 			children: [
-				headContent,
 				bubbleNode,
 				h("div", {
 					ref: stageRef,
@@ -5325,7 +5333,7 @@ function makePetUI(rt) {
 				}),
 				h("div", {
 					ref: tipRef,
-					className: TOOLTIP_CLASS + (tipOn ? " is-on" : ""),
+					className: TOOLTIP_CLASS + (tipOn && !headContent ? " is-on" : ""),
 					"aria-hidden": "true",
 					children: cfg.name
 				})

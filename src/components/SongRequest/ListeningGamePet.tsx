@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { jsx } from 'react/jsx-runtime';
 import { createPortal } from 'react-dom';
-import { PawPrint, Timer, X } from 'lucide-react';
+import { PawPrint, X } from 'lucide-react';
 import { initNotify, makePetConfigSection, makePetUI, zh } from '../../../vendor/dsh-pet/client';
 import { updatePetGame } from '../../../vendor/dsh-pet/browserHost';
 import type { ListeningGameRoom } from './listeningGame';
@@ -21,8 +21,8 @@ const PetSettings = makePetConfigSection({
 const guestReplies = {
   waiting: '嗨，待会儿一起猜歌吧！',
   listening: '听到熟悉的旋律了吗？',
-  open: '选好那首歌，就可以提交啦！',
-  timedOut: '答题时间到啦，等管理员公布答案。',
+  open: '选好就提交吧！',
+  timedOut: '等管理员公布答案喔。',
   revealed: '下一首再一起猜！',
   ended: '下次路演见！',
 };
@@ -106,10 +106,14 @@ export default function ListeningGamePet({ room, manager, seconds }: { room: Lis
     </button>}
     {createPortal(<>
       <PetOverlay guest={!manager} guestReply={guestReply} imageMode={prefersPetImage()} headContent={seconds === null ? null : (
-        <div className={`listening-game-pet-countdown${seconds <= 5 ? ' is-urgent' : ''}`} role="timer" aria-label={seconds === 0 ? '答题时间到' : '答题倒计时'}>
-          <Timer className="h-4 w-4" aria-hidden="true" />
-          <span>00:{String(seconds).padStart(2, '0')}</span>
-        </div>
+        <span
+          key="countdown"
+          className={`listening-game-pet-countdown${seconds <= 5 ? ' is-urgent' : ''}`}
+          role={seconds > 0 ? 'timer' : undefined}
+          aria-label={seconds > 0 ? '答题倒计时' : undefined}
+        >
+          {seconds > 0 ? `00:${String(seconds).padStart(2, '0')}` : '时间到'}
+        </span>
       )} sound={{
         press: (pointerId: number) => petSound.press(pointerId, manager ? soundPair : guestSoundPair),
         release: petSound.release,

@@ -676,7 +676,7 @@ test('歌曲记录支持同一首歌多次练习并按时间倒序过滤无效�
   assert.equal(tagged.needsImprovement, true)
 })
 
-test('歌曲记录校验匹配度、文本以及路演反馈', async () => {
+test('歌曲记录校验匹配指数、文本以及路演反馈', async () => {
   const { isValidSongRecord } = await import(songRecordsModuleUrl.href)
   const base = {
     id: 'practice-1', kind: 'practice', songId: 'a', songTitle: '晴天', songArtist: '周杰伦',
@@ -694,14 +694,14 @@ test('歌曲记录校验匹配度、文本以及路演反馈', async () => {
   assert.equal(isValidSongRecord({ ...base, kind: 'roadshow', audienceName: '', feedback: '  ' }), false)
 })
 
-test('匹配度输入允许暂时清空后再输入新分数', async () => {
+test('匹配指数输入允许暂时清空后再输入新分数', async () => {
   const { parseMatchScoreInput } = await import(songRecordsModuleUrl.href)
 
   assert.equal(parseMatchScoreInput(''), '')
   assert.equal(parseMatchScoreInput('78'), 78)
 })
 
-test('匹配度自动锁定品质并区分普通与两档精良颜色', async () => {
+test('匹配指数自动锁定品质并区分普通与两档精良颜色', async () => {
   const { getMatchQuality } = await import(songRecordsModuleUrl.href)
 
   assert.deepEqual(getMatchQuality(70), { label: '普通', tone: 'white' })
@@ -720,7 +720,7 @@ test('匹配度自动锁定品质并区分普通与两档精良颜色', async ()
   assert.equal(getMatchQuality(101), null)
 })
 
-test('练习时间匹配度和只读品质在同一行展示', () => {
+test('练习时间匹配指数和只读品质在同一行展示', () => {
   const panel = readFileSync(songDetailPanelUrl, 'utf8')
 
   assert.match(panel, /sm:grid-cols-\[minmax\(0,1\.4fr\)_minmax\(90px,\.8fr\)_minmax\(90px,\.8fr\)\]/)
@@ -760,7 +760,7 @@ test('日常练习按月周日压缩分组并统计每天数据', async () => {
   assert.equal(groups[0].weeks[1].days[0].averageScore, 87.5)
 })
 
-test('歌曲详情匹配度统计使用全部练习记录的平均值', async () => {
+test('歌曲详情匹配指数统计使用全部练习记录的平均值', async () => {
   const { averageMatchScore } = await import(songRecordsModuleUrl.href)
 
   assert.equal(typeof averageMatchScore, 'function')
@@ -779,7 +779,7 @@ test('歌手歌曲卡在匹配值右侧显示路演场次且随隐藏按钮一�
   assert.match(badges, /本曲已收录于 \$\{roadshowCount\} 场路演/)
 })
 
-test('个人榜按每首歌的平均匹配度降序排名', async () => {
+test('个人榜按每首歌的平均匹配指数降序排名', async () => {
   const { rankSongsByPracticeMatch } = await import(songRecordsModuleUrl.href)
   const practice = (id: string, songId: string, matchScore: number) => ({
     id, kind: 'practice' as const, songId, songTitle: songId, songArtist: '',
@@ -2072,11 +2072,11 @@ test('歌曲详情页提供练习与路演记录并保留点歌按钮的独立�
   assert.match(panel, /setPracticeAt\(event\.target\.value\)/)
   assert.match(panel, /setRoadshowAt\(event\.target\.value\)/)
   assert.doesNotMatch(panel, /练习分钟数|durationMinutes|累计[^<]*分/)
-  assert.match(panel, /匹配度（70–100）/)
+  assert.match(panel, /匹配指数（70–100）/)
   assert.match(panel, /averageMatchScore\(practices\)/)
   assert.doesNotMatch(panel, /practices\[0\]\?\.matchScore/)
   assert.match(panel, /min="70" max="100"/)
-  assert.doesNotMatch(panel, /匹配度（60–100）|min="60"/)
+  assert.doesNotMatch(panel, /匹配指数（60–100）|min="60"/)
   assert.match(panel, /练习感受/)
   assert.match(panel, /needsMorePractice: editingRecord\?\.kind === 'practice'/)
   assert.match(panel, /PracticeMoodBadges record=\{record\}/)

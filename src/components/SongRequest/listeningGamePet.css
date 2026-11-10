@@ -1,31 +1,28 @@
-.listening-game-pet-countdown {
-  position: absolute;
-  bottom: calc(100% - max(32px, var(--dsh-pet-size) * .108));
-  left: 50%;
-  z-index: 3;
+.dsh-pet-bubble.dsh-pet-custom-head {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  min-width: 0;
+  max-width: min(190px, calc(100vw - 24px));
   padding: 5px 10px;
-  border: 1px solid #f6d7a0;
-  border-radius: 12px;
-  background: #fff3d9;
-  color: #563812;
-  box-shadow: 0 4px 14px #0005;
-  font: 800 15px/1.2 system-ui, sans-serif;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  transform: translateX(-50%);
-  pointer-events: none;
+  border-radius: 10px;
 }
 
-.listening-game-pet-countdown + .dsh-pet-bubble {
-  margin-bottom: 36px;
+.dsh-pet-head-reply {
+  border-left: 1px solid #2b2b2b24;
+  padding-left: 8px;
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.listening-game-pet-countdown {
+  color: #563812;
+  font: 700 14px/1.3 system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .listening-game-pet-countdown.is-urgent {
-  border-color: #f1b6a4;
-  background: #ffe4db;
   color: #9a3824;
 }
 

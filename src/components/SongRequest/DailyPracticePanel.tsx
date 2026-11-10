@@ -167,7 +167,7 @@ export default function DailyPracticePanel({
       draft.score === '' || draft.score < 70 || draft.score > 100
     ));
     if (invalid) {
-      setMessage('匹配度须为 70–100 的整数。');
+      setMessage('匹配指数须为 70–100 的整数。');
       return;
     }
 
@@ -279,7 +279,7 @@ export default function DailyPracticePanel({
                 <article className="practice-draft" key={draft.key}>
                   <div className="practice-draft-main">
                     <span><strong>{draft.song.title}</strong><small>{draft.song.artist}</small></span>
-                    <label>匹配度
+                    <label>匹配指数
                       <input
                         inputMode="numeric"
                         value={draft.score}
@@ -340,11 +340,11 @@ export default function DailyPracticePanel({
                               </summary>
                               <div className="practice-day-records">
                                 {day.records.map((record) => {
-                                  const quality = qualityOf(record.matchScore);
+                                  const quality = qualityOf(record.matchScore ?? 0);
                                   return (
                                     <button type="button" key={record.id} onDoubleClick={() => editRecord(record)} onClick={() => editRecord(record)}>
                                       <span><strong>{record.songTitle}</strong><small>{record.songArtist}</small></span>
-                                      <b>{record.matchScore}</b>
+                                      <b>{record.matchScore ?? '—'}</b>
                                       <em className={quality.className}>{quality.label}</em>
                                       <Edit3 size={14} />
                                     </button>

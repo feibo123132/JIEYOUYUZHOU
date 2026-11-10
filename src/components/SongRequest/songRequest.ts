@@ -50,8 +50,8 @@ export const paginateRankingItems = <T>(items: T[], requestedPage: number, pageS
 
 export type RankingDisplayMode = 'normal' | 'reverse' | 'random';
 
-/** 练习页签下的三种榜单：按匹配度排的练习榜 / 按合唱指数排的合唱榜 / 按狂扫指数排的狂扫榜。 */
-export type PracticeBoard = 'practice' | 'chorus' | 'strum';
+/** 练习页签下的四种榜单：按匹配指数排的练习榜 / 按合唱指数排的合唱榜 / 按狂扫指数排的狂扫榜 / 按板凳指数排的板凳榜。 */
+export type PracticeBoard = 'practice' | 'chorus' | 'strum' | 'stool';
 
 export const togglePersonalRankingReverse = (mode: RankingDisplayMode): RankingDisplayMode => (
   mode === 'reverse' ? 'normal' : 'reverse'
@@ -171,11 +171,13 @@ export const insertCatalogSong = (
 
 export const sortCatalogByMatchScore = (
   catalog: EditableCatalog,
-  records: Array<{ songId: string; matchScore: number }>,
+  records: Array<{ songId: string; matchScore?: number }>,
 ): EditableCatalog => {
   const scoresBySong = new Map<string, number[]>();
   for (const record of records) {
-    scoresBySong.set(record.songId, [...(scoresBySong.get(record.songId) ?? []), record.matchScore]);
+    const score = record.matchScore;
+    if (typeof score !== 'number' || !Number.isFinite(score)) continue;
+    scoresBySong.set(record.songId, [...(scoresBySong.get(record.songId) ?? []), score]);
   }
   const avgScore = (songId: string): number | null => {
     const scores = scoresBySong.get(songId) ?? [];
