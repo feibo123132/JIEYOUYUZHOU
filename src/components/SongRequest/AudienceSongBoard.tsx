@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, Search, X } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Search, X } from 'lucide-react';
 import type { Song } from './songCatalog';
 import { AUDIENCE_SONG_TAGS, audienceSongTags, getAudienceSongBatch, type AudienceSongTag, type AudienceTaggedSongIds } from './audienceSongs';
 import './audienceSongBoard.css';
@@ -16,7 +16,7 @@ export default function AudienceSongBoard({ songs, taggedSongIds, start, loadFai
   onChangeBatch: (start: number) => void;
   onSelect: (song: Song) => void;
 }) {
-  const { items, previousStart, nextStart } = getAudienceSongBatch(songs ?? [], start);
+  const { items, page, pageCount, previousStart, nextStart } = getAudienceSongBatch(songs ?? [], start);
   return (
     <section className="audience-board" aria-labelledby="song-showcase-title">
       {items.length > 0 ? (
@@ -48,10 +48,24 @@ export default function AudienceSongBoard({ songs, taggedSongIds, start, loadFai
           {songs && canManage && !filterLabel && <button type="button" className="audience-board-button" onClick={onManage}>挑选歌曲</button>}
         </div>
       )}
-      {songs && songs.length > items.length && (
-        <footer className="mt-8 flex justify-center gap-3 pb-5 sm:mt-10">
-          <button type="button" className="audience-board-button" onClick={() => onChangeBatch(previousStart)}>上一组</button>
-          <button type="button" className="audience-board-button" onClick={() => onChangeBatch(nextStart)}>下一组</button>
+      {songs && pageCount > 1 && (
+        <footer className="mt-5 flex flex-col items-center gap-3 pb-5 sm:mt-7">
+          <nav aria-label="观众点歌分页" className="flex items-center justify-center gap-3 text-xs text-white/45">
+            <span>共 {songs.length} 首</span>
+            <span className="flex items-center gap-2 rounded-full border border-white/10 bg-black/30 p-1">
+              <button type="button" aria-label="上一页歌曲" disabled={page === 1} onClick={() => onChangeBatch(previousStart)} className="grid h-8 w-8 place-items-center rounded-full text-white/60 transition enabled:hover:bg-white/10 enabled:hover:text-white disabled:cursor-not-allowed disabled:opacity-20">
+                <ChevronLeft aria-hidden="true" className="h-4 w-4" />
+              </button>
+              <strong aria-live="polite" className="min-w-14 text-center font-bold tabular-nums text-white/70">{page} / {pageCount}</strong>
+              <button type="button" aria-label="下一页歌曲" disabled={page === pageCount} onClick={() => onChangeBatch(nextStart)} className="grid h-8 w-8 place-items-center rounded-full text-white/60 transition enabled:hover:bg-white/10 enabled:hover:text-white disabled:cursor-not-allowed disabled:opacity-20">
+                <ChevronRight aria-hidden="true" className="h-4 w-4" />
+              </button>
+            </span>
+          </nav>
+          <div className="flex justify-center gap-3">
+            <button type="button" className="audience-board-button" onClick={() => onChangeBatch(previousStart)}>上一组</button>
+            <button type="button" className="audience-board-button" onClick={() => onChangeBatch(nextStart)}>下一组</button>
+          </div>
         </footer>
       )}
     </section>

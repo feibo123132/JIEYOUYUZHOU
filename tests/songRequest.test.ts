@@ -882,20 +882,20 @@ test('识曲歌库按四档解析、切换、取消并分组计数', async () =>
   })
 })
 
-test('观众点歌每次展示20首，上一组和下一组可以双向循环', async () => {
+test('观众点歌每页最多20首，按整页双向循环', async () => {
   const { getAudienceSongBatch } = await import(audienceSongsUrl.href)
   const songs = Array.from({ length: 45 }, (_, index) => index + 1)
   const first = getAudienceSongBatch(songs, 0)
   const second = getAudienceSongBatch(songs, first.nextStart)
   const third = getAudienceSongBatch(songs, second.nextStart)
-  assert.deepEqual(first, { items: songs.slice(0, 20), previousStart: 25, nextStart: 20 })
-  assert.deepEqual(second, { items: songs.slice(20, 40), previousStart: 0, nextStart: 40 })
-  assert.deepEqual(third, { items: [...songs.slice(40), ...songs.slice(0, 15)], previousStart: 20, nextStart: 15 })
-  assert.deepEqual(getAudienceSongBatch(songs, first.previousStart).items, songs.slice(25))
-  assert.equal(getAudienceSongBatch(songs, first.previousStart).nextStart, 0)
-  assert.deepEqual(getAudienceSongBatch(songs.slice(0, 20), 0), { items: songs.slice(0, 20), previousStart: 0, nextStart: 0 })
-  assert.deepEqual(getAudienceSongBatch(songs.slice(0, 4), 0), { items: [1, 2, 3, 4], previousStart: 0, nextStart: 0 })
-  assert.deepEqual(getAudienceSongBatch([], 0), { items: [], previousStart: 0, nextStart: 0 })
+  assert.deepEqual(first, { items: songs.slice(0, 20), page: 1, pageCount: 3, previousStart: 40, nextStart: 20 })
+  assert.deepEqual(second, { items: songs.slice(20, 40), page: 2, pageCount: 3, previousStart: 0, nextStart: 40 })
+  assert.deepEqual(third, { items: songs.slice(40), page: 3, pageCount: 3, previousStart: 20, nextStart: 0 })
+  assert.deepEqual(getAudienceSongBatch(songs, first.previousStart), third)
+  assert.deepEqual(getAudienceSongBatch(songs, third.nextStart), first)
+  assert.deepEqual(getAudienceSongBatch(songs.slice(0, 25), 40), { items: songs.slice(20, 25), page: 2, pageCount: 2, previousStart: 0, nextStart: 0 })
+  assert.deepEqual(getAudienceSongBatch(songs.slice(0, 20), 0), { items: songs.slice(0, 20), page: 1, pageCount: 1, previousStart: 0, nextStart: 0 })
+  assert.deepEqual(getAudienceSongBatch([], 0), { items: [], page: 0, pageCount: 0, previousStart: 0, nextStart: 0 })
 })
 
 test('歌曲随机打散整份歌单，每首保留一次且原顺序不变', async () => {

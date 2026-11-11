@@ -43,12 +43,15 @@ export const restoreAudienceSongOrder = (songIds: string[], rawOrder: string | n
 };
 
 export const getAudienceSongBatch = <T>(songs: T[], start: number) => {
-  if (songs.length <= AUDIENCE_BATCH_SIZE) return { items: songs, previousStart: 0, nextStart: 0 };
-  const offset = start % songs.length;
-  const items = songs.slice(offset, offset + AUDIENCE_BATCH_SIZE);
+  const pageCount = Math.ceil(songs.length / AUDIENCE_BATCH_SIZE);
+  if (pageCount === 0) return { items: [], page: 0, pageCount, previousStart: 0, nextStart: 0 };
+  const pageIndex = Math.max(0, Math.min(Math.floor(start / AUDIENCE_BATCH_SIZE), pageCount - 1));
+  const offset = pageIndex * AUDIENCE_BATCH_SIZE;
   return {
-    items: items.concat(songs.slice(0, AUDIENCE_BATCH_SIZE - items.length)),
-    previousStart: (offset + songs.length - AUDIENCE_BATCH_SIZE) % songs.length,
-    nextStart: (offset + AUDIENCE_BATCH_SIZE) % songs.length,
+    items: songs.slice(offset, offset + AUDIENCE_BATCH_SIZE),
+    page: pageIndex + 1,
+    pageCount,
+    previousStart: ((pageIndex + pageCount - 1) % pageCount) * AUDIENCE_BATCH_SIZE,
+    nextStart: ((pageIndex + 1) % pageCount) * AUDIENCE_BATCH_SIZE,
   };
 };
