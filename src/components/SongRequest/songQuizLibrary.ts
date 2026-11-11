@@ -1,4 +1,8 @@
 import type { Song } from './songCatalog';
+import {
+  collectUsedRecognitionSongIds, createRoadshowSong, deduplicateRoadshowSongs, getLatestRoadshow,
+  ROADSHOW_RECOGNITION_SONG_LIMIT, type RoadshowRecord,
+} from './roadshow.ts';
 
 export const QUIZ_LEVELS = [
   { id: 'warmup', label: '简单', shortLabel: '简单', symbol: 'Ⅰ' },
@@ -85,4 +89,36 @@ export const selectQuizSongsForRoadshow = (
     return pool.slice(0, QUIZ_ROADSHOW_QUOTAS[level.id]);
   });
   return { kind: 'selected', songs: selected };
+};
+
+export const prepareLatestRoadshowQuizReplacement = (
+  records: RoadshowRecord[],
+  catalog: Song[],
+  assignments: QuizAssignments,
+  random: () => number = Math.random,
+) => {
+  const latest = getLatestRoadshow(records);
+  if (!latest) return { kind: 'missing' } as const;
+
+  const fixedSongs = latest.recognitionSongs.filter(song => song.fixedBonus);
+  const usedIds = collectUsedRecognitionSongIds(records);
+  const candidates = catalog.filter(song => assignments[song.id] && !usedIds.has(song.id));
+  const uniqueIds = new Set(deduplicateRoadshowSongs([
+    ...fixedSongs,
+    ...candidates.map(createRoadshowSong),
+  ]).filter(song => !song.fixedBonus).map(song => song.catalogId));
+  const selection = selectQuizSongsForRoadshow(
+    candidates.filter(song => uniqueIds.has(song.id)), assignments, usedIds, random,
+  );
+  if (selection.kind === 'insufficient') return selection;
+
+  const recognitionSongs = [...fixedSongs, ...selection.songs.map(createRoadshowSong)];
+  if (recognitionSongs.length > ROADSHOW_RECOGNITION_SONG_LIMIT) {
+    return { kind: 'limit', fixedSongCount: fixedSongs.length } as const;
+  }
+  return {
+    kind: 'updated',
+    previousSongCount: latest.recognitionSongs.length - fixedSongs.length,
+    record: { ...latest, recognitionSongs },
+  } as const;
 };

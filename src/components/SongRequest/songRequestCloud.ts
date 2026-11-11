@@ -166,6 +166,14 @@ export const pullCloudFeaturedSongIds = async (): Promise<string[] | null> => (
   await callSync<{ songIds: string[] | null }>({ action: 'featuredSongs:pull' })
 ).songIds;
 
+export const pullCloudAudienceSongIds = async (): Promise<string[]> => (
+  await callSync<{ songIds: string[] }>({ action: 'audienceSongs:pull' })
+).songIds;
+
+export const updateCloudAudienceSongIds = async (credentials: Credentials, add: string[], remove: string[]): Promise<string[]> => (
+  await callSync<{ songIds: string[] }>({ action: 'audienceSongs:update', ...credentials, add, remove })
+).songIds;
+
 export const pullArtistTags = async (artist: string): Promise<string[]> => (
   await callSync<{ tags: string[] }>({ action: 'artistTags:pull', artist })
 ).tags;

@@ -736,6 +736,40 @@ test('识曲歌库仅允许固定管理员发布并可公开读取', async () =>
   assert.deepEqual(await handler({ action: 'quizLibrary:pull' }), { ok: true, assignments: { a: 'warmup', b: 'hell' } });
 });
 
+test('audience song updates preserve order, edits from another device and the separate featured list', async () => {
+  const store = memoryStore();
+  const { createHandler, updateAudienceSongsAtomically } = loadFunction();
+  const owner = { alias: '2421415030@qq.com', password: 'guitar-2026' };
+  const visitor = { alias: 'visitor@example.com', password: 'guitar-2026' };
+  await seedExistingAccount(store, owner);
+  await seedExistingAccount(store, visitor);
+  const db = {
+    runTransaction: (work) => work({ collection: () => ({ doc: (id) => ({
+      get: async () => ({ data: await store.getWorkspace(id) }),
+      set: (value) => store.setWorkspace(id, value),
+    }) }) }),
+  };
+  store.updateAudienceSongsAtomically = (id, changes) => updateAudienceSongsAtomically(db, id, changes);
+  const handler = createHandler(store);
+  const pull = () => handler({ action: 'audienceSongs:pull' });
+  const update = (credentials, add, remove = []) => handler({ action: 'audienceSongs:update', ...credentials, add, remove });
+
+  assert.deepEqual(await pull(), { ok: true, songIds: [] });
+  assert.deepEqual(await update(visitor, ['a']), { ok: false, error: 'AUTH_FAILED' });
+  assert.deepEqual(await update({ ...owner, password: 'wrong-password' }, ['a']), { ok: false, error: 'AUTH_FAILED' });
+  await handler({ action: 'featuredSongs:set', ...owner, songIds: ['hot'] });
+  const songs = Array.from({ length: 45 }, (_, index) => `song-${index}`);
+  assert.deepEqual(await update(owner, [...songs, songs[0]]), { ok: true, songIds: songs });
+  await update(owner, ['added-on-another-device']);
+  const changes = [owner, ['new'], [songs[0]]];
+  const expected = { ok: true, songIds: [...songs.slice(1), 'added-on-another-device', 'new'] };
+  assert.deepEqual(await update(...changes), expected);
+  assert.deepEqual(await update(...changes), expected);
+  assert.deepEqual(await update(owner, ['  ']), { ok: false, error: 'INVALID_AUDIENCE_SONGS' });
+  assert.deepEqual(await pull(), expected);
+  assert.deepEqual(await handler({ action: 'featuredSongs:pull' }), { ok: true, songIds: ['hot'] });
+});
+
 test('segments pending and sung vote counts by the owner latest roadshow location while preserving totals', async () => {
   const store = memoryStore();
   const { createHandler } = loadFunction();

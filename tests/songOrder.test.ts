@@ -43,16 +43,18 @@ test('歌手设置快照保存并合并歌曲顺序且兼容旧快照', () => {
   })?.songOrder, [])
 })
 
-test('歌手详情页提供歌曲调整排序模式并接入同步队列', () => {
+test('歌手详情页在编辑模式里提供拖拽和箭头排序，并接入同步队列', () => {
   const source = readFileSync(new URL('../src/components/SongRequest/SongRequestStation.tsx', import.meta.url), 'utf8')
 
-  assert.match(source, /const \[songOrderMode, setSongOrderMode\] = useState\(false\)/)
-  assert.match(source, /selectedArtist &&[\s\S]*>排序/)
-  assert.match(source, /draggable=\{songOrderMode\}/)
+  assert.match(source, /title="编辑和排序歌曲"/)
+  assert.match(source, /\{songEditMode && \(\s*<span draggable onDragStart=/)
+  assert.match(source, /onDrop=\{songEditMode \?/)
+  assert.match(source, /title="前移".*moveVisibleSong\(song.id, -1\)/)
+  assert.match(source, /title="后移".*moveVisibleSong\(song.id, 1\)/)
   assert.match(source, /handleSongDragStart/)
-  assert.match(source, /insertCatalogSong\(catalog, sourceSongId, targetSongId, placement\)/)
-  assert.match(source, /moveCatalogSong\(catalog, songId, targetSong\.id\)/)
-  assert.match(source, /queueArtistSettings\(createArtistSettingsPayload\([\s\S]*songOrder/)
+  assert.match(source, /commitSongOrder\(insertCatalogSong\(getVisibleEditableCatalog\(\), sourceSongId, targetSongId, placement\)\)/)
+  assert.match(source, /commitSongOrder\(moveCatalogSong\(editable, songId, targetSong\.id\)\)/)
+  assert.match(source, /syncCurrentArtistSettings\(\s*next\.artists,\s*customArtistAvatars,\s*avatarAdjustments,\s*next\.songs\.map\(\(song\) => song\.id\)/)
 })
 
 test('歌曲按练习匹配指数降序排列，未练习歌曲置底且不跨歌手', () => {

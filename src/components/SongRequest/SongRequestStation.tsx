@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent } from 'react';
 import {
-  ArrowLeft, ArrowUpDown, CalendarDays, Check, ChevronLeft, ChevronRight, Disc3, Eye, Guitar,
-  GripVertical, Library, ListOrdered, LogIn, LogOut, Menu, Mic2, PenLine, Play, Plus, RotateCcw, Search, SlidersHorizontal, Sparkles, Target, Trash2, Trophy, Upload, UserRound, X,
+  ArrowLeft, ArrowLeftRight, ArrowUpDown, CalendarDays, Check, ChevronLeft, ChevronRight, Disc3, Eye, Guitar,
+  GripVertical, Library, ListMusic, ListOrdered, LogIn, LogOut, Menu, Mic2, PenLine, Play, Plus, RotateCcw, Search, SlidersHorizontal, Sparkles, Target, Trash2, Trophy, Upload, UserRound, X,
 } from 'lucide-react';
 import useAppStore from '../../store/appStore';
 import { SONGS, type Song } from './songCatalog';
@@ -16,12 +16,13 @@ import {
 } from './songRequest';
 import {
   collectUsedRecognitionSongIds, createRoadshowSong, deduplicateRoadshowSongs, findSongAppearances, getLatestRoadshow, groupSongsByArtist, parseRoadshowCache,
-  parsePublicQuizParticipantRanking, parsePublicQuizRanking, prepareLatestRoadshowPerformanceSong, prepareLatestRoadshowRecognitionSong, prepareLatestRoadshowRecognitionSongs, ROADSHOW_CACHE_KEY, ROADSHOW_RANKING_LOCATIONS,
+  parsePublicQuizParticipantRanking, parsePublicQuizRanking, prepareLatestRoadshowPerformanceSong, prepareLatestRoadshowRecognitionSong, ROADSHOW_CACHE_KEY, ROADSHOW_RANKING_LOCATIONS, ROADSHOW_RECOGNITION_SONG_LIMIT,
   ROADSHOW_LOCATIONS, type PublicQuizParticipantRankingItem, type PublicQuizRankingItem, type RoadshowLocation, type RoadshowRankingLocation, type RoadshowRecord, type RoadshowSong,
 } from './roadshow';
 import {
   adjustCloudRoadshowSingCount, adjustCloudSungVote, clearCloudQuizRanking, clearCloudVotes, clearCloudRoadshowSingCounts, finishCloudVotes, incrementCloudVote, mapArtistSettingsSyncError, mapSongScoreSyncError, pullArtistSettings, pullCloudFeaturedSongIds, pullCloudRoadshowSingState, pullCloudVoteState,
   pullCloudQuizAssignments, pullPublicPracticeRanking, pullPublicQuizRanking, pullRoadshows, pullSongRecords, pullSongScores, pullPublicSongScores, pushArtistSettings,
+  pullCloudAudienceSongIds, updateCloudAudienceSongIds,
   saveCloudFeaturedSongIds, saveCloudQuizAssignments, saveRoadshow, syncSongScoreToCloud, deleteSongScore, type CloudRoadshowSingState,
 } from './songRequestCloud';
 import RoadshowPanel, { type RoadshowEditorTab } from './RoadshowPanel';
@@ -35,6 +36,7 @@ import InquiryPage from './InquiryPage';
 import { MessageCircle } from 'lucide-react';
 import { Tag } from 'lucide-react';
 import PopularSongBarrage from './PopularSongBarrage';
+import AudienceSongBoard, { AudienceSongEditor } from './AudienceSongBoard';
 import { createInitialBarragePreferences, setBarragePreference } from '../StarrySky/barragePreferences';
 import { calculateAvatarCropLayout } from './avatarCrop';
 import { artistSettingsStorageError, openArtistSettingsStorage, type ArtistSettingsStorage } from './artistSettingsStorage';
@@ -55,12 +57,13 @@ import {
   type ArtistSettingsPayload,
 } from './artistSettings';
 import {
-  countQuizSongs, groupQuizSongs, parseQuizAssignments, QUIZ_LEVELS, selectQuizSongsForRoadshow, setQuizLevel,
+  countQuizSongs, groupQuizSongs, parseQuizAssignments, prepareLatestRoadshowQuizReplacement, QUIZ_LEVELS, setQuizLevel,
   type QuizAssignments, type QuizLevel,
 } from './songQuizLibrary';
 
 interface SongRequestStationProps { onBack: () => void; canReturnToUniverse: boolean; }
-type SectionId = 'ranking' | 'artists' | 'roadshows' | 'playlists' | 'quiz';
+type SongShowcase = 'playlists' | 'audience';
+type SectionId = 'ranking' | 'artists' | 'roadshows' | SongShowcase | 'quiz';
 type RankingView = 'requests' | 'personal' | 'quiz';
 type RequestVoteView = 'pending' | 'sung';
 type SungStatsSource = 'requests' | 'roadshow';
@@ -105,6 +108,10 @@ const HUB_DIRECTIONS = [
   { id: 'roadshows', label: '私人记录', eyebrow: 'PRIVATE ARCHIVE', description: '日常练习与路演记录', icon: CalendarDays, tone: 'from-cyan-400/20 to-blue-700/5' },
   { id: 'playlists', label: '热门歌曲', eyebrow: 'HOT SONGS', description: '看歌名化作彩色弹幕穿过星空', icon: Library, tone: 'from-violet-400/20 to-purple-700/5' },
 ] as const;
+const AUDIENCE_DIRECTION = {
+  id: 'audience', label: '观众点歌', eyebrow: 'AUDIENCE PICKS', description: '每次挑一组歌，点一首你想听的',
+  icon: ListMusic, tone: 'from-amber-300/20 via-orange-700/10 to-rose-950/15',
+} as const;
 
 const artistAvatarUrl = (fileName: string) => `${import.meta.env.BASE_URL}images/song-request/artists/${fileName}`;
 const maskSongRecordAccount = (alias: string) => {
@@ -219,6 +226,15 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
   const [catalogReady, setCatalogReady] = useState(false);
   const nickname = useAppStore((state) => state.user?.nickname || '');
   const [activeSection, setActiveSection] = useState<SectionId | null>(null);
+  const [songShowcase, setSongShowcase] = useState<SongShowcase>('playlists');
+  const [audienceSongIds, setAudienceSongIds] = useState<string[] | null>(null);
+  const [audiencePublicCatalog, setAudiencePublicCatalog] = useState<Song[] | null>(null);
+  const [audienceSongOffset, setAudienceSongOffset] = useState(0);
+  const [audienceLoadFailed, setAudienceLoadFailed] = useState(false);
+  const [audienceLoadAttempt, setAudienceLoadAttempt] = useState(0);
+  const [audienceEditorOpen, setAudienceEditorOpen] = useState(false);
+  const [audienceSaving, setAudienceSaving] = useState(false);
+  const audienceSaveRef = useRef(false);
   const [gameOpen, setGameOpen] = useState(() => shouldOpenListeningGame(isFeaturedSongManager(accountAlias), window.location.search));
   const [rankingView, setRankingView] = useState<RankingView>('requests');
   const [requestVoteView, setRequestVoteView] = useState<RequestVoteView>('pending');
@@ -370,8 +386,8 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
   const [artistOrderMode, setArtistOrderMode] = useState(false);
   const [draggedArtist, setDraggedArtist] = useState<string | null>(null);
   const [artistDropTarget, setArtistDropTarget] = useState<{ artist: string; placement: ArtistDropPlacement } | null>(null);
-  const [songOrderMode, setSongOrderMode] = useState(false);
   const [songEditMode, setSongEditMode] = useState(false);
+  const [songMarkerShowcase, setSongMarkerShowcase] = useState<SongShowcase>('playlists');
   const [songEditDrafts, setSongEditDrafts] = useState<Record<string, { title: string; hotComment: string }>>({});
   const [artistEditMode, setArtistEditMode] = useState(false);
   const [showPracticeBadges, setShowPracticeBadges] = useState(() => {
@@ -404,7 +420,7 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
     if (canManageCatalog) return;
     setAvatarAdjustMode(false);
     setArtistOrderMode(false);
-    setSongOrderMode(false);
+    setSongEditMode(false);
     setAdjustingArtist(null);
     setDraggedArtist(null);
     setArtistDropTarget(null);
@@ -798,6 +814,14 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
     const featured = new Set(featuredSongIds);
     return catalogSongs.filter((song) => featured.has(song.id));
   }, [catalogSongs, featuredSongIds]);
+  const audienceSongs = useMemo(() => {
+    if (audienceSongIds === null) return null;
+    const songsById = new Map((audiencePublicCatalog ?? catalog.songs).map(song => [song.id, song]));
+    return audienceSongIds.flatMap(id => {
+      const song = songsById.get(id);
+      return song ? [song] : [];
+    });
+  }, [audienceSongIds, audiencePublicCatalog, catalog.songs]);
   const quizGroups = useMemo(() => groupQuizSongs(catalogSongs, quizAssignments), [catalogSongs, quizAssignments]);
   const quizCounts = useMemo(() => countQuizSongs(quizAssignments), [quizAssignments]);
   const randomSongs = useMemo(() => {
@@ -1271,7 +1295,7 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
   const handleSongDragOver = (event: DragEvent<HTMLElement>, targetSongId: string) => {
     if (!canManageCatalog) return;
     const sourceSongId = draggedSongId || event.dataTransfer.getData('text/plain');
-    if (!songOrderMode || !sourceSongId || sourceSongId === targetSongId) return;
+    if (!songEditMode || !sourceSongId || sourceSongId === targetSongId) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
     const placement = getSongDropPlacement(event);
@@ -1367,7 +1391,6 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
     }
     if (activeSection === null) { if (canReturnToUniverse) onBack(); return; }
     if (selectedArtist) {
-      setSongOrderMode(false);
       setSongEditMode(false);
       clearSongDragState();
       setSelectedArtist(null);
@@ -1457,6 +1480,58 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
   };
 
   const canManageFeaturedSongs = isFeaturedSongManager(songRecordSession?.alias);
+  const shouldLoadAudienceSongs = canManageFeaturedSongs || activeSection === 'audience';
+  useEffect(() => {
+    if (!shouldLoadAudienceSongs || audienceSongIds !== null) return;
+    let active = true;
+    setAudienceLoadFailed(false);
+    // 普通登录账号使用自己的曲库，观众点歌统一使用站主的公开曲库。
+    const publicCatalog = songRecordSession && !canManageFeaturedSongs
+      ? pullArtistSettings().then(settings => settings?.catalog ? upgradeEditableCatalog(settings.catalog, SONGS).songs : SONGS)
+      : Promise.resolve(null);
+    Promise.all([pullCloudAudienceSongIds(), publicCatalog]).then(([songIds, publicSongs]) => {
+      if (!active) return;
+      setAudiencePublicCatalog(publicSongs);
+      setAudienceSongIds(songIds);
+    }).catch(() => {
+      if (active) setAudienceLoadFailed(true);
+    });
+    return () => { active = false; };
+  }, [shouldLoadAudienceSongs, audienceSongIds, audienceLoadAttempt, songRecordSession, canManageFeaturedSongs]);
+
+  const openSongShowcase = (showcase: SongShowcase) => {
+    setSongShowcase(showcase);
+    setActiveSection(showcase);
+    setSelectedArtist(null);
+    setSelectedSong(null);
+    setSongAssistantOpen(false);
+    setQuery('');
+    window.scrollTo(0, 0);
+  };
+
+  const saveAudienceSongs = async (add: string[], remove: string[]) => {
+    if (!songRecordSession || !canManageFeaturedSongs || audienceSaveRef.current) return false;
+    audienceSaveRef.current = true;
+    setAudienceSaving(true);
+    try {
+      setAudienceSongIds(await updateCloudAudienceSongIds(songRecordSession, add, remove));
+      setAudienceSongOffset(0);
+      showSyncMessage('观众点歌歌单已更新');
+      return true;
+    } catch {
+      showSyncMessage('观众点歌歌单保存失败，请重试');
+      return false;
+    } finally {
+      audienceSaveRef.current = false;
+      setAudienceSaving(false);
+    }
+  };
+
+  const toggleAudienceSong = (song: Song) => {
+    if (audienceSongIds === null) return;
+    const marked = audienceSongIds.includes(song.id);
+    void saveAudienceSongs(marked ? [] : [song.id], marked ? [song.id] : []);
+  };
   const nonOwnerSession = Boolean(songRecordSession && !canManageFeaturedSongs);
   const visibleRankingView: RankingView = nonOwnerSession ? 'personal' : rankingView;
 
@@ -1719,7 +1794,7 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
     }
   };
 
-  const addQuizBatchToLatestRoadshow = async () => {
+  const replaceLatestRoadshowQuizBatch = async () => {
     if (!songRecordSession) {
       showSyncMessage('请先进入私人记录，再使用一键选歌');
       return;
@@ -1729,34 +1804,35 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
     showSyncMessage('');
     try {
       const records = await pullRoadshows(songRecordSession);
-      if (!getLatestRoadshow(records)) {
-        setRoadshowArchives([]);
+      const prepared = prepareLatestRoadshowQuizReplacement(records, catalogSongs, quizAssignments);
+      if (prepared.kind === 'missing') {
+        setRoadshowArchives(records);
         showSyncMessage('还没有路演，请先在私人记录中创建一场路演');
         return;
       }
-      const selection = selectQuizSongsForRoadshow(
-        catalogSongs,
-        quizAssignments,
-        collectUsedRecognitionSongIds(records),
-      );
-      if (selection.kind === 'insufficient') {
+      if (prepared.kind === 'insufficient') {
         setRoadshowArchives(records);
-        const detail = selection.shortages.map(({ level, required, available }) => {
+        const detail = prepared.shortages.map(({ level, required, available }) => {
           const label = QUIZ_LEVELS.find((item) => item.id === level)?.label ?? level;
           return `${label}需${required}首、剩${available}首`;
         }).join('；');
-        showSyncMessage(`未使用歌曲不足：${detail}`);
+        showSyncMessage(`未使用歌曲不足，已保留原歌单。${detail}`);
         return;
       }
-      const prepared = prepareLatestRoadshowRecognitionSongs(records, selection.songs);
-      if (prepared.kind !== 'updated') {
+      if (prepared.kind === 'limit') {
         setRoadshowArchives(records);
-        showSyncMessage(prepared.kind === 'missing' ? '还没有路演，请先创建' : '本轮歌曲均已加入最新路演');
+        showSyncMessage(`本场已有 ${prepared.fixedSongCount} 首固定送分，加上新题目会超过 ${ROADSHOW_RECOGNITION_SONG_LIMIT} 首上限。已保留原歌单。`);
+        return;
+      }
+      if (prepared.previousSongCount > 0 && !window.confirm(
+        `确定用新选的 30 首歌曲替换“${prepared.record.title}”原有的 ${prepared.previousSongCount} 首普通识曲题目吗？固定送分、趣味歌组和答题记录会保留。`,
+      )) {
         return;
       }
       const saved = await saveRoadshow(songRecordSession, prepared.record);
       rememberRoadshowUpdate(records, saved);
-      showSyncMessage(`已按6:10:10:4选取30首并加入“${saved.title}”`);
+      window.dispatchEvent(new CustomEvent('jieyou-roadshow-imported', { detail: { recordId: saved.id } }));
+      showSyncMessage(`已将“${saved.title}”的普通识曲题目更新为新选的 30 首`);
     } catch {
       showSyncMessage('一键选歌失败，请检查网络后重试');
     } finally {
@@ -1847,6 +1923,7 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
       return current ? <span title={`听歌识曲 · ${current.label}`} className={`inline-flex h-9 min-w-9 shrink-0 items-center justify-center rounded-full border px-2 text-[10px] font-black ${QUIZ_LEVEL_STYLES[current.id].badge}`}>{current.symbol}</span> : null;
     }
     const menuOpen = quizMenuSongId === song.id;
+    const inAudienceSongs = audienceSongIds?.includes(song.id) ?? false;
     const isInLatestRoadshow = Boolean(latestRoadshow?.performanceSongs.some((item) => (
       item.catalogId === song.id || (item.title === song.title && item.artist === song.artist)
     )));
@@ -1884,6 +1961,20 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
                 <span className="min-w-0"><span className="block truncate">{isInLatestRoadshow ? `已加入“${latestRoadshow.title}”` : `加入“${latestRoadshow.title}”`}</span><small className="mt-0.5 block font-normal text-white/30">作为本次准备演唱的歌曲</small></span>
               </button>
             ) : <span className="rounded-xl px-3 py-2 text-[10px] leading-5 text-white/30">尚未创建路演，请先前往私人记录创建。</span>}
+            {canManageFeaturedSongs && audienceSongIds !== null && (inAudienceSongs || catalog.songs.some(item => item.id === song.id)) && (
+              <>
+                <span className="mx-2 my-1 border-t border-white/10" />
+                <button type="button" role="menuitemcheckbox" aria-checked={inAudienceSongs} disabled={audienceSaving}
+                  onClick={event => {
+                    event.stopPropagation();
+                    toggleAudienceSong(song);
+                  }}
+                  className="flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-xs font-bold text-amber-100 hover:bg-amber-300/10 disabled:opacity-45">
+                  {inAudienceSongs ? <Check className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                  {inAudienceSongs ? '从观众点歌移出' : '加入观众点歌'}
+                </button>
+              </>
+            )}
           </span>
         )}
       </span>
@@ -1908,16 +1999,27 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
     }
   };
 
-  const FeaturedSongControl = ({ song }: { song: Song }) => {
-    const featured = featuredSongIds.includes(song.id);
-    if (canManageFeaturedSongs) {
-      return (
-        <button type="button" aria-pressed={featured} aria-label={featured ? `取消${song.title}的热门歌曲标记` : `将${song.title}设为热门歌曲`}
-          title={featured ? '取消热门歌曲' : '设为热门歌曲'} disabled={Boolean(featuredBusyId)} onClick={(event) => { event.stopPropagation(); void toggleFeaturedSong(song); }}
-          className={`grid h-9 w-9 shrink-0 place-items-center rounded-full border text-base transition active:scale-95 disabled:opacity-45 ${featured ? 'border-amber-300/45 bg-amber-300/15 shadow-[0_0_18px_rgba(251,191,36,.16)]' : 'border-white/10 bg-black/25 grayscale opacity-45 hover:border-amber-200/30 hover:grayscale-0 hover:opacity-100'}`}>🔥</button>
-      );
-    }
-    return featured ? <span className="grid h-9 w-9 shrink-0 place-items-center text-base drop-shadow-[0_0_8px_rgba(251,191,36,.35)]" title="热门歌曲">🔥</span> : null;
+  const markingAudience = songMarkerShowcase === 'audience';
+  const songMarkerLabel = markingAudience ? '观众选歌' : '热门歌曲';
+  const songMarkerEmoji = markingAudience ? '🎵' : '🔥';
+
+  const SongShowcaseControl = ({ song }: { song: Song }) => {
+    const marked = (markingAudience ? audienceSongIds : featuredSongIds)?.includes(song.id) ?? false;
+    const disabled = markingAudience
+      ? audienceSaving || audienceSongIds === null || (!marked && !catalog.songs.some(item => item.id === song.id))
+      : Boolean(featuredBusyId);
+    const label = marked ? `取消${song.title}的${songMarkerLabel}标记` : `将${song.title}设为${songMarkerLabel}`;
+    return (
+      <button type="button" aria-pressed={marked} aria-label={label} title={label} disabled={disabled}
+        onClick={event => {
+          event.stopPropagation();
+          if (markingAudience) toggleAudienceSong(song);
+          else void toggleFeaturedSong(song);
+        }}
+        className={`grid h-9 w-9 shrink-0 place-items-center rounded-full border text-base transition active:scale-95 disabled:opacity-45 ${marked ? 'border-amber-300/45 bg-amber-300/15 shadow-[0_0_18px_rgba(251,191,36,.16)]' : 'border-white/10 bg-black/25 grayscale opacity-45 hover:border-amber-200/30 hover:grayscale-0 hover:opacity-100'}`}>
+        <span aria-hidden="true">{songMarkerEmoji}</span>
+      </button>
+    );
   };
 
   const RequestButton = ({ song }: { song: Song }) => {
@@ -1956,24 +2058,20 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
         return (
           <article
             key={song.id}
-            draggable={songOrderMode}
-            aria-label={songOrderMode ? `${song.title}，可拖拽排序` : undefined}
-            aria-grabbed={songOrderMode ? isDragged : undefined}
-            onDragStart={songOrderMode ? (event) => handleSongDragStart(event, song.id) : undefined}
-            onDragOver={songOrderMode ? (event) => handleSongDragOver(event, song.id) : undefined}
-            onDrop={songOrderMode ? (event) => handleSongDrop(event, song.id) : undefined}
-            onDragEnd={songOrderMode ? clearSongDragState : undefined}
-            className={`group relative flex min-w-0 items-center justify-between gap-3 rounded-2xl border bg-black/25 p-2 transition ${songOrderMode ? 'cursor-grab select-none active:cursor-grabbing' : 'hover:border-orange-200/25 hover:bg-white/[.045]'} ${isDragged ? 'opacity-40' : ''} ${dropPlacement ? 'border-orange-300/60 bg-orange-300/[.055]' : 'border-white/10'}`}
+            onDragOver={songEditMode ? (event) => handleSongDragOver(event, song.id) : undefined}
+            onDrop={songEditMode ? (event) => handleSongDrop(event, song.id) : undefined}
+            className={`group relative flex min-w-0 items-center justify-between rounded-2xl border bg-black/25 p-2 transition ${songEditMode ? 'gap-1.5 sm:gap-2' : 'gap-3 hover:border-orange-200/25 hover:bg-white/[.045]'} ${isDragged ? 'opacity-40' : ''} ${dropPlacement ? 'border-orange-300/60 bg-orange-300/[.055]' : 'border-white/10'}`}
           >
             {dropPlacement && (
               <span aria-hidden="true" className={`pointer-events-none absolute z-20 rounded-full bg-orange-300 shadow-[0_0_18px_rgba(253,186,116,.8)] ${dropPlacement === 'before' ? '-top-1 left-2 right-2 h-1 sm:-left-1 sm:bottom-2 sm:right-auto sm:top-2 sm:h-auto sm:w-1' : '-bottom-1 left-2 right-2 h-1 sm:-right-1 sm:bottom-2 sm:left-auto sm:top-2 sm:h-auto sm:w-1'}`} />
             )}
-            {songOrderMode && <GripVertical className="h-5 w-5 shrink-0 text-orange-200/45" aria-hidden="true" />}
-            {songOrderMode ? (
-              <span className="min-w-0 flex-1 rounded-xl px-2 py-2 text-left">
-                <span className="flex min-w-0 items-center gap-2"><h3 className="truncate font-bold text-orange-50">{song.title}</h3><PracticeBadges song={song} /></span><p title={song.hotComment} className="mt-1 truncate text-xs text-white/40">{getSongSubtitle(song)}</p>
+            {songEditMode && (
+              <span draggable onDragStart={event => handleSongDragStart(event, song.id)} onDragEnd={clearSongDragState} title="拖拽排序"
+                className="hidden shrink-0 cursor-grab select-none rounded-md py-3 text-orange-200/55 hover:bg-white/10 active:cursor-grabbing sm:block">
+                <GripVertical className="h-5 w-5" aria-hidden="true" />
               </span>
-            ) : songEditMode ? (
+            )}
+            {songEditMode ? (
               <div className="min-w-0 flex-1 space-y-1 rounded-xl px-2 py-1.5 text-left">
                 <div className="flex min-w-0 items-center gap-2">
                   <input
@@ -2002,17 +2100,16 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
                 <span className="flex min-w-0 items-center gap-2"><h3 className="truncate font-bold transition group-hover:text-orange-100">{song.title}</h3><PracticeBadges song={song} /></span><p title={song.hotComment} className="mt-1 truncate text-xs text-white/40">{getSongSubtitle(song)}</p>
               </button>
             )}
-            {songOrderMode ? (
-              <span className="flex shrink-0 gap-1">
+            {songEditMode ? (
+              <span className="grid shrink-0 grid-cols-2 gap-1 lg:flex">
                 <button type="button" aria-label={`${song.title}前移`} title="前移" disabled={index === 0} onClick={() => moveVisibleSong(song.id, -1)} className="grid h-8 w-8 place-items-center rounded-full border border-white/10 text-white/55 transition hover:border-orange-200/35 hover:text-orange-100 disabled:cursor-not-allowed disabled:opacity-20"><ChevronLeft className="h-4 w-4" /></button>
                 <button type="button" aria-label={`${song.title}后移`} title="后移" disabled={index === songs.length - 1} onClick={() => moveVisibleSong(song.id, 1)} className="grid h-8 w-8 place-items-center rounded-full border border-white/10 text-white/55 transition hover:border-orange-200/35 hover:text-orange-100 disabled:cursor-not-allowed disabled:opacity-20"><ChevronRight className="h-4 w-4" /></button>
+                <button type="button" aria-label={`删除${song.title}`} title="删除" onClick={() => handleDeleteSongById(song.id)} className="col-span-2 grid h-8 w-8 place-items-center justify-self-end rounded-full border border-red-300/25 text-red-200/50 transition hover:border-red-300/50 hover:bg-red-300/10 hover:text-red-200">
+                  <Trash2 className="h-4 w-4" />
+                </button>
               </span>
-            ) : songEditMode ? (
-              <button type="button" aria-label={`删除${song.title}`} title="删除" onClick={() => handleDeleteSongById(song.id)} className="grid h-8 w-8 place-items-center rounded-full border border-red-300/25 text-red-200/50 transition hover:border-red-300/50 hover:bg-red-300/10 hover:text-red-200">
-                <Trash2 className="h-4 w-4" />
-              </button>
             ) : (
-              canManageFeaturedSongs && <span className="flex shrink-0 items-center gap-2"><QuizLevelControl song={song} /><FeaturedSongControl song={song} /><RequestButton song={song} /></span>
+              canManageFeaturedSongs && <span className="flex shrink-0 items-center gap-2"><QuizLevelControl song={song} /><SongShowcaseControl song={song} /><RequestButton song={song} /></span>
             )}
           </article>
         );
@@ -2025,7 +2122,7 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
     </div>
   );
 
-  const sectionTitle = activeSection === 'quiz' ? '听歌识曲' : HUB_DIRECTIONS.find((item) => item.id === activeSection)?.label;
+  const sectionTitle = activeSection === 'quiz' ? '听歌识曲' : activeSection === 'audience' ? AUDIENCE_DIRECTION.label : HUB_DIRECTIONS.find((item) => item.id === activeSection)?.label;
   const personalBoardLabel = personalRankingBoard === 'chorus' ? '合唱榜' : personalRankingBoard === 'strum' ? '狂扫榜' : personalRankingBoard === 'stool' ? '板凳榜' : '练习榜';
   const personalBoardNoun = personalRankingBoard === 'chorus' ? '合唱' : personalRankingBoard === 'strum' ? '狂扫' : personalRankingBoard === 'stool' ? '板凳' : '练习';
   const rankingHeading = visibleRankingView === 'requests'
@@ -2037,11 +2134,15 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
     ? activeSection === 'ranking'
       ? rankingHeading
       : activeSection === 'playlists' ? '热门歌曲'
+        : activeSection === 'audience' ? '观众点歌'
         : activeSection === 'quiz' ? '听歌识曲'
           : activeSection === 'roadshows' ? '我的档案'
           : activeSection === 'artists' && selectedArtist ? selectedArtist : '点歌台'
     : '';
   const popularImmersive = activeSection === 'playlists' && !selectedSong;
+  const audienceVisible = activeSection === 'audience' && !selectedSong;
+  const otherShowcase = songShowcase === 'playlists' ? 'audience' : 'playlists';
+  const otherShowcaseLabel = otherShowcase === 'audience' ? '观众点歌' : '热门歌曲';
   const showBackButton = canReturnToUniverse || activeSection !== null || Boolean(selectedSong || tagDirectoryOpen || inquiriesOpen);
 
   if (gameOpen) return <>
@@ -2077,13 +2178,27 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
         />
       )}
       {tagsArtist && <ArtistTagsDialog key={tagsArtist} artist={tagsArtist} session={songRecordSession} onClose={() => setTagsArtist(null)} />}
-      {popularImmersive && !songAssistantOpen && (
+      {(audienceVisible || (popularImmersive && !barrageMode)) && (
+        <header className="pointer-events-none fixed inset-x-0 top-0 z-30 flex items-start justify-between p-4 pr-16 sm:p-6 sm:pr-20">
+          <button type="button" onClick={goBack} className="pointer-events-auto inline-flex h-11 items-center gap-2 rounded-xl border border-white/10 bg-black/45 px-4 text-sm font-semibold text-white/75 shadow-2xl backdrop-blur-xl transition hover:bg-white/15 hover:text-white">
+            <ArrowLeft className="h-4 w-4" /> 点歌台
+          </button>
+          <div className="absolute left-1/2 top-4 -translate-x-1/2 whitespace-nowrap text-center sm:top-6">
+            <div className="h-[13.5px] sm:h-[15px]">
+              {popularImmersive && <p className="text-[9px] font-black tracking-[0.3em] text-violet-200/45 sm:text-[10px]">JIEYOU · HOT SONGS</p>}
+            </div>
+            <h1 id="song-showcase-title" className="mt-1 font-serif text-2xl font-black tracking-[-0.03em] text-white sm:text-4xl">{audienceVisible ? '观众点歌' : '✨ 热门歌曲 ✨'}</h1>
+          </div>
+        </header>
+      )}
+      {(popularImmersive || audienceVisible) && !songAssistantOpen && (
         <button type="button" aria-label="打开歌曲助手" onClick={() => { (window as any).playClickSound?.(); setSongAssistantOpen(true); }} className="fixed right-4 top-4 z-40 bg-transparent text-3xl drop-shadow-[0_0_14px_rgba(251,191,36,.35)]">
           <span role="img" aria-label="cat" className="breath-slow inline-block transition-transform duration-200 hover:scale-125 hover:rotate-12">🐱</span>
         </button>
       )}
       {songAssistantOpen && (
         <SongAssistant
+          audience={audienceVisible}
           query={query}
           displayMode={songDisplayMode}
           barrageMode={barrageMode}
@@ -2095,7 +2210,10 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
           onBarrageModeChange={(enabled) => setBarragePreferences((current) => setBarragePreference(current, 'immersive', enabled))}
           onIntimateModeChange={(enabled) => setBarragePreferences((current) => setBarragePreference(current, 'intimate', enabled))}
           onFillModeChange={(enabled) => setBarragePreferences((current) => setBarragePreference(current, 'fill', enabled))}
-          onShowPopular={() => { setActiveSection('playlists'); setSelectedArtist(null); setSelectedSong(null); setQuery(''); setSongAssistantOpen(false); }}
+          onShowPopular={() => openSongShowcase('playlists')}
+          onSwitchShowcase={() => openSongShowcase(audienceVisible ? 'playlists' : 'audience')}
+          onManageAudience={audienceVisible && canManageFeaturedSongs && audienceSongIds !== null
+            ? () => { setSongAssistantOpen(false); setAudienceEditorOpen(true); } : undefined}
           onClose={() => setSongAssistantOpen(false)}
         />
       )}
@@ -2103,23 +2221,12 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
         <section data-popular-immersive className="fixed inset-0 z-10 overflow-hidden bg-transparent">
           <PopularSongBarrage songs={barrageSongs} intimate={intimateMode} fill={fillMode} onSelectSong={setPopularActionSong} immersive />
           {!barrageMode && (
-          <header className="pointer-events-none fixed inset-x-0 top-0 z-30 flex items-start justify-between p-4 pr-16 sm:p-6 sm:pr-20">
-            <button type="button" onClick={goBack} className="pointer-events-auto inline-flex h-11 items-center gap-2 rounded-xl border border-white/10 bg-black/45 px-4 text-sm font-semibold text-white/75 shadow-2xl backdrop-blur-xl transition hover:bg-white/15 hover:text-white">
-              <ArrowLeft className="h-4 w-4" /> 点歌台
-            </button>
-            <div className="absolute left-1/2 top-4 -translate-x-1/2 whitespace-nowrap text-center sm:top-6">
-              <p className="text-[9px] font-black tracking-[0.3em] text-violet-200/45 sm:text-[10px]">JIEYOU · HOT SONGS</p>
-              <h1 className="mt-1 font-serif text-2xl font-black tracking-[-0.03em] text-white sm:text-4xl">✨ 热门歌曲 ✨</h1>
-            </div>
-          </header>
-          )}
-          {!barrageMode && (
             <p className="pointer-events-none fixed bottom-5 left-1/2 z-30 -translate-x-1/2 whitespace-nowrap text-[11px] text-white/35">{barrageSongs.length} 首 · 点击歌名查看详情</p>
           )}
         </section>
       ) : (
       <div className="relative mx-auto w-full max-w-6xl">
-        <header className="mb-8 flex items-center justify-between gap-4">
+        {!audienceVisible && <header className="mb-8 flex items-center justify-between gap-4">
           {showBackButton && <button type="button" onClick={goBack} className="inline-flex h-11 items-center gap-2 rounded-full border border-white/10 bg-black/35 px-4 text-sm font-semibold text-white/70 backdrop-blur-xl transition hover:text-white">
             <ArrowLeft className="h-4 w-4" /> {tagDirectoryOpen || inquiriesOpen ? '返回' : selectedSong ? detailBackLabel : activeSection === null ? '宇宙' : selectedArtist ? sectionTitle : '点歌台'}
           </button>}
@@ -2172,7 +2279,7 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
               </div>
             )}
           </div>
-        </header>
+        </header>}
 
         {inquiriesOpen && canManageFeaturedSongs && songRecordSession ? <InquiryPage session={songRecordSession} /> : tagDirectoryOpen && canManageFeaturedSongs ? <TagDirectory songs={catalogSongs} session={songRecordSession} /> : selectedSong ? (
           <SongDetailPanel
@@ -2205,6 +2312,17 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
             roadshowSingCountsReady={roadshowSingCountsReady}
             onRoadshowRecorded={(state) => { ++roadshowSingSyncVersionRef.current; applyRoadshowSingState(state); }}
           />
+        ) : audienceVisible ? (
+          <AudienceSongBoard
+            songs={audienceSongs}
+            start={audienceSongOffset}
+            loadFailed={audienceLoadFailed}
+            canManage={canManageFeaturedSongs}
+            onRetry={() => setAudienceLoadAttempt(attempt => attempt + 1)}
+            onManage={() => setAudienceEditorOpen(true)}
+            onNext={start => { setAudienceSongOffset(start); window.scrollTo(0, 0); }}
+            onSelect={setPopularActionSong}
+          />
         ) : activeSection === null ? (
           <>
             <section className="mx-auto max-w-3xl py-5 text-center sm:py-10">
@@ -2213,15 +2331,25 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
               <p className="mx-auto mt-4 max-w-xl text-sm leading-7 text-white/45">选一个方向，再慢慢找你想听的歌。</p>
             </section>
             <nav className="mx-auto mt-5 grid max-w-4xl gap-4 sm:grid-cols-2" aria-label="点歌台功能">
-              {HUB_DIRECTIONS.map(({ id, label, eyebrow, description, icon: Icon, tone }) => (
-                <button key={id} type="button" onClick={() => setActiveSection(id)}
-                  className={`group min-h-48 rounded-[2rem] border border-white/10 bg-gradient-to-br ${tone} p-7 text-left backdrop-blur-xl transition duration-300 hover:-translate-y-1 hover:border-white/25 sm:min-h-56 sm:p-9`}>
-                  <div className="flex items-start justify-between"><span className="grid h-14 w-14 place-items-center rounded-2xl border border-white/15 bg-black/20"><Icon className="h-7 w-7" /></span><ChevronRight className="h-5 w-5 text-white/25 transition group-hover:translate-x-1 group-hover:text-white/70" /></div>
-                  <p className="mt-8 text-[10px] font-black tracking-[0.28em] text-white/35">{eyebrow}</p>
-                  <h2 className="mt-1 font-serif text-3xl font-black">{label}</h2>
-                  <p className="mt-2 text-sm text-white/45">{description}</p>
-                </button>
-              ))}
+              {HUB_DIRECTIONS.map(direction => {
+                const sharedSlot = direction.id === 'playlists';
+                const { id, label, eyebrow, description, icon: Icon, tone } = sharedSlot && songShowcase === 'audience' ? AUDIENCE_DIRECTION : direction;
+                return (
+                  <div key={direction.id} className="relative">
+                    <button type="button" onClick={() => sharedSlot ? openSongShowcase(songShowcase) : setActiveSection(id)}
+                      className={`group h-full min-h-48 w-full rounded-[2rem] border border-white/10 bg-gradient-to-br ${tone} p-7 text-left backdrop-blur-xl transition duration-300 hover:-translate-y-1 hover:border-white/25 sm:min-h-56 sm:p-9`}>
+                      <div className="flex items-start justify-between"><span className="grid h-14 w-14 place-items-center rounded-2xl border border-white/15 bg-black/20"><Icon className="h-7 w-7" /></span>{!sharedSlot && <ChevronRight className="h-5 w-5 text-white/25 transition group-hover:translate-x-1 group-hover:text-white/70" />}</div>
+                      <p className="mt-8 text-[10px] font-black tracking-[0.28em] text-white/35">{eyebrow}</p>
+                      <h2 className="mt-1 font-serif text-3xl font-black">{label}</h2>
+                      <p className="mt-2 text-sm text-white/45">{description}</p>
+                    </button>
+                    {sharedSlot && <button type="button" aria-label={`切换到${otherShowcaseLabel}`} onClick={() => setSongShowcase(otherShowcase)}
+                      className="absolute right-7 top-7 inline-flex min-h-10 items-center gap-2 rounded-full border border-white/15 bg-black/25 px-3 text-xs font-bold text-white/75 transition hover:border-white/35 hover:bg-white/10 hover:text-white sm:right-9 sm:top-9">
+                      <ArrowLeftRight aria-hidden="true" className="h-3.5 w-3.5" />{otherShowcaseLabel}
+                    </button>}
+                  </div>
+                );
+              })}
               <button type="button" onClick={() => setActiveSection('quiz')}
                 className="group relative min-h-36 overflow-hidden rounded-[2rem] border border-sky-200/15 bg-[radial-gradient(circle_at_12%_50%,rgba(56,189,248,.18),transparent_32%),linear-gradient(105deg,rgba(14,116,144,.16),rgba(88,28,135,.10),rgba(159,18,57,.10))] p-7 text-left backdrop-blur-xl transition duration-300 hover:-translate-y-1 hover:border-sky-100/30 sm:col-span-2 sm:p-8">
                 <div className="relative flex flex-col gap-6 sm:flex-row sm:items-center">
@@ -2267,8 +2395,8 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
               )}
               {activeSection === 'quiz' && (
                 <div className="flex shrink-0 flex-wrap items-center gap-2">
-                <button type="button" onClick={() => { void addQuizBatchToLatestRoadshow(); }} disabled={Boolean(roadshowBusyId)}
-                  title="简单6 · 常规10 · 较难10 · 很难4" aria-label="一键选歌：简单6首、常规10首、较难10首、很难4首"
+                <button type="button" onClick={() => { void replaceLatestRoadshowQuizBatch(); }} disabled={Boolean(roadshowBusyId)}
+                  title="替换最新路演的普通识曲题目（简单6 · 常规10 · 较难10 · 很难4）" aria-label="一键选歌，替换最新路演的普通识曲题目"
                   className="inline-flex shrink-0 items-center gap-2 rounded-full border border-sky-200/25 bg-sky-300/10 px-4 py-2.5 text-xs font-black text-sky-100 shadow-[0_10px_30px_rgba(56,189,248,.08)] transition hover:border-sky-100/45 hover:bg-sky-300/20 disabled:cursor-wait disabled:opacity-45">
                   <Sparkles className="h-4 w-4" />{roadshowBusyId === 'quiz-batch' ? '选取中' : '一键选歌'}
                 </button>
@@ -2651,12 +2779,12 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
 
             {activeSection === 'artists' && (
               <div className="space-y-5">
-                <div className="flex items-center gap-4">
-                  <div className="w-1/2 shrink-0">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-4">
+                  <div className="min-w-0 flex-1">
                     <SearchBox query={query} setQuery={setQuery} />
                   </div>
                   {canManageCatalog && (
-                    <div className="ml-auto flex shrink-0 flex-wrap justify-end gap-2">
+                    <div className="flex shrink-0 flex-wrap gap-2 lg:ml-auto lg:justify-end">
                       {!selectedArtist && <>
                         <button type="button" aria-pressed={artistOrderMode} onClick={() => { if (artistOrderMode) syncCurrentArtistSettings(); clearArtistDragState(); setArtistOrderMode((current) => !current); setAvatarAdjustMode(false); setAdjustingArtist(null); }} className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-xs font-bold transition ${artistOrderMode ? 'border-orange-200/40 bg-orange-300 text-black' : 'border-white/10 bg-black/30 text-white/55 hover:text-white'}`}>
                           <ListOrdered className="h-4 w-4" />排序
@@ -2666,13 +2794,18 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
                         </button>
                       </>}
                       {selectedArtist && (
-                        <button type="button" aria-pressed={songOrderMode} onClick={() => { clearSongDragState(); setSongOrderMode((current) => !current); }} className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-xs font-bold transition ${songOrderMode ? 'border-orange-200/40 bg-orange-300 text-black' : 'border-white/10 bg-black/30 text-white/55 hover:text-white'}`}>
-                          <ListOrdered className="h-4 w-4" />排序
+                        <button type="button" aria-pressed={songEditMode} title="编辑和排序歌曲" onClick={() => { clearSongDragState(); setSongEditMode(current => !current); }} className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-xs font-bold transition ${songEditMode ? 'border-orange-200/40 bg-orange-300 text-black' : 'border-white/10 bg-black/30 text-white/55 hover:text-white'}`}>
+                          <PenLine className="h-4 w-4" />编辑
                         </button>
                       )}
-                      {selectedArtist && (
-                        <button type="button" aria-pressed={songEditMode} onClick={() => { clearSongDragState(); setSongOrderMode(false); setSongEditMode((current) => !current); }} className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-xs font-bold transition ${songEditMode ? 'border-orange-200/40 bg-orange-300 text-black' : 'border-white/10 bg-black/30 text-white/55 hover:text-white'}`}>
-                          <PenLine className="h-4 w-4" />编辑
+                      {selectedArtist && canManageFeaturedSongs && !songEditMode && (
+                        <button type="button" aria-label={`当前标记为${songMarkerLabel}，切换到${markingAudience ? '热门歌曲' : '观众选歌'}`}
+                          onClick={() => {
+                            setSongMarkerShowcase(markingAudience ? 'playlists' : 'audience');
+                            if (!markingAudience && audienceLoadFailed) setAudienceLoadAttempt(attempt => attempt + 1);
+                          }}
+                          className="inline-flex items-center gap-1.5 rounded-full border border-amber-200/20 bg-amber-300/[.075] px-3.5 py-2 text-xs font-bold text-amber-100/75 transition hover:border-amber-200/40 hover:text-amber-100">
+                          <ArrowLeftRight aria-hidden="true" className="h-3.5 w-3.5" /><span aria-hidden="true">{songMarkerEmoji}</span>{songMarkerLabel}
                         </button>
                       )}
                       {selectedArtist && (
@@ -2739,9 +2872,9 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
                 )}
                 {selectedArtist ? (
                   <>
-                    {songOrderMode && (
+                    {songEditMode && (
                       <p className="flex items-center gap-2 text-xs text-orange-100/55">
-                        <GripVertical className="h-4 w-4" aria-hidden="true" />拖拽歌曲到任意位置，或使用箭头微调；顺序会自动同步
+                        <GripVertical className="h-4 w-4" aria-hidden="true" />拖拽把手或用箭头调整顺序，顺序会自动同步
                       </p>
                     )}
                     {renderSongRows(catalogSongs.filter((song) => song.artist === selectedArtist))}
@@ -2901,6 +3034,15 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
         )}
       </div>
       )}
+      {audienceEditorOpen && canManageFeaturedSongs && audienceSongIds !== null && (
+        <AudienceSongEditor
+          catalog={catalog.songs}
+          songIds={audienceSongIds}
+          saving={audienceSaving}
+          onSave={saveAudienceSongs}
+          onClose={() => setAudienceEditorOpen(false)}
+        />
+      )}
       {requesterDialogOpen && (
         <div className="fixed inset-0 z-[85] grid place-items-center p-5">
           <button type="button" aria-label="关闭点歌昵称弹窗" onClick={() => { setRequesterDialogOpen(false); setPendingRequesterSong(null); }} className="absolute inset-0 bg-black/65 backdrop-blur-md" />
@@ -2936,7 +3078,7 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
           <section role="dialog" aria-modal="true" aria-labelledby="popular-song-action-title" className="relative w-full max-w-sm overflow-hidden rounded-[1.75rem] border border-orange-200/20 bg-[#0d0a0d]/95 p-6 shadow-[0_30px_100px_rgba(0,0,0,.7)]">
             <div className="pointer-events-none absolute -right-16 -top-20 h-44 w-44 rounded-full bg-orange-400/10 blur-3xl" />
             <button type="button" aria-label="关闭歌曲操作" onClick={() => setPopularActionSong(null)} className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-full border border-white/10 text-white/40 transition hover:bg-white/10 hover:text-white"><X className="h-4 w-4" /></button>
-            <p className="text-[10px] font-black tracking-[.25em] text-orange-200/45">HOT SONG · QUICK ACTION</p>
+            {activeSection !== 'audience' && <p className="text-[10px] font-black tracking-[.25em] text-orange-200/45">HOT SONG · QUICK ACTION</p>}
             <h2 id="popular-song-action-title" className="mt-3 pr-10 font-serif text-3xl font-black text-white">{popularActionSong.title}</h2>
             <p className="mt-1 text-sm text-white/40">{popularActionSong.artist}</p>
             <div className="mt-6 grid grid-cols-2 gap-3">
@@ -2971,7 +3113,8 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
   );
 };
 
-const SongAssistant = ({ query, displayMode, barrageMode, intimateMode, fillMode, onQueryChange, onResetSearch, onDisplayModeChange, onBarrageModeChange, onIntimateModeChange, onFillModeChange, onShowPopular, onClose }: {
+const SongAssistant = ({ audience, query, displayMode, barrageMode, intimateMode, fillMode, onQueryChange, onResetSearch, onDisplayModeChange, onBarrageModeChange, onIntimateModeChange, onFillModeChange, onShowPopular, onSwitchShowcase, onManageAudience, onClose }: {
+  audience: boolean;
   query: string;
   displayMode: SongDisplayMode;
   barrageMode: boolean;
@@ -2984,6 +3127,8 @@ const SongAssistant = ({ query, displayMode, barrageMode, intimateMode, fillMode
   onIntimateModeChange: (enabled: boolean) => void;
   onFillModeChange: (enabled: boolean) => void;
   onShowPopular: () => void;
+  onSwitchShowcase: () => void;
+  onManageAudience?: () => void;
   onClose: () => void;
 }) => (
   <>
@@ -2994,6 +3139,7 @@ const SongAssistant = ({ query, displayMode, barrageMode, intimateMode, fillMode
         <button type="button" onClick={onClose} className="grid h-10 w-10 place-items-center rounded-full border border-white/10 text-white/55 transition hover:bg-white/10 hover:text-white"><X className="h-4 w-4" /></button>
       </header>
       <div className="mt-6 space-y-4">
+        {!audience && <>
         <details className="group overflow-hidden rounded-2xl border border-white/10 bg-white/[.035]">
           <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-4"><span className="text-lg font-bold">🔎 检索</span><ChevronRight className="h-4 w-4 text-white/45 transition group-open:rotate-90" /></summary>
           <div className="space-y-3 border-t border-white/[.06] p-3">
@@ -3045,6 +3191,9 @@ const SongAssistant = ({ query, displayMode, barrageMode, intimateMode, fillMode
         </details>
 
         <button type="button" onClick={onShowPopular} className="flex w-full items-center justify-between rounded-2xl border border-violet-200/15 bg-violet-300/[.06] p-4 text-left transition hover:border-violet-200/35"><span><strong className="block">查看热门歌曲</strong><small className="mt-1 block text-white/40">回到全屏彩色弹幕</small></span><ChevronRight className="h-5 w-5 text-violet-200/55" /></button>
+        </>}
+        {onManageAudience && <button type="button" onClick={onManageAudience} className="flex w-full items-center gap-3 rounded-2xl border border-amber-200/20 bg-amber-200/10 p-4 text-left font-bold text-amber-100 transition hover:bg-amber-200/15"><ListMusic className="h-5 w-5" />管理观众点歌<ChevronRight className="ml-auto h-5 w-5" /></button>}
+        <button type="button" onClick={onSwitchShowcase} className="flex w-full items-center gap-3 rounded-2xl border border-white/15 bg-white/5 p-4 text-left font-bold text-white/80 transition hover:bg-white/10"><ArrowLeftRight className="h-5 w-5" />切换到{audience ? '热门歌曲' : '观众点歌'}</button>
       </div>
     </aside>
   </>

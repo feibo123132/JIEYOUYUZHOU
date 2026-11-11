@@ -1,5 +1,5 @@
 const crypto = require('node:crypto');
-const { validateRequest } = require('./validation');
+const { validateRequest, AUDIENCE_SONG_LIMIT } = require('./validation');
 const { legacyNotebook, saveNotebookAtomically } = require('./feelingsNotebook');
 const { saveSongGroupsAtomically } = require('./songGroups');
 const { saveJournal } = require('./enoughJournal');
@@ -16,7 +16,7 @@ const PUBLIC_ERRORS = new Set([
   'INVALID_ACTION', 'PAYLOAD_TOO_LARGE', 'INVALID_SONG_ID', 'INVALID_ALIAS', 'INVALID_PASSWORD',
   'INVALID_SONG', 'INVALID_SONG_LIST', 'INVALID_RECORD', 'ALREADY_REGISTERED', 'NOT_REGISTERED',
   'INVALID_SONG_RECORD', 'INVALID_ARTIST_SETTINGS', 'AUTH_FAILED', 'CONFLICT', 'NOT_FOUND',
-  'INVALID_FEATURED_SONGS',
+  'INVALID_FEATURED_SONGS', 'INVALID_AUDIENCE_SONGS',
   'INVALID_QUIZ_LIBRARY',
   'INVALID_SONG_SCORE',
   'SCORE_UPLOAD_FAILED', 'SCORE_NOT_FOUND', 'SCORE_ALREADY_EXISTS',
@@ -35,6 +35,22 @@ const SONG_RECORDING_MERGE_MAX_BYTES = 40 * 1024 * 1024;
 const OWNER_SONG_SCORE_SEED_VERSION = 1;
 const quizSongPlaysId = (ownerId) => `quiz-song-plays-${ownerId}`;
 const quizRankingResetId = (ownerId) => `quiz-ranking-reset-${ownerId}`;
+const audienceSongsId = (ownerId) => `audience-songs-${ownerId}`;
+const updateAudienceSongsAtomically = (db, ownerId, { add, remove }) => db.runTransaction(async (transaction) => {
+  const ref = transaction.collection('song_request_workspaces').doc(audienceSongsId(ownerId));
+  let result;
+  try { result = await ref.get(); }
+  catch (error) {
+    if (!/not found|does not exist/i.test(String(error?.message))) throw error;
+  }
+  const current = Array.isArray(result?.data) ? result.data[0] : result?.data;
+  const removed = new Set(remove);
+  const kept = (current?.songIds ?? []).filter(id => !removed.has(id));
+  const songIds = [...new Set([...kept, ...add])];
+  if (songIds.length > AUDIENCE_SONG_LIMIT) throw new Error('INVALID_AUDIENCE_SONGS');
+  await ref.set({ songIds });
+  return songIds;
+});
 const latestClearTime = (current, incoming) => Date.parse(current) > Date.parse(incoming) ? current : incoming;
 const clearQuizRankingAtomically = (db, ownerId, location, clearedAt) => db.runTransaction(async (transaction) => {
   // 独立保存清空标记，避免其他设备保存旧路演时覆盖标记。
@@ -550,6 +566,10 @@ function createHandler(store) {
         const owner = await store.getWorkspace(workspaceId(FEATURED_SONGS_OWNER_ALIAS));
         return { ok: true, songIds: Array.isArray(owner?.featuredSongIds) ? owner.featuredSongIds : null };
       }
+      if (request.action === 'audienceSongs:pull') {
+        const saved = await store.getWorkspace(audienceSongsId(workspaceId(FEATURED_SONGS_OWNER_ALIAS)));
+        return { ok: true, songIds: saved?.songIds ?? [] };
+      }
       if (request.action === 'artistTags:pull') {
         const saved = await store.getWorkspace(`artist-tags-${workspaceId(request.artist)}`);
         return { ok: true, tags: saved?.tags ?? [] };
@@ -610,7 +630,7 @@ function createHandler(store) {
       try {
         authenticated = await authenticate(store, request.alias, request.password);
       } catch (error) {
-        if ((request.action === 'artistSettings:push' || request.action === 'featuredSongs:set' || request.action === 'quizLibrary:set' || request.action === 'votes:finishAll' || request.action === 'votes:clearPending' || request.action === 'votes:clearSung' || request.action === 'roadshows:clearQuizRanking')
+        if ((request.action === 'artistSettings:push' || request.action === 'featuredSongs:set' || request.action === 'audienceSongs:update' || request.action === 'quizLibrary:set' || request.action === 'votes:finishAll' || request.action === 'votes:clearPending' || request.action === 'votes:clearSung' || request.action === 'roadshows:clearQuizRanking')
           && error?.message === 'NOT_REGISTERED') throw new Error('AUTH_FAILED');
         throw error;
       }
@@ -717,6 +737,10 @@ function createHandler(store) {
         if (id !== workspaceId(FEATURED_SONGS_OWNER_ALIAS)) throw new Error('AUTH_FAILED');
         await store.setFeaturedSongIds(id, request.songIds, store.now());
         return { ok: true, songIds: request.songIds };
+      }
+      if (request.action === 'audienceSongs:update') {
+        if (id !== workspaceId(FEATURED_SONGS_OWNER_ALIAS)) throw new Error('AUTH_FAILED');
+        return { ok: true, songIds: await store.updateAudienceSongsAtomically(id, request) };
       }
       if (request.action === 'quizLibrary:set') {
         if (id !== workspaceId(FEATURED_SONGS_OWNER_ALIAS)) throw new Error('AUTH_FAILED');
@@ -975,6 +999,7 @@ exports.main = async (event) => {
       saveNotebookAtomically: (id, revision, pages) => saveNotebookAtomically(db, id, revision, pages),
       saveSongGroupsAtomically: (id, revision, groups) => saveSongGroupsAtomically(db, id, revision, groups),
       setFeaturedSongIds: (id, songIds, updatedAt) => workspaces.doc(id).update({ featuredSongIds: songIds, updatedAt }),
+      updateAudienceSongsAtomically: (id, changes) => updateAudienceSongsAtomically(db, id, changes),
       setQuizLibraryAssignments: (id, assignments, updatedAt) => workspaces.doc(id).update({ quizLibraryAssignments: assignments, updatedAt }),
       getVotes: readVoteCounts,
       getVoteRequesters: readVoteRequesters,
@@ -1275,6 +1300,7 @@ exports.main = async (event) => {
 };
 
 exports.createHandler = createHandler;
+exports.updateAudienceSongsAtomically = updateAudienceSongsAtomically;
 exports.clearVoteStateAtomically = clearVoteStateAtomically;
 exports.adjustRoadshowSingCountAtomically = adjustRoadshowSingCountAtomically;
 exports.recordRoadshowQuizAtomically = recordRoadshowQuizAtomically;

@@ -15,6 +15,7 @@ const popularSongBarrageUrl = new URL('../src/components/SongRequest/PopularSong
 const messageBarrageUrl = new URL('../src/components/StarrySky/MessageBarrage.tsx', import.meta.url)
 const artistSettingsUrl = new URL('../src/components/SongRequest/artistSettings.ts', import.meta.url)
 const songQuizLibraryUrl = new URL('../src/components/SongRequest/songQuizLibrary.ts', import.meta.url)
+const audienceSongsUrl = new URL('../src/components/SongRequest/audienceSongs.ts', import.meta.url)
 const songRequestEntryDialogUrl = new URL('../src/components/SongRequest/SongRequestEntryDialog.tsx', import.meta.url)
 const indexCssUrl = new URL('../src/index.css', import.meta.url)
 const appUrl = new URL('../src/App.tsx', import.meta.url)
@@ -881,6 +882,20 @@ test('识曲歌库按四档解析、切换、取消并分组计数', async () =>
   })
 })
 
+test('观众点歌按歌单顺序每次展示20首，展示完后从头接续', async () => {
+  const { getAudienceSongBatch } = await import(audienceSongsUrl.href)
+  const songs = Array.from({ length: 45 }, (_, index) => index + 1)
+  const first = getAudienceSongBatch(songs, 0)
+  const second = getAudienceSongBatch(songs, first.nextStart)
+  const third = getAudienceSongBatch(songs, second.nextStart)
+  assert.deepEqual(first, { items: songs.slice(0, 20), nextStart: 20 })
+  assert.deepEqual(second, { items: songs.slice(20, 40), nextStart: 40 })
+  assert.deepEqual(third, { items: [...songs.slice(40), ...songs.slice(0, 15)], nextStart: 15 })
+  assert.deepEqual(getAudienceSongBatch(songs.slice(0, 20), 0), { items: songs.slice(0, 20), nextStart: 0 })
+  assert.deepEqual(getAudienceSongBatch(songs.slice(0, 4), 0), { items: [1, 2, 3, 4], nextStart: 0 })
+  assert.deepEqual(getAudienceSongBatch([], 0), { items: [], nextStart: 0 })
+})
+
 test('一键选歌按6比10比10比4抽取三十首并排除往期已用歌曲', async () => {
   const { QUIZ_ROADSHOW_QUOTAS, selectQuizSongsForRoadshow } = await import(songQuizLibraryUrl.href)
   const levels = ['warmup', 'standard', 'hard', 'hell'] as const
@@ -912,9 +927,10 @@ test('热门歌曲火焰标记公开可见且仅本人登录后可操作', () =>
   const cloud = readFileSync(cloudAdapterUrl, 'utf8')
 
   assert.match(station, /const canManageFeaturedSongs = isFeaturedSongManager\(songRecordSession\?\.alias\)/)
-  assert.match(station, /aria-label=\{featured \? `取消\$\{song\.title\}的热门歌曲标记` : `将\$\{song\.title\}设为热门歌曲`\}/)
-  assert.match(station, /title="热门歌曲">🔥<\/span>/)
-  assert.match(station, /<FeaturedSongControl song=\{song\} \/>\s*<RequestButton song=\{song\} \/>/)
+  assert.match(station, /const songMarkerEmoji = markingAudience \? '🎵' : '🔥'/)
+  assert.match(station, /const marked = \(markingAudience \? audienceSongIds : featuredSongIds\)\?\.includes\(song\.id\)/)
+  assert.match(station, /if \(markingAudience\) toggleAudienceSong\(song\);\s*else void toggleFeaturedSong\(song\)/)
+  assert.match(station, /<SongShowcaseControl song=\{song\} \/>\s*<RequestButton song=\{song\} \/>/)
   assert.match(cloud, /export const pullCloudFeaturedSongIds/)
   assert.match(cloud, /export const saveCloudFeaturedSongIds/)
   assert.match(cloud, /action: 'featuredSongs:pull'/)
@@ -941,7 +957,7 @@ test('歌曲行在热门火焰左侧提供四档采购且访客只看等级', ()
   assert.match(station, /aria-label=\{`\$\{song\.title\}编排选项`\}/)
   assert.match(station, /QUIZ_LEVELS\.map/)
   assert.match(station, /再次选择可移出歌库/)
-  assert.match(station, /<QuizLevelControl song=\{song\} \/>\s*<FeaturedSongControl song=\{song\} \/>/)
+  assert.match(station, /<QuizLevelControl song=\{song\} \/>\s*<SongShowcaseControl song=\{song\} \/>/)
 })
 
 test('点歌台四宫格下方提供横向识曲歌库总部和四档面板', () => {
@@ -1332,6 +1348,62 @@ test('批量识曲选歌写入最新路演并能汇总所有往期已用歌曲',
   assert.deepEqual(prepareLatestRoadshowRecognitionSongs([], additions), { kind: 'missing' })
 })
 
+test('一键选歌替换最新路演的普通题目，保留固定送分和其它路演资料', async () => {
+  const { createRoadshowSong, groupRoadshowRecognitionSongs } = await loadRoadshowModule()
+  const { prepareLatestRoadshowQuizReplacement, QUIZ_ROADSHOW_QUOTAS } = await import(songQuizLibraryUrl.href)
+  const freshSongs = Object.entries(QUIZ_ROADSHOW_QUOTAS).flatMap(([level, count]) => (
+    Array.from({ length: count }, (_, index) => ({
+      id: `${level}-${index}`, title: `${level}-${index}`, artist: '测试歌手', category: '测试', featured: false,
+    }))
+  ))
+  const assignments = {
+    ...Object.fromEntries(freshSongs.map(song => [song.id, song.id.split('-')[0]])),
+    a: 'warmup', b: 'warmup', c: 'warmup',
+  }
+  const fixed = { ...createRoadshowSong(songs[2]), id: 'manual:fixed', catalogId: undefined, source: 'manual', fixedBonus: true }
+  const older = {
+    id: 'older', title: '旧路演', date: '2026-08-20', updatedAt: '2026-08-29T12:00:00.000Z',
+    performanceSongs: [], recognitionSongs: [createRoadshowSong(songs[0])],
+  }
+  const latest = {
+    ...older,
+    id: 'latest', title: '最新路演', date: '2026-08-28', updatedAt: '2026-08-28T12:00:00.000Z',
+    recognitionSongs: [createRoadshowSong(songs[1]), fixed],
+    performanceSongs: [createRoadshowSong(songs[0])],
+    recognitionAttempts: [{ id: 'attempt', title: 'Yellow', artist: 'Coldplay', correct: true, answeredAt: '2026-08-28T12:00:00.000Z' }],
+    funGroupRounds: [{ id: 'round', groupId: 'group', round: 1, songIds: ['b'] }],
+  }
+  const duplicate = { ...freshSongs[0], id: 'duplicate' }
+  const catalog = [...songs, ...freshSongs, duplicate]
+  const records = [older, latest]
+  const snapshot = structuredClone(records)
+  const prepared = prepareLatestRoadshowQuizReplacement(records, catalog, { ...assignments, duplicate: 'warmup' }, () => 0)
+  assert.equal(prepared.kind, 'updated')
+  const { recognitionSongs } = prepared.record
+  assert.deepEqual(prepared.record, { ...latest, recognitionSongs })
+  assert.equal(prepared.previousSongCount, 1)
+  assert.deepEqual(recognitionSongs.filter(song => song.fixedBonus), [fixed])
+  assert.deepEqual(recognitionSongs.filter(song => !song.fixedBonus).map(song => song.catalogId).sort(),
+    freshSongs.map(song => song.id).sort())
+  const groups = groupRoadshowRecognitionSongs(recognitionSongs, assignments)
+  assert.deepEqual(Object.fromEntries(Object.entries(groups).map(([level, list]) => [level, list.length])),
+    QUIZ_ROADSHOW_QUOTAS)
+
+  const insufficient = prepareLatestRoadshowQuizReplacement(records, catalog.filter(song => song.id !== 'warmup-1'), {
+    ...assignments, duplicate: 'warmup',
+  })
+  assert.deepEqual(insufficient, { kind: 'insufficient', shortages: [{ level: 'warmup', required: 6, available: 5 }] })
+  const manyFixedSongs = Array.from({ length: 71 }, (_, index) => ({
+    ...fixed, id: `fixed-${index}`, title: `固定送分 ${index}`,
+  }))
+  assert.deepEqual(
+    prepareLatestRoadshowQuizReplacement([{ ...latest, recognitionSongs: manyFixedSongs }], freshSongs, assignments),
+    { kind: 'limit', fixedSongCount: 71 },
+  )
+  assert.deepEqual(prepareLatestRoadshowQuizReplacement([], catalog, assignments), { kind: 'missing' })
+  assert.deepEqual(records, snapshot)
+})
+
 test('歌曲只加入日期最新的路演歌曲并自动去重', async () => {
   const { prepareLatestRoadshowPerformanceSong } = await loadRoadshowModule()
   const records = [
@@ -1402,7 +1474,7 @@ test('歌手歌曲行使用单一编排弹窗同时承载识曲难度和最新�
   assert.match(station, /max-h-\[calc\(100vh-2rem\)\] overflow-y-auto/)
   assert.match(station, /grid grid-cols-2 gap-1/)
   assert.match(station, /\{level\.label\}\s*<span className="ml-auto tabular-nums text-\[10px\] text-white\/40">\{quizCounts\[level\.id\]\}<\/span>/)
-  assert.match(station, /<QuizLevelControl song=\{song\} \/><FeaturedSongControl song=\{song\} \/><RequestButton song=\{song\} \/>/)
+  assert.match(station, /<QuizLevelControl song=\{song\} \/><SongShowcaseControl song=\{song\} \/><RequestButton song=\{song\} \/>/)
 })
 
 test('歌曲详情页沿用管理员权限并可将当前歌曲编排进全站听歌识曲', () => {
@@ -1674,9 +1746,8 @@ test('听歌识曲右上角提供一键选歌并标记所有往期已用歌曲',
 
   assert.match(station, /一键选歌/)
   assert.match(station, /简单6 · 常规10 · 较难10 · 很难4/)
-  assert.match(station, /selectQuizSongsForRoadshow/)
+  assert.match(station, /prepareLatestRoadshowQuizReplacement\(records, catalogSongs, quizAssignments\)/)
   assert.match(station, /collectUsedRecognitionSongIds/)
-  assert.match(station, /prepareLatestRoadshowRecognitionSongs/)
   assert.match(station, /usedRecognitionSongIds\.has\(song\.id\)/)
   assert.match(station, />已用</)
 })

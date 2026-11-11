@@ -59,6 +59,8 @@ const ACTIONS = new Set([
   'artistTags:save',
   'featuredSongs:pull',
   'featuredSongs:set',
+  'audienceSongs:pull',
+  'audienceSongs:update',
   'quizLibrary:pull',
   'quizLibrary:set',
 ]);
@@ -66,6 +68,7 @@ const ACTIONS = new Set([
 const ARTIST_SETTINGS_REQUEST_LIMIT = 5 * 1024 * 1024;
 const SONG_SCORE_UPLOAD_REQUEST_LIMIT = 4_700_000;
 const DEFAULT_REQUEST_LIMIT = 256 * 1024;
+const AUDIENCE_SONG_LIMIT = 2000;
 const ARTIST_AVATAR_LIMIT = 1024 * 1024;
 const SONG_SCORE_PAGE_BYTES_LIMIT = 3_500_000;
 const SONG_SCORE_PAGE_LIMIT = 4;
@@ -437,7 +440,7 @@ function validateRequest(event) {
     return { action: event.action, ...optionalRankingLocation(event.location) };
   }
   if (event.action === 'songScores:publicPull' || event.action === 'songRecords:publicRanking'
-    || event.action === 'artistSettings:pull' || event.action === 'featuredSongs:pull'
+    || event.action === 'artistSettings:pull' || event.action === 'featuredSongs:pull' || event.action === 'audienceSongs:pull'
     || event.action === 'quizLibrary:pull' || event.action === 'songGroups:pull') return { action: event.action };
   if (event.action === 'votes:increment') {
     const songId = cleanText(event.songId, 80, 'INVALID_SONG_ID');
@@ -506,6 +509,14 @@ function validateRequest(event) {
     if (!Array.isArray(event.songIds) || event.songIds.length > 500) throw new Error('INVALID_FEATURED_SONGS');
     const songIds = event.songIds.map((songId) => cleanText(songId, 100, 'INVALID_FEATURED_SONGS'));
     return { ...base, songIds: [...new Set(songIds)] };
+  }
+  if (event.action === 'audienceSongs:update') {
+    const { add, remove } = event;
+    if (!Array.isArray(add) || !Array.isArray(remove) || add.length + remove.length > AUDIENCE_SONG_LIMIT) {
+      throw new Error('INVALID_AUDIENCE_SONGS');
+    }
+    const validateIds = (ids) => [...new Set(ids.map((id) => cleanText(id, 100, 'INVALID_AUDIENCE_SONGS')))];
+    return { ...base, add: validateIds(add), remove: validateIds(remove) };
   }
   if (event.action === 'quizLibrary:set') {
     if (!event.assignments || typeof event.assignments !== 'object' || Array.isArray(event.assignments)) throw new Error('INVALID_QUIZ_LIBRARY');
@@ -588,4 +599,4 @@ function validateRequest(event) {
   return base;
 }
 
-module.exports = { validateRequest };
+module.exports = { validateRequest, AUDIENCE_SONG_LIMIT };

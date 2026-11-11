@@ -70,6 +70,7 @@ export const ROADSHOW_CACHE_KEY = 'jieyou-roadshows-v1';
 export const ROADSHOW_SESSION_KEY = 'jieyou-roadshow-session-v1';
 export const ROADSHOW_EDITING_KEY = 'jieyou-roadshow-editing-v1';
 export const ROADSHOW_QUIZ_PAGE_SIZE = 5;
+export const ROADSHOW_RECOGNITION_SONG_LIMIT = 100;
 
 export const prepareRoadshowDetailNavigation = async (
   current: RoadshowRecord,
@@ -141,7 +142,7 @@ export const addFixedQuizSong = (record: RoadshowRecord, song: RoadshowSong): Ro
     || Boolean(item.catalogId && item.catalogId === song.catalogId)
     || (normalize(item.title) === normalize(song.title) && normalize(item.artist) === normalize(song.artist));
   const exists = record.recognitionSongs.some(matches);
-  if (!exists && record.recognitionSongs.length >= 100) throw new Error('本场识曲歌曲已达100首，请先移除部分歌曲。');
+  if (!exists && record.recognitionSongs.length >= ROADSHOW_RECOGNITION_SONG_LIMIT) throw new Error('本场识曲歌曲已达100首，请先移除部分歌曲。');
   return { ...record, recognitionSongs: deduplicateRoadshowSongs(exists
     ? record.recognitionSongs.map((item) => matches(item) ? { ...item, fixedBonus: true } : item)
     : [...record.recognitionSongs, { ...song, fixedBonus: true }]) };
