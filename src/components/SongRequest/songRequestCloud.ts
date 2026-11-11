@@ -15,6 +15,7 @@ import type { ArtistSettingsPayload, ArtistSettingsSnapshot } from './artistSett
 import type { QuizAssignments } from './songQuizLibrary';
 import type { ListeningGameRoom } from './listeningGame';
 import type { SongGroupsSnapshot } from './songGroups';
+import type { AudienceSongTagChange, AudienceSongTagLists } from './audienceSongs';
 import type { JournalEntry, JournalSnapshot } from '../Enough/journalModel';
 
 export const pullEnoughJournal = async (credentials: Credentials): Promise<JournalSnapshot> =>
@@ -173,6 +174,12 @@ export const pullCloudAudienceSongIds = async (): Promise<string[]> => (
 export const updateCloudAudienceSongIds = async (credentials: Credentials, add: string[], remove: string[]): Promise<string[]> => (
   await callSync<{ songIds: string[] }>({ action: 'audienceSongs:update', ...credentials, add, remove })
 ).songIds;
+
+export const syncCloudAudienceSongTags = async (
+  credentials: Credentials, changes: AudienceSongTagChange[], legacy?: AudienceSongTagLists,
+): Promise<AudienceSongTagLists> => (
+  await callSync<{ tags: AudienceSongTagLists }>({ action: 'audienceSongTags:sync', ...credentials, changes, ...(legacy ? { legacy } : {}) })
+).tags;
 
 export const pullArtistTags = async (artist: string): Promise<string[]> => (
   await callSync<{ tags: string[] }>({ action: 'artistTags:pull', artist })

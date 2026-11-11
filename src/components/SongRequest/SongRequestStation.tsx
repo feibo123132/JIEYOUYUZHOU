@@ -41,6 +41,7 @@ import {
   AUDIENCE_SONG_ORDER_STORAGE_KEY, AUDIENCE_SONG_TAGS, audienceSongTags,
   reconcileAudienceSongOrder, restoreAudienceSongOrder, type AudienceSongTag,
 } from './audienceSongs';
+import { useAudienceSongTags } from './useAudienceSongTags';
 import { createInitialBarragePreferences, setBarragePreference } from '../StarrySky/barragePreferences';
 import { calculateAvatarCropLayout } from './avatarCrop';
 import { artistSettingsStorageError, openArtistSettingsStorage, type ArtistSettingsStorage } from './artistSettingsStorage';
@@ -224,13 +225,6 @@ const resizeArtistAvatar = (file: File): Promise<string> => new Promise((resolve
 
 const PENDING_SING_COUNTS_KEY = 'jieyou-pending-sing-counts-v1';
 const REQUESTER_NAME_STORAGE_KEY = 'jieyou-song-request-requester-name-v1';
-const loadAudienceSongTag = (tag: AudienceSongTag): Set<string> => {
-  try {
-    const stored: unknown = JSON.parse(window.localStorage.getItem(AUDIENCE_SONG_TAGS[tag].storageKey) ?? '[]');
-    if (Array.isArray(stored)) return new Set(stored.filter((id): id is string => typeof id === 'string'));
-  } catch { /* local storage may be unavailable */ }
-  return new Set();
-};
 
 const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: SongRequestStationProps & { settingsStorage: ArtistSettingsStorage }) => {
   const accountAlias = readBrowserSongRecordSession()?.alias.trim().toLowerCase() || '';
@@ -241,10 +235,6 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
   const [audienceSongIds, setAudienceSongIds] = useState<string[] | null>(null);
   const [audiencePublicCatalog, setAudiencePublicCatalog] = useState<Song[] | null>(null);
   const [audienceSongOffset, setAudienceSongOffset] = useState(0);
-  const [audienceTaggedSongIds, setAudienceTaggedSongIds] = useState(() => ({
-    practice: loadAudienceSongTag('practice'),
-    featured: loadAudienceSongTag('featured'),
-  }));
   const [audienceSongFilter, setAudienceSongFilter] = useState<AudienceSongTag | null>(null);
   const [audienceLoadFailed, setAudienceLoadFailed] = useState(false);
   const [audienceLoadAttempt, setAudienceLoadAttempt] = useState(0);
@@ -356,6 +346,12 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
   const [songRecordSession] = useState<SongRecordSession | null>(() => (
     typeof window === 'undefined' ? null : readBrowserSongRecordSession()
   ));
+  const { taggedSongIds: audienceTaggedSongIds, toggle: toggleAudienceTag, syncFailed: audienceTagsSyncFailed } = useAudienceSongTags(
+    songRecordSession, isFeaturedSongManager(songRecordSession?.alias), activeSection === 'audience',
+  );
+  useEffect(() => {
+    if (audienceTagsSyncFailed) showSyncMessage('「多练」和「精选」暂未同步，页面会自动重试');
+  }, [audienceTagsSyncFailed, showSyncMessage]);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [tagDirectoryOpen, setTagDirectoryOpen] = useState(false);
   const [inquiriesOpen, setInquiriesOpen] = useState(false);
@@ -1547,18 +1543,9 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
   };
 
   const toggleAudienceSongTag = (tag: AudienceSongTag, songId: string) => {
-    const { label, storageKey } = AUDIENCE_SONG_TAGS[tag];
-    const next = new Set(audienceTaggedSongIds[tag]);
-    if (next.has(songId)) next.delete(songId);
-    else next.add(songId);
-    setAudienceTaggedSongIds(current => ({ ...current, [tag]: next }));
-    try {
-      window.localStorage.setItem(storageKey, JSON.stringify([...next]));
-      return true;
-    } catch {
-      showSyncMessage(`浏览器无法保存「${label}」标记，刷新后可能丢失`);
-      return false;
-    }
+    const saved = toggleAudienceTag(tag, songId);
+    if (!saved) showSyncMessage(`浏览器无法保存「${AUDIENCE_SONG_TAGS[tag].label}」标记，刷新后可能丢失`);
+    return saved;
   };
 
   const toggleAudienceSongFilter = (tag: AudienceSongTag) => {
@@ -3103,6 +3090,7 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
           catalog={catalog.songs}
           songIds={audienceSongIds}
           taggedSongIds={audienceTaggedSongIds}
+          tagsSyncFailed={audienceTagsSyncFailed}
           onToggleTag={toggleAudienceSongTag}
           saving={audienceSaving}
           onSave={saveAudienceSongs}

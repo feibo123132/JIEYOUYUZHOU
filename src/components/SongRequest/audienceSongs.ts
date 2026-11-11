@@ -19,6 +19,8 @@ export const AUDIENCE_SONG_TAGS = {
 export type AudienceSongTag = keyof typeof AUDIENCE_SONG_TAGS;
 export const audienceSongTags = Object.keys(AUDIENCE_SONG_TAGS) as AudienceSongTag[];
 export type AudienceTaggedSongIds = Record<AudienceSongTag, ReadonlySet<string>>;
+export type AudienceSongTagLists = Record<AudienceSongTag, string[]>;
+export type AudienceSongTagChange = { operationId: string; tag: AudienceSongTag; songId: string; marked: boolean };
 
 export const reconcileAudienceSongOrder = (savedOrder: readonly string[], songIds: readonly string[]) => {
   const remaining = new Set(songIds);

@@ -15,6 +15,45 @@ const functionPath = path.join(__dirname, '..', 'cloudfunctions', 'songRequestSy
 const validationPath = path.join(__dirname, '..', 'cloudfunctions', 'songRequestSync', 'validation.js');
 const cloudbaseConfigPath = path.join(__dirname, '..', 'cloudbaserc.json');
 
+test('audience song tags sync per account, merge device edits, and preserve removals on retry and import', async () => {
+  const { createHandler, syncAudienceSongTagsAtomically } = loadFunction();
+  const store = memoryStore();
+  let queued = Promise.resolve();
+  const db = {
+    runTransaction(callback) {
+      const operation = queued.then(() => callback({
+        collection: () => ({ doc: id => ({
+          get: async () => ({ data: await store.getWorkspace(id) }),
+          set: value => store.setWorkspace(id, value),
+        }) }),
+      }));
+      queued = operation.catch(() => {});
+      return operation;
+    },
+  };
+  store.syncAudienceSongTagsAtomically = (id, request) => syncAudienceSongTagsAtomically(db, id, request);
+  const handler = createHandler(store);
+  const owner = { alias: 'tag-owner', password: 'fixture-password' };
+  const other = { alias: 'tag-other', password: 'other-fixture-password' };
+  await seedExistingAccount(store, owner);
+  await seedExistingAccount(store, other);
+  const sync = (credentials, payload = {}) => handler({ action: 'audienceSongTags:sync', ...credentials, ...payload });
+  const mark = { operationId: 'device-one-mark', tag: 'practice', songId: 'qing-tian', marked: true };
+  const star = { operationId: 'device-two-star', tag: 'featured', songId: 'qing-tian', marked: true };
+
+  assert.deepEqual(await sync({ ...owner, password: 'wrong-password' }), { ok: false, error: 'AUTH_FAILED' });
+  assert.deepEqual(await sync(owner, { changes: [{ ...mark, tag: 'other' }] }), { ok: false, error: 'INVALID_AUDIENCE_SONG_TAGS' });
+  const updates = await Promise.all([sync(owner, { changes: [mark] }), sync(owner, { changes: [star] })]);
+  assert.ok(updates.every(update => update.ok));
+  assert.deepEqual(await sync(owner), { ok: true, tags: { practice: ['qing-tian'], featured: ['qing-tian'] } });
+  assert.deepEqual(await sync(other), { ok: true, tags: { practice: [], featured: [] } });
+
+  assert.ok((await sync(owner, { changes: [{ ...mark, operationId: 'device-two-unmark', marked: false }] })).ok);
+  const replay = await sync(owner, { changes: [mark], legacy: { practice: ['qing-tian', 'hua-hai'], featured: [] } });
+  assert.deepEqual(replay, { ok: true, tags: { practice: ['hua-hai'], featured: ['qing-tian'] } });
+  assert.deepEqual(await sync(owner), replay);
+});
+
 test('CloudBase deployment config points directly at the small function directory', () => {
   const config = JSON.parse(readFileSync(cloudbaseConfigPath, 'utf8'));
   assert.equal(config.functionRoot, 'cloudfunctions');

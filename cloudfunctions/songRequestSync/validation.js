@@ -61,6 +61,7 @@ const ACTIONS = new Set([
   'featuredSongs:set',
   'audienceSongs:pull',
   'audienceSongs:update',
+  'audienceSongTags:sync',
   'quizLibrary:pull',
   'quizLibrary:set',
 ]);
@@ -431,7 +432,7 @@ function validateRequest(event) {
     return require('./listeningGame').validateGameRequest(event, credentials);
   }
   if (!event || typeof event !== 'object' || !ACTIONS.has(event.action)) throw new Error('INVALID_ACTION');
-  const requestLimit = event.action === 'enough:save' ? 650000 : event.action === 'feelingsNotebook:save' ? 4 * 1024 * 1024 : (event.action === 'artistSettings:push' || event.action === 'artistSettings:privatePull')
+  const requestLimit = event.action === 'enough:save' || event.action === 'audienceSongTags:sync' ? 650000 : event.action === 'feelingsNotebook:save' ? 4 * 1024 * 1024 : (event.action === 'artistSettings:push' || event.action === 'artistSettings:privatePull')
     ? ARTIST_SETTINGS_REQUEST_LIMIT
     : (event.action === 'songScores:uploadPage' || event.action === 'recordings:uploadChunk') ? SONG_SCORE_UPLOAD_REQUEST_LIMIT : DEFAULT_REQUEST_LIMIT;
   if (Buffer.byteLength(JSON.stringify(event), 'utf8') > requestLimit) throw new Error('PAYLOAD_TOO_LARGE');
@@ -517,6 +518,23 @@ function validateRequest(event) {
     }
     const validateIds = (ids) => [...new Set(ids.map((id) => cleanText(id, 100, 'INVALID_AUDIENCE_SONGS')))];
     return { ...base, add: validateIds(add), remove: validateIds(remove) };
+  }
+  if (event.action === 'audienceSongTags:sync') {
+    const invalid = 'INVALID_AUDIENCE_SONG_TAGS';
+    const { changes = [], legacy } = event;
+    if (!Array.isArray(changes) || changes.length > 200) throw new Error(invalid);
+    const operations = changes.map(change => {
+      if (!change || !['practice', 'featured'].includes(change.tag) || typeof change.marked !== 'boolean') throw new Error(invalid);
+      const operationId = cleanText(change.operationId, 48, invalid);
+      return { operationId, tag: change.tag, songId: cleanText(change.songId, 100, invalid), marked: change.marked };
+    });
+    if (legacy === undefined) return { ...base, changes: operations };
+    const validateIds = ids => {
+      if (!Array.isArray(ids) || ids.length > AUDIENCE_SONG_LIMIT) throw new Error(invalid);
+      return [...new Set(ids.map(id => cleanText(id, 100, invalid)))];
+    };
+    if (!legacy || typeof legacy !== 'object') throw new Error(invalid);
+    return { ...base, changes: operations, legacy: { practice: validateIds(legacy.practice), featured: validateIds(legacy.featured) } };
   }
   if (event.action === 'quizLibrary:set') {
     if (!event.assignments || typeof event.assignments !== 'object' || Array.isArray(event.assignments)) throw new Error('INVALID_QUIZ_LIBRARY');

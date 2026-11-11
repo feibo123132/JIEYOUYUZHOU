@@ -58,10 +58,11 @@ export default function AudienceSongBoard({ songs, taggedSongIds, start, loadFai
   );
 }
 
-export function AudienceSongEditor({ catalog, songIds, taggedSongIds, saving, onToggleTag, onSave, onClose }: {
+export function AudienceSongEditor({ catalog, songIds, taggedSongIds, tagsSyncFailed, saving, onToggleTag, onSave, onClose }: {
   catalog: Song[];
   songIds: string[];
   taggedSongIds: AudienceTaggedSongIds;
+  tagsSyncFailed: boolean;
   saving: boolean;
   onToggleTag: (tag: AudienceSongTag, songId: string) => boolean;
   onSave: (add: string[], remove: string[]) => Promise<boolean>;
@@ -155,7 +156,9 @@ export function AudienceSongEditor({ catalog, songIds, taggedSongIds, saving, on
         <footer className="flex flex-wrap items-center justify-end gap-3 border-t border-white/10 pt-4">
           <div className="mr-auto space-y-1">
             {failed && <p role="alert" className="text-sm text-rose-200">歌单保存失败，勾选已保留，请重试。</p>}
-            {tagSaveFailed ? <p role="alert" className="text-xs text-rose-200">浏览器无法保存标记，刷新后可能丢失。</p> : <p className="text-xs text-white/45">多练和精选自动保存</p>}
+            {tagSaveFailed ? <p role="alert" className="text-xs text-rose-200">浏览器无法保存标记，刷新后可能丢失。</p>
+              : tagsSyncFailed ? <p role="status" className="text-xs text-amber-200">标记暂未同步，页面会自动重试</p>
+                : <p className="text-xs text-white/45">多练和精选随账号同步</p>}
           </div>
           <button type="submit" disabled={saving || (!add.length && !remove.length)} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-amber-200 px-4 text-sm font-black text-[#211509] hover:bg-amber-100 disabled:opacity-45">
             <Check aria-hidden="true" className="h-4 w-4" />{saving ? '保存中…' : '保存歌单'}

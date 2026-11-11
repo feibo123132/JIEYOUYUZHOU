@@ -17,6 +17,7 @@ const PUBLIC_ERRORS = new Set([
   'INVALID_SONG', 'INVALID_SONG_LIST', 'INVALID_RECORD', 'ALREADY_REGISTERED', 'NOT_REGISTERED',
   'INVALID_SONG_RECORD', 'INVALID_ARTIST_SETTINGS', 'AUTH_FAILED', 'CONFLICT', 'NOT_FOUND',
   'INVALID_FEATURED_SONGS', 'INVALID_AUDIENCE_SONGS',
+  'INVALID_AUDIENCE_SONG_TAGS',
   'INVALID_QUIZ_LIBRARY',
   'INVALID_SONG_SCORE',
   'SCORE_UPLOAD_FAILED', 'SCORE_NOT_FOUND', 'SCORE_ALREADY_EXISTS',
@@ -36,6 +37,49 @@ const OWNER_SONG_SCORE_SEED_VERSION = 1;
 const quizSongPlaysId = (ownerId) => `quiz-song-plays-${ownerId}`;
 const quizRankingResetId = (ownerId) => `quiz-ranking-reset-${ownerId}`;
 const audienceSongsId = (ownerId) => `audience-songs-${ownerId}`;
+const audienceSongTagsId = (id) => `audience-song-tags-${id}`;
+const readAudienceSongTags = (value) => ({ practice: value?.practice ?? [], featured: value?.featured ?? [] });
+
+const syncAudienceSongTagsAtomically = (db, id, { changes, legacy }) => db.runTransaction(async transaction => {
+  const ref = transaction.collection('song_request_workspaces').doc(audienceSongTagsId(id));
+  let result;
+  try { result = await ref.get(); }
+  catch (error) {
+    if (!/not found|does not exist/i.test(String(error?.message))) throw error;
+  }
+  const current = Array.isArray(result?.data) ? result.data[0] : result?.data;
+  const tags = readAudienceSongTags(current);
+  const marked = { practice: new Set(tags.practice), featured: new Set(tags.featured) };
+  const removed = { practice: new Set(current?.removed?.practice), featured: new Set(current?.removed?.featured) };
+  const receipts = new Set(current?.receipts);
+  for (const tag of ['practice', 'featured']) {
+    for (const songId of legacy?.[tag] ?? []) {
+      if (!removed[tag].has(songId)) marked[tag].add(songId);
+    }
+  }
+  for (const { operationId, tag, songId, marked: enabled } of changes) {
+    if (receipts.has(operationId)) continue;
+    receipts.add(operationId);
+    if (enabled) {
+      marked[tag].add(songId);
+      removed[tag].delete(songId);
+    } else {
+      marked[tag].delete(songId);
+      removed[tag].add(songId);
+    }
+  }
+  if (['practice', 'featured'].some(tag => marked[tag].size + removed[tag].size > AUDIENCE_SONG_LIMIT * 5)) {
+    throw new Error('INVALID_AUDIENCE_SONG_TAGS');
+  }
+  const snapshot = { practice: [...marked.practice], featured: [...marked.featured] };
+  await ref.set({
+    ...snapshot,
+    removed: { practice: [...removed.practice], featured: [...removed.featured] },
+    receipts: [...receipts].slice(-1000),
+  });
+  return snapshot;
+});
+
 const updateAudienceSongsAtomically = (db, ownerId, { add, remove }) => db.runTransaction(async (transaction) => {
   const ref = transaction.collection('song_request_workspaces').doc(audienceSongsId(ownerId));
   let result;
@@ -742,6 +786,12 @@ function createHandler(store) {
         if (id !== workspaceId(FEATURED_SONGS_OWNER_ALIAS)) throw new Error('AUTH_FAILED');
         return { ok: true, songIds: await store.updateAudienceSongsAtomically(id, request) };
       }
+      if (request.action === 'audienceSongTags:sync') {
+        const tags = request.changes.length || request.legacy
+          ? await store.syncAudienceSongTagsAtomically(id, request)
+          : readAudienceSongTags(await store.getWorkspace(audienceSongTagsId(id)));
+        return { ok: true, tags };
+      }
       if (request.action === 'quizLibrary:set') {
         if (id !== workspaceId(FEATURED_SONGS_OWNER_ALIAS)) throw new Error('AUTH_FAILED');
         await store.setQuizLibraryAssignments(id, request.assignments, store.now());
@@ -1000,6 +1050,7 @@ exports.main = async (event) => {
       saveSongGroupsAtomically: (id, revision, groups) => saveSongGroupsAtomically(db, id, revision, groups),
       setFeaturedSongIds: (id, songIds, updatedAt) => workspaces.doc(id).update({ featuredSongIds: songIds, updatedAt }),
       updateAudienceSongsAtomically: (id, changes) => updateAudienceSongsAtomically(db, id, changes),
+      syncAudienceSongTagsAtomically: (id, request) => syncAudienceSongTagsAtomically(db, id, request),
       setQuizLibraryAssignments: (id, assignments, updatedAt) => workspaces.doc(id).update({ quizLibraryAssignments: assignments, updatedAt }),
       getVotes: readVoteCounts,
       getVoteRequesters: readVoteRequesters,
@@ -1301,6 +1352,7 @@ exports.main = async (event) => {
 
 exports.createHandler = createHandler;
 exports.updateAudienceSongsAtomically = updateAudienceSongsAtomically;
+exports.syncAudienceSongTagsAtomically = syncAudienceSongTagsAtomically;
 exports.clearVoteStateAtomically = clearVoteStateAtomically;
 exports.adjustRoadshowSingCountAtomically = adjustRoadshowSingCountAtomically;
 exports.recordRoadshowQuizAtomically = recordRoadshowQuizAtomically;
