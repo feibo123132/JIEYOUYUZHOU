@@ -25,7 +25,6 @@
 .audience-song-note {
   display: flex;
   align-items: center;
-  gap: .55rem;
   width: 100%;
   min-height: 4.25rem;
   padding: .75rem clamp(.7rem, 1.5vw, 1.1rem);
@@ -53,8 +52,6 @@
   font-size: clamp(.88rem, 1.4vw, 1.08rem);
   line-height: 1.22;
 }
-
-.audience-song-arrow { color: rgb(var(--note-accent) / .72); }
 
 .audience-board-button {
   display: inline-flex;

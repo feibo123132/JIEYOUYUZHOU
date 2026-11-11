@@ -10,7 +10,7 @@ import {
   getPersonalRankingPodiumSize, getRankingMedalTone, getSongSubtitle, incrementSongVote, isFeaturedSongManager,
   insertCatalogArtist, insertCatalogSong, loadEditableCatalog, loadRoadshowSingCounts, loadSungVoteCounts, loadVoteCounts, rankArtistsByVotes, rankSongsByVotes,
   moveCatalogArtist, moveCatalogSong, removeCatalogArtist, removeCatalogSong, saveEditableCatalog, saveRoadshowSingCounts, saveSungVoteCounts, saveVoteCounts,
-  orderPersonalRankingItems, paginateRankingItems, sortCatalogByMatchScore, togglePersonalRankingReverse,
+  orderPersonalRankingItems, paginateRankingItems, shuffleSongs, sortCatalogByMatchScore, togglePersonalRankingReverse,
   updateCatalogSong, upgradeEditableCatalog,
   type EditableCatalog, type PracticeBoard, type RankingDisplayMode, type VoteCounts, type VoteRequesters,
 } from './songRequest';
@@ -37,6 +37,10 @@ import { MessageCircle } from 'lucide-react';
 import { Tag } from 'lucide-react';
 import PopularSongBarrage from './PopularSongBarrage';
 import AudienceSongBoard, { AudienceSongEditor } from './AudienceSongBoard';
+import {
+  AUDIENCE_SONG_ORDER_STORAGE_KEY, AUDIENCE_SONG_TAGS, audienceSongTags,
+  reconcileAudienceSongOrder, restoreAudienceSongOrder, type AudienceSongTag,
+} from './audienceSongs';
 import { createInitialBarragePreferences, setBarragePreference } from '../StarrySky/barragePreferences';
 import { calculateAvatarCropLayout } from './avatarCrop';
 import { artistSettingsStorageError, openArtistSettingsStorage, type ArtistSettingsStorage } from './artistSettingsStorage';
@@ -220,16 +224,28 @@ const resizeArtistAvatar = (file: File): Promise<string> => new Promise((resolve
 
 const PENDING_SING_COUNTS_KEY = 'jieyou-pending-sing-counts-v1';
 const REQUESTER_NAME_STORAGE_KEY = 'jieyou-song-request-requester-name-v1';
+const loadAudienceSongTag = (tag: AudienceSongTag): Set<string> => {
+  try {
+    const stored: unknown = JSON.parse(window.localStorage.getItem(AUDIENCE_SONG_TAGS[tag].storageKey) ?? '[]');
+    if (Array.isArray(stored)) return new Set(stored.filter((id): id is string => typeof id === 'string'));
+  } catch { /* local storage may be unavailable */ }
+  return new Set();
+};
 
 const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: SongRequestStationProps & { settingsStorage: ArtistSettingsStorage }) => {
   const accountAlias = readBrowserSongRecordSession()?.alias.trim().toLowerCase() || '';
   const [catalogReady, setCatalogReady] = useState(false);
   const nickname = useAppStore((state) => state.user?.nickname || '');
   const [activeSection, setActiveSection] = useState<SectionId | null>(null);
-  const [songShowcase, setSongShowcase] = useState<SongShowcase>('playlists');
+  const [songShowcase, setSongShowcase] = useState<SongShowcase>('audience');
   const [audienceSongIds, setAudienceSongIds] = useState<string[] | null>(null);
   const [audiencePublicCatalog, setAudiencePublicCatalog] = useState<Song[] | null>(null);
   const [audienceSongOffset, setAudienceSongOffset] = useState(0);
+  const [audienceTaggedSongIds, setAudienceTaggedSongIds] = useState(() => ({
+    practice: loadAudienceSongTag('practice'),
+    featured: loadAudienceSongTag('featured'),
+  }));
+  const [audienceSongFilter, setAudienceSongFilter] = useState<AudienceSongTag | null>(null);
   const [audienceLoadFailed, setAudienceLoadFailed] = useState(false);
   const [audienceLoadAttempt, setAudienceLoadAttempt] = useState(0);
   const [audienceEditorOpen, setAudienceEditorOpen] = useState(false);
@@ -822,16 +838,13 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
       return song ? [song] : [];
     });
   }, [audienceSongIds, audiencePublicCatalog, catalog.songs]);
+  const displayedAudienceSongs = useMemo(() => {
+    if (!audienceSongFilter || !audienceSongs) return audienceSongs;
+    return audienceSongs.filter(song => audienceTaggedSongIds[audienceSongFilter].has(song.id));
+  }, [audienceSongs, audienceSongFilter, audienceTaggedSongIds]);
   const quizGroups = useMemo(() => groupQuizSongs(catalogSongs, quizAssignments), [catalogSongs, quizAssignments]);
   const quizCounts = useMemo(() => countQuizSongs(quizAssignments), [quizAssignments]);
-  const randomSongs = useMemo(() => {
-    const shuffled = [...providedSongs];
-    for (let index = shuffled.length - 1; index > 0; index -= 1) {
-      const swapIndex = Math.floor(Math.random() * (index + 1));
-      [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
-    }
-    return shuffled.slice(0, 60);
-  }, [providedSongs]);
+  const randomSongs = useMemo(() => shuffleSongs(providedSongs).slice(0, 60), [providedSongs]);
   const barrageSongs = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (needle) {
@@ -1491,13 +1504,24 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
       : Promise.resolve(null);
     Promise.all([pullCloudAudienceSongIds(), publicCatalog]).then(([songIds, publicSongs]) => {
       if (!active) return;
+      let orderedIds = songIds;
+      try {
+        orderedIds = restoreAudienceSongOrder(songIds, window.localStorage.getItem(AUDIENCE_SONG_ORDER_STORAGE_KEY));
+      } catch { /* storage may be unavailable */ }
       setAudiencePublicCatalog(publicSongs);
-      setAudienceSongIds(songIds);
+      setAudienceSongIds(orderedIds);
     }).catch(() => {
       if (active) setAudienceLoadFailed(true);
     });
     return () => { active = false; };
   }, [shouldLoadAudienceSongs, audienceSongIds, audienceLoadAttempt, songRecordSession, canManageFeaturedSongs]);
+
+  useEffect(() => {
+    if (audienceSongIds === null) return;
+    try {
+      window.localStorage.setItem(AUDIENCE_SONG_ORDER_STORAGE_KEY, JSON.stringify(audienceSongIds));
+    } catch { /* keep the order in memory for this visit */ }
+  }, [audienceSongIds]);
 
   const openSongShowcase = (showcase: SongShowcase) => {
     setSongShowcase(showcase);
@@ -1509,12 +1533,47 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
     window.scrollTo(0, 0);
   };
 
+  const goToAudienceBatch = (start: number) => {
+    setAudienceSongOffset(start);
+    window.scrollTo(0, 0);
+  };
+
+  const shuffleAudienceSongs = () => {
+    if (!audienceSongIds || audienceSongIds.length < 2) return;
+    const shuffled = shuffleSongs(audienceSongIds);
+    setAudienceSongIds(current => reconcileAudienceSongOrder(shuffled, current ?? []));
+    setSongAssistantOpen(false);
+    goToAudienceBatch(0);
+  };
+
+  const toggleAudienceSongTag = (tag: AudienceSongTag, songId: string) => {
+    const { label, storageKey } = AUDIENCE_SONG_TAGS[tag];
+    const next = new Set(audienceTaggedSongIds[tag]);
+    if (next.has(songId)) next.delete(songId);
+    else next.add(songId);
+    setAudienceTaggedSongIds(current => ({ ...current, [tag]: next }));
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify([...next]));
+      return true;
+    } catch {
+      showSyncMessage(`浏览器无法保存「${label}」标记，刷新后可能丢失`);
+      return false;
+    }
+  };
+
+  const toggleAudienceSongFilter = (tag: AudienceSongTag) => {
+    setAudienceSongFilter(current => current === tag ? null : tag);
+    setSongAssistantOpen(false);
+    goToAudienceBatch(0);
+  };
+
   const saveAudienceSongs = async (add: string[], remove: string[]) => {
     if (!songRecordSession || !canManageFeaturedSongs || audienceSaveRef.current) return false;
     audienceSaveRef.current = true;
     setAudienceSaving(true);
     try {
-      setAudienceSongIds(await updateCloudAudienceSongIds(songRecordSession, add, remove));
+      const savedIds = await updateCloudAudienceSongIds(songRecordSession, add, remove);
+      setAudienceSongIds(current => reconcileAudienceSongOrder(current ?? [], savedIds));
       setAudienceSongOffset(0);
       showSyncMessage('观众点歌歌单已更新');
       return true;
@@ -2212,6 +2271,9 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
           onFillModeChange={(enabled) => setBarragePreferences((current) => setBarragePreference(current, 'fill', enabled))}
           onShowPopular={() => openSongShowcase('playlists')}
           onSwitchShowcase={() => openSongShowcase(audienceVisible ? 'playlists' : 'audience')}
+          onShuffleAudience={audienceVisible && (audienceSongs?.length ?? 0) > 1 ? shuffleAudienceSongs : undefined}
+          audienceSongFilter={audienceSongFilter}
+          onToggleAudienceSongFilter={toggleAudienceSongFilter}
           onManageAudience={audienceVisible && canManageFeaturedSongs && audienceSongIds !== null
             ? () => { setSongAssistantOpen(false); setAudienceEditorOpen(true); } : undefined}
           onClose={() => setSongAssistantOpen(false)}
@@ -2314,13 +2376,15 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
           />
         ) : audienceVisible ? (
           <AudienceSongBoard
-            songs={audienceSongs}
+            songs={displayedAudienceSongs}
+            taggedSongIds={audienceTaggedSongIds}
             start={audienceSongOffset}
             loadFailed={audienceLoadFailed}
             canManage={canManageFeaturedSongs}
+            filterLabel={audienceSongFilter ? AUDIENCE_SONG_TAGS[audienceSongFilter].label : undefined}
             onRetry={() => setAudienceLoadAttempt(attempt => attempt + 1)}
             onManage={() => setAudienceEditorOpen(true)}
-            onNext={start => { setAudienceSongOffset(start); window.scrollTo(0, 0); }}
+            onChangeBatch={goToAudienceBatch}
             onSelect={setPopularActionSong}
           />
         ) : activeSection === null ? (
@@ -3038,6 +3102,8 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
         <AudienceSongEditor
           catalog={catalog.songs}
           songIds={audienceSongIds}
+          taggedSongIds={audienceTaggedSongIds}
+          onToggleTag={toggleAudienceSongTag}
           saving={audienceSaving}
           onSave={saveAudienceSongs}
           onClose={() => setAudienceEditorOpen(false)}
@@ -3073,21 +3139,36 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
         </div>
       )}
       {popularActionSong && (
-        <div className="fixed inset-0 z-[80] grid place-items-center p-5">
+        <div className={`fixed inset-0 z-[80] grid place-items-center ${audienceVisible ? 'p-3 sm:p-5' : 'p-5'}`}>
           <button type="button" aria-label="关闭歌曲操作弹窗" onClick={() => setPopularActionSong(null)} className="absolute inset-0 bg-black/65 backdrop-blur-md" />
-          <section role="dialog" aria-modal="true" aria-labelledby="popular-song-action-title" className="relative w-full max-w-sm overflow-hidden rounded-[1.75rem] border border-orange-200/20 bg-[#0d0a0d]/95 p-6 shadow-[0_30px_100px_rgba(0,0,0,.7)]">
+          <section role="dialog" aria-modal="true" aria-labelledby="popular-song-action-title" className={`relative w-full overflow-hidden rounded-[1.75rem] border border-orange-200/20 bg-[#0d0a0d]/95 shadow-[0_30px_100px_rgba(0,0,0,.7)] ${audienceVisible ? 'max-w-md p-4 min-[420px]:p-6' : 'max-w-sm p-6'}`}>
             <div className="pointer-events-none absolute -right-16 -top-20 h-44 w-44 rounded-full bg-orange-400/10 blur-3xl" />
             <button type="button" aria-label="关闭歌曲操作" onClick={() => setPopularActionSong(null)} className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-full border border-white/10 text-white/40 transition hover:bg-white/10 hover:text-white"><X className="h-4 w-4" /></button>
             {activeSection !== 'audience' && <p className="text-[10px] font-black tracking-[.25em] text-orange-200/45">HOT SONG · QUICK ACTION</p>}
             <h2 id="popular-song-action-title" className="mt-3 pr-10 font-serif text-3xl font-black text-white">{popularActionSong.title}</h2>
             <p className="mt-1 text-sm text-white/40">{popularActionSong.artist}</p>
-            <div className="mt-6 grid grid-cols-2 gap-3">
+            <div className={`mt-6 grid ${audienceVisible ? 'grid-cols-4 gap-1.5 min-[420px]:gap-2' : 'grid-cols-2 gap-3'}`}>
               <button type="button" disabled={requestedId === popularActionSong.id} onClick={() => { void requestSong(popularActionSong); }} className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-orange-200/25 bg-orange-400 text-sm font-black text-black transition hover:bg-orange-300 disabled:border-emerald-200/20 disabled:bg-emerald-300/15 disabled:text-emerald-100">
                 {requestedId === popularActionSong.id ? <><Check className="h-4 w-4" /><span>已点</span></> : <><Plus className="h-4 w-4" /><span>点歌</span></>}
               </button>
               <button type="button" onClick={() => { const song = popularActionSong; setPopularActionSong(null); openSongDetail(song); }} className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-white/12 bg-white/[.055] text-sm font-black text-white/80 transition hover:border-orange-200/30 hover:bg-white/10 hover:text-white">
-                <Eye className="h-4 w-4" /><span>歌曲详情</span>
+                <Eye className={audienceVisible ? 'hidden h-4 w-4 min-[420px]:block' : 'h-4 w-4'} /><span>歌曲详情</span>
               </button>
+              {audienceVisible && audienceSongTags.map(tag => {
+                const { label, icon: Icon, pressedClass } = AUDIENCE_SONG_TAGS[tag];
+                const pressed = audienceTaggedSongIds[tag].has(popularActionSong.id);
+                return (
+                  <button
+                    key={tag}
+                    type="button"
+                    aria-pressed={pressed}
+                    onClick={() => toggleAudienceSongTag(tag, popularActionSong.id)}
+                    className={`inline-flex h-12 items-center justify-center gap-1.5 rounded-xl border border-white/12 bg-white/[.055] text-sm font-black text-white/80 transition hover:border-white/30 hover:bg-white/10 ${pressedClass}`}
+                  >
+                    {pressed ? <Check className="h-4 w-4" /> : <Icon className="h-4 w-4" />}<span>{label}</span>
+                  </button>
+                );
+              })}
             </div>
           </section>
         </div>
@@ -3113,7 +3194,7 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
   );
 };
 
-const SongAssistant = ({ audience, query, displayMode, barrageMode, intimateMode, fillMode, onQueryChange, onResetSearch, onDisplayModeChange, onBarrageModeChange, onIntimateModeChange, onFillModeChange, onShowPopular, onSwitchShowcase, onManageAudience, onClose }: {
+const SongAssistant = ({ audience, query, displayMode, barrageMode, intimateMode, fillMode, onQueryChange, onResetSearch, onDisplayModeChange, onBarrageModeChange, onIntimateModeChange, onFillModeChange, onShowPopular, onSwitchShowcase, onShuffleAudience, onManageAudience, audienceSongFilter, onToggleAudienceSongFilter, onClose }: {
   audience: boolean;
   query: string;
   displayMode: SongDisplayMode;
@@ -3128,7 +3209,10 @@ const SongAssistant = ({ audience, query, displayMode, barrageMode, intimateMode
   onFillModeChange: (enabled: boolean) => void;
   onShowPopular: () => void;
   onSwitchShowcase: () => void;
+  onShuffleAudience?: () => void;
   onManageAudience?: () => void;
+  audienceSongFilter: AudienceSongTag | null;
+  onToggleAudienceSongFilter: (tag: AudienceSongTag) => void;
   onClose: () => void;
 }) => (
   <>
@@ -3192,7 +3276,13 @@ const SongAssistant = ({ audience, query, displayMode, barrageMode, intimateMode
 
         <button type="button" onClick={onShowPopular} className="flex w-full items-center justify-between rounded-2xl border border-violet-200/15 bg-violet-300/[.06] p-4 text-left transition hover:border-violet-200/35"><span><strong className="block">查看热门歌曲</strong><small className="mt-1 block text-white/40">回到全屏彩色弹幕</small></span><ChevronRight className="h-5 w-5 text-violet-200/55" /></button>
         </>}
+        {audience && <button type="button" onClick={onShuffleAudience} disabled={!onShuffleAudience} className="flex w-full items-center rounded-2xl border border-white/15 bg-white/5 p-4 text-left font-bold text-white/80 transition enabled:hover:bg-white/10 disabled:opacity-40">歌曲随机</button>}
         {onManageAudience && <button type="button" onClick={onManageAudience} className="flex w-full items-center gap-3 rounded-2xl border border-amber-200/20 bg-amber-200/10 p-4 text-left font-bold text-amber-100 transition hover:bg-amber-200/15"><ListMusic className="h-5 w-5" />管理观众点歌<ChevronRight className="ml-auto h-5 w-5" /></button>}
+        {audience && audienceSongTags.map(tag => {
+          const { label, icon: Icon, pressedClass } = AUDIENCE_SONG_TAGS[tag];
+          const pressed = audienceSongFilter === tag;
+          return <button key={tag} type="button" aria-pressed={pressed} onClick={() => onToggleAudienceSongFilter(tag)} className={`flex w-full items-center gap-3 rounded-2xl border border-white/15 bg-white/5 p-4 text-left font-bold text-white/80 transition hover:bg-white/10 ${pressedClass}`}><Icon className="h-5 w-5" />{label}{pressed && <Check className="ml-auto h-5 w-5" />}</button>;
+        })}
         <button type="button" onClick={onSwitchShowcase} className="flex w-full items-center gap-3 rounded-2xl border border-white/15 bg-white/5 p-4 text-left font-bold text-white/80 transition hover:bg-white/10"><ArrowLeftRight className="h-5 w-5" />切换到{audience ? '热门歌曲' : '观众点歌'}</button>
       </div>
     </aside>

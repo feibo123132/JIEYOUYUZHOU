@@ -40,6 +40,15 @@ const V11_DEFAULT_SONG_ADDITION_IDS = [
   'jdh-wu-lan-ba-tuo-de-ye', 'hita-chi-ling', 'hailun-you-jing', 'lyl-zhi-shao-hai-you-ni',
 ];
 
+export const shuffleSongs = <T>(songs: readonly T[], random = Math.random): T[] => {
+  const shuffled = [...songs];
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(random() * (index + 1));
+    [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+  }
+  return shuffled;
+};
+
 export const paginateRankingItems = <T>(items: T[], requestedPage: number, pageSize: number) => {
   const safePageSize = Math.max(1, Math.floor(pageSize));
   const pageCount = Math.max(1, Math.ceil(items.length / safePageSize));

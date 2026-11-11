@@ -882,18 +882,41 @@ test('识曲歌库按四档解析、切换、取消并分组计数', async () =>
   })
 })
 
-test('观众点歌按歌单顺序每次展示20首，展示完后从头接续', async () => {
+test('观众点歌每次展示20首，上一组和下一组可以双向循环', async () => {
   const { getAudienceSongBatch } = await import(audienceSongsUrl.href)
   const songs = Array.from({ length: 45 }, (_, index) => index + 1)
   const first = getAudienceSongBatch(songs, 0)
   const second = getAudienceSongBatch(songs, first.nextStart)
   const third = getAudienceSongBatch(songs, second.nextStart)
-  assert.deepEqual(first, { items: songs.slice(0, 20), nextStart: 20 })
-  assert.deepEqual(second, { items: songs.slice(20, 40), nextStart: 40 })
-  assert.deepEqual(third, { items: [...songs.slice(40), ...songs.slice(0, 15)], nextStart: 15 })
-  assert.deepEqual(getAudienceSongBatch(songs.slice(0, 20), 0), { items: songs.slice(0, 20), nextStart: 0 })
-  assert.deepEqual(getAudienceSongBatch(songs.slice(0, 4), 0), { items: [1, 2, 3, 4], nextStart: 0 })
-  assert.deepEqual(getAudienceSongBatch([], 0), { items: [], nextStart: 0 })
+  assert.deepEqual(first, { items: songs.slice(0, 20), previousStart: 25, nextStart: 20 })
+  assert.deepEqual(second, { items: songs.slice(20, 40), previousStart: 0, nextStart: 40 })
+  assert.deepEqual(third, { items: [...songs.slice(40), ...songs.slice(0, 15)], previousStart: 20, nextStart: 15 })
+  assert.deepEqual(getAudienceSongBatch(songs, first.previousStart).items, songs.slice(25))
+  assert.equal(getAudienceSongBatch(songs, first.previousStart).nextStart, 0)
+  assert.deepEqual(getAudienceSongBatch(songs.slice(0, 20), 0), { items: songs.slice(0, 20), previousStart: 0, nextStart: 0 })
+  assert.deepEqual(getAudienceSongBatch(songs.slice(0, 4), 0), { items: [1, 2, 3, 4], previousStart: 0, nextStart: 0 })
+  assert.deepEqual(getAudienceSongBatch([], 0), { items: [], previousStart: 0, nextStart: 0 })
+})
+
+test('歌曲随机打散整份歌单，每首保留一次且原顺序不变', async () => {
+  const { shuffleSongs } = await loadModule()
+  const songs = Array.from({ length: 45 }, (_, index) => index + 1)
+  const shuffled = shuffleSongs(songs, () => 0)
+  assert.deepEqual(shuffled, [...songs.slice(1), 1])
+  assert.deepEqual(songs, Array.from({ length: 45 }, (_, index) => index + 1))
+})
+
+test('观众点歌重新打开时恢复随机顺序，新增歌曲接在末尾', async () => {
+  const { restoreAudienceSongOrder, reconcileAudienceSongOrder } = await import(audienceSongsUrl.href)
+  const songIds = ['a', 'b', 'c', 'd']
+  const saved = JSON.stringify(['c', 'a', 'b', 'd'])
+  const unexpectedShuffle = () => { throw new Error('已保存的歌单无需重新随机') }
+
+  assert.deepEqual(restoreAudienceSongOrder(songIds, null, () => 0), ['b', 'c', 'd', 'a'])
+  assert.deepEqual(restoreAudienceSongOrder(songIds, saved, unexpectedShuffle), ['c', 'a', 'b', 'd'])
+  assert.deepEqual(restoreAudienceSongOrder(['e', 'd', 'c', 'a'], saved, unexpectedShuffle), ['c', 'a', 'd', 'e'])
+  assert.deepEqual(restoreAudienceSongOrder(songIds, '[invalid', unexpectedShuffle), songIds)
+  assert.deepEqual(reconcileAudienceSongOrder(['c', 'c', 'missing', 'b'], songIds), ['c', 'b', 'a', 'd'])
 })
 
 test('一键选歌按6比10比10比4抽取三十首并排除往期已用歌曲', async () => {
@@ -1878,7 +1901,7 @@ test('歌曲页猫咪助手复用检索歌曲展示与弹幕功能但不包含�
 
   assert.match(station, /aria-label="打开歌曲助手"/)
   assert.match(station, /🐱/)
-  assert.match(station, /\{popularImmersive && !songAssistantOpen && \(/)
+  assert.match(station, /\{\(popularImmersive \|\| audienceVisible\) && !songAssistantOpen && \(/)
   assert.doesNotMatch(station, /\{!songAssistantOpen && \(/)
   assert.match(station, /aria-label="歌曲助手栏"/)
   assert.match(station, /🔎 检索/)
@@ -1889,12 +1912,12 @@ test('歌曲页猫咪助手复用检索歌曲展示与弹幕功能但不包含�
   assert.match(station, /type SongDisplayMode = 'random' \| 'full'/)
   assert.match(station, /const featured = new Set\(featuredSongIds\)/)
   assert.match(station, /return catalogSongs\.filter\(\(song\) => featured\.has\(song\.id\)\)/)
-  assert.match(station, /const shuffled = \[\.\.\.providedSongs\]/)
-  assert.match(station, /return shuffled\.slice\(0, 60\)/)
+  assert.match(station, /shuffleSongs\(providedSongs\)\.slice\(0, 60\)/)
+  assert.match(station, />歌曲随机<\/button>/)
   assert.match(station, /const barrageSongs = useMemo/)
   assert.match(station, /return providedSongs\.filter/)
   assert.match(station, /songDisplayMode === 'full' \? providedSongs : randomSongs/)
-  assert.doesNotMatch(station, /const shuffled = \[\.\.\.catalogSongs\]/)
+  assert.doesNotMatch(station, /shuffleSongs\(catalogSongs\)/)
   assert.match(station, /<PopularSongBarrage songs=\{barrageSongs\}/)
   assert.doesNotMatch(station, /星星展示|30颗|全部星星|小工具/)
   assert.match(station, /💬 弹幕/)
@@ -1911,7 +1934,7 @@ test('歌曲页猫咪助手复用检索歌曲展示与弹幕功能但不包含�
   assert.match(station, /useState\(createInitialSongBarragePreferences\)/)
   assert.doesNotMatch(station, /immersive: true/)
   assert.doesNotMatch(station, /<PopularSongBarrage[^>]*active=/)
-  assert.match(station, /\{!barrageMode && \(\s*<header/)
+  assert.match(station, /\{\(audienceVisible \|\| \(popularImmersive && !barrageMode\)\) && \(\s*<header/)
   assert.match(station, /\{!barrageMode && \(\s*<p className="pointer-events-none fixed bottom-5/)
   assert.doesNotMatch(barrage, /active: boolean|popular-song-stage--paused/)
   assert.match(barrage, /intimate: boolean/)
