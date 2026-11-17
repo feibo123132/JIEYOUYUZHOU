@@ -13,6 +13,7 @@ import {
 } from './songRequestCloud';
 import { decodeAudioBlob, downloadBlob, encodeAudioClipToWav, formatDuration, formatFileSize as formatRecordingSize, getAudioContext } from './audioClipping';
 import AudioTrimDialog from './AudioTrimDialog';
+import { loadLegacyAudioMarkers, type AudioMarker } from './audioMarkers';
 
 export interface SongRecordingsHandle {
   upload: (file: File) => Promise<void>;
@@ -162,6 +163,9 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
         if (current !== latest) {
           latest = current;
           continue;
+        }
+        if (payload.markers !== undefined && remote?.markers === undefined) {
+          throw new Error('RECORDING_MARKERS_UNSUPPORTED');
         }
         const synced: SongRecording = remote ? { ...remote, localBlobId: latest.localBlobId } : payload;
         commitWith((items) => items.map((item) => (item.id === id ? synced : item)));
@@ -407,18 +411,23 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
     void syncRecording(id, recording);
   };
 
-  const saveTrim = (clip: { start: number; end: number; cuts: AudioCut[] }) => {
+  const saveTrim = (clip: { start: number; end: number; cuts: AudioCut[]; markers?: AudioMarker[] }) => {
     if (!trimming) return false;
     // 裁剪期间录音可能已经上传完成，必须并到最新那条记录上，避免把 fileID 冲掉。
     const latest = recordingsRef.current.find((item) => item.id === trimming.recording.id);
     if (!latest) return false;
     const clipEnd = Number(clip.end.toFixed(3));
+    const legacyMarkers = latest.markers === undefined && clip.markers === undefined
+      ? loadLegacyAudioMarkers(window.localStorage, session?.alias ?? '', latest.id, trimming.buffer.duration)
+      : [];
+    const markers = clip.markers ?? latest.markers ?? (legacyMarkers.length ? legacyMarkers : undefined);
     const updated: SongRecording = {
       ...latest,
-      duration: Math.max(latest.duration, clipEnd),
+      duration: Math.max(latest.duration, clipEnd, trimming.buffer.duration),
       clipStart: Number(clip.start.toFixed(3)),
       clipEnd,
       cuts: normalizeAudioCuts(clip.cuts, clip.start, clip.end),
+      ...(markers === undefined ? {} : { markers }),
       pendingSync: true,
       updatedAt: new Date().toISOString(),
     };
@@ -579,11 +588,13 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
         <AudioTrimDialog
           songTitle={song.title}
           recordingTitle={trimming.recording.title}
-          markerStorageKey={`jieyou-recording-markers-v1:${encodeURIComponent(session?.alias.trim().toLowerCase() ?? '')}:${trimming.recording.id}`}
           buffer={trimming.buffer}
           initialStart={trimming.recording.clipStart}
           initialEnd={trimming.recording.clipEnd}
           initialCuts={trimming.recording.cuts}
+          initialMarkers={trimming.recording.markers ?? loadLegacyAudioMarkers(
+            window.localStorage, session?.alias ?? '', trimming.recording.id, trimming.buffer.duration,
+          )}
           onCancel={() => setTrimming(null)}
           onSave={saveTrim}
         />

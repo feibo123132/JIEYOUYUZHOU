@@ -413,9 +413,24 @@ const validateRecording = (value) => {
   }).sort((left, right) => left.start - right.start);
   const createdAt = cleanOptionalText(value.createdAt, 40, 'INVALID_RECORDING') || new Date().toISOString();
   const updatedAt = cleanOptionalText(value.updatedAt, 40, 'INVALID_RECORDING') || createdAt;
+  let markers;
+  if (value.markers !== undefined) {
+    if (!Array.isArray(value.markers)) throw new Error('INVALID_RECORDING');
+    const times = new Set();
+    markers = value.markers.map((marker) => {
+      if (!marker || !Number.isFinite(marker.time) || marker.time < 0 || marker.time > duration
+        || times.has(marker.time) || typeof marker.note !== 'string'
+        || typeof marker.color !== 'string' || !/^#[0-9a-f]{6}$/i.test(marker.color)) {
+        throw new Error('INVALID_RECORDING');
+      }
+      times.add(marker.time);
+      return { time: marker.time, note: marker.note, color: marker.color.toLowerCase() };
+    }).sort((left, right) => left.time - right.time);
+  }
   return {
     id, songId, songTitle, songArtist, title, fileName, mimeType, fileID: value.fileID,
-    size: value.size, duration, clipStart, clipEnd, ...(cuts.length ? { cuts } : {}), createdAt, updatedAt,
+    size: value.size, duration, clipStart, clipEnd, ...(cuts.length ? { cuts } : {}),
+    ...(markers === undefined ? {} : { markers }), createdAt, updatedAt,
   };
 };
 

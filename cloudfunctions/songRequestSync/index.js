@@ -905,7 +905,13 @@ function createHandler(store) {
       if (request.action === 'recordings:save') {
         const recordings = [...(workspace.recordings || [])];
         const index = recordings.findIndex((item) => item.id === request.recording.id);
-        const saved = { ...request.recording, workspaceId: id, updatedAt: store.now() };
+        const existingMarkers = recordings[index]?.markers;
+        const saved = {
+          ...(existingMarkers === undefined ? {} : { markers: existingMarkers }),
+          ...request.recording,
+          workspaceId: id,
+          updatedAt: store.now(),
+        };
         if (index >= 0) recordings[index] = saved;
         else {
           if (recordings.filter((item) => !item.deletedAt).length >= 30) throw new Error('INVALID_RECORDING');

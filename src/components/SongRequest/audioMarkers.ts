@@ -14,9 +14,7 @@ export interface AudioMarker {
 
 export const DEFAULT_AUDIO_MARKER_COLOR = AUDIO_MARKER_COLORS[0].value;
 
-export const parseAudioMarkers = (raw: string, duration: number): AudioMarker[] => {
-  let entries: unknown;
-  try { entries = JSON.parse(raw); } catch { return []; }
+export const normalizeAudioMarkers = (entries: unknown, duration: number): AudioMarker[] => {
   if (!Array.isArray(entries)) return [];
 
   const markers = new Map<number, AudioMarker>();
@@ -31,4 +29,15 @@ export const parseAudioMarkers = (raw: string, duration: number): AudioMarker[] 
     });
   }
   return [...markers.values()].sort((left, right) => left.time - right.time);
+};
+
+export const parseAudioMarkers = (raw: string, duration: number): AudioMarker[] => {
+  try { return normalizeAudioMarkers(JSON.parse(raw), duration); } catch { return []; }
+};
+
+export const loadLegacyAudioMarkers = (
+  storage: Pick<Storage, 'getItem'>, alias: string, recordingId: string, duration: number,
+): AudioMarker[] => {
+  const key = `jieyou-recording-markers-v1:${encodeURIComponent(alias.trim().toLowerCase())}:${recordingId}`;
+  try { return parseAudioMarkers(storage.getItem(key) ?? '[]', duration); } catch { return []; }
 };

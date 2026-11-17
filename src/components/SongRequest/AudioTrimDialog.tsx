@@ -1,20 +1,20 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Check, Flag, Pause, Pencil, Play, Redo2, RotateCcw, Scissors, Trash2, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { computeWaveformPeaks, formatDuration, getAudioContext } from './audioClipping';
-import { AUDIO_MARKER_COLORS, DEFAULT_AUDIO_MARKER_COLOR, parseAudioMarkers, type AudioMarker } from './audioMarkers';
+import { AUDIO_MARKER_COLORS, DEFAULT_AUDIO_MARKER_COLOR, normalizeAudioMarkers, type AudioMarker } from './audioMarkers';
 import { keptDuration, normalizeAudioCuts, resolveKeptSegments, type AudioCut } from './songRecordings';
 
 interface AudioTrimDialogProps {
   songTitle: string;
   recordingTitle: string;
-  markerStorageKey: string;
   buffer: AudioBuffer;
   initialStart: number;
   initialEnd: number;
   initialCuts?: AudioCut[];
+  initialMarkers: AudioMarker[];
   saving?: boolean;
   onCancel: () => void;
-  onSave: (clip: { start: number; end: number; cuts: AudioCut[] }) => boolean;
+  onSave: (clip: { start: number; end: number; cuts: AudioCut[]; markers?: AudioMarker[] }) => boolean;
 }
 
 type EditMode = 'range' | 'cut';
@@ -27,12 +27,6 @@ const MIN_VIEW_SECONDS = 0.4;
 const PEAK_BUCKETS = 12_000;
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
-
-const readMarkers = (key: string, duration: number): AudioMarker[] => {
-  try {
-    return parseAudioMarkers(localStorage.getItem(key) ?? '[]', duration);
-  } catch { return []; }
-};
 
 const markerTimeLabel = (time: number) => {
   const milliseconds = Math.round(time * 1000);
@@ -130,7 +124,7 @@ const drawJoinedWaveform = (
 };
 
 const AudioTrimDialog = ({
-  songTitle, recordingTitle, markerStorageKey, buffer, initialStart, initialEnd, initialCuts = [], saving = false, onCancel, onSave,
+  songTitle, recordingTitle, buffer, initialStart, initialEnd, initialCuts = [], initialMarkers, saving = false, onCancel, onSave,
 }: AudioTrimDialogProps) => {
   const duration = buffer.duration;
   const peaks = useMemo(() => computeWaveformPeaks(buffer, PEAK_BUCKETS), [buffer]);
@@ -149,7 +143,7 @@ const AudioTrimDialog = ({
   const [playing, setPlaying] = useState(false);
   // 播放指针：可点击/拖拽/键盘定位，试听从这里开始。
   const [playhead, setPlayhead] = useState<number>(() => clamp(initialStart, 0, duration));
-  const [markers, setMarkers] = useState(() => readMarkers(markerStorageKey, duration));
+  const [markers, setMarkers] = useState(() => normalizeAudioMarkers(initialMarkers, duration));
   const [editingMarkerTime, setEditingMarkerTime] = useState<number | null>(null);
   const editingMarker = markers.find(marker => marker.time === editingMarkerTime);
   const [saveError, setSaveError] = useState('');
@@ -551,12 +545,8 @@ const AudioTrimDialog = ({
     });
 
   const save = () => {
-    if (markersChanged) {
-      try { localStorage.setItem(markerStorageKey, JSON.stringify(markers)); }
-      catch { setSaveError('浏览器无法保存标记，请重试。'); return; }
-    }
     stopPlayback();
-    if (!onSave({ start, end, cuts: visibleCuts })) {
+    if (!onSave({ start, end, cuts: visibleCuts, markers: markersChanged ? markers : undefined })) {
       setSaveError('裁剪无法保存到本机，请重试。');
       return;
     }

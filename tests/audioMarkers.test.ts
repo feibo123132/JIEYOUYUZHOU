@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseAudioMarkers } from '../src/components/SongRequest/audioMarkers.ts';
+import { loadLegacyAudioMarkers, parseAudioMarkers } from '../src/components/SongRequest/audioMarkers.ts';
 
 test('reads legacy timestamp markers and round-trips a marker note and color', () => {
   const markers = parseAudioMarkers('[21, 7, 7]', 30);
@@ -19,4 +19,16 @@ test('skips invalid times and preserves notes when a saved color is unavailable'
   assert.equal(markers[0].time, 12);
   assert.equal(markers[0].note, '保留这句');
   assert.equal(markers[0].color, parseAudioMarkers('[12]', 30)[0].color);
+});
+
+test('loads the old browser markers for the same account and recording', () => {
+  const markers = [{ time: 23.456, note: '✅ 原调', color: '#fcd34d' }];
+  const storage = {
+    getItem: (key: string) => key === 'jieyou-recording-markers-v1:owner%40example.com:rec-1'
+      ? JSON.stringify(markers)
+      : null,
+  };
+  assert.deepEqual(loadLegacyAudioMarkers(storage, ' Owner@Example.com ', 'rec-1', 30), markers);
+  assert.deepEqual(loadLegacyAudioMarkers(storage, 'other@example.com', 'rec-1', 30), []);
+  assert.deepEqual(loadLegacyAudioMarkers(storage, 'owner@example.com', 'rec-2', 30), []);
 });
