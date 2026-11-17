@@ -7,6 +7,8 @@
  * - 需要真正剪下来时，用 OfflineAudioContext 精确截取并编码成 WAV 下载。
  */
 
+import { dbToGain, DEFAULT_RECORDING_GAIN, resolveGainSegments, type RecordingGain } from './audioGain';
+
 let sharedContext: AudioContext | null = null;
 
 export const getAudioContext = (): AudioContext => {
@@ -58,15 +60,19 @@ export const formatFileSize = (bytes: number): string => {
 };
 
 /** 把若干保留区间按顺序拼接，编码为 16bit PCM WAV。 */
-export const encodeAudioClipToWav = (buffer: AudioBuffer, segments: Array<{ start: number; end: number }>): Blob => {
+export const encodeAudioClipToWav = (
+  buffer: AudioBuffer, segments: Array<{ start: number; end: number }>, gain: RecordingGain = DEFAULT_RECORDING_GAIN,
+): Blob => {
   const sampleRate = buffer.sampleRate;
   const channels = Math.min(2, buffer.numberOfChannels);
   const bytesPerSample = 2;
   const blockAlign = channels * bytesPerSample;
   const ranges = segments
+    .flatMap((segment) => resolveGainSegments(segment, gain.ranges))
     .map((segment) => ({
       from: Math.max(0, Math.floor(segment.start * sampleRate)),
       to: Math.min(buffer.length, Math.floor(segment.end * sampleRate)),
+      multiplier: dbToGain(gain.overallDb + segment.db),
     }))
     .filter((range) => range.to > range.from);
   const frameCount = ranges.reduce((sum, range) => sum + (range.to - range.from), 0);
@@ -101,7 +107,7 @@ export const encodeAudioClipToWav = (buffer: AudioBuffer, segments: Array<{ star
   for (const range of ranges) {
     for (let sourceIndex = range.from; sourceIndex < range.to; sourceIndex += 1) {
       for (let channel = 0; channel < channels; channel += 1) {
-        const sample = Math.max(-1, Math.min(1, channelData[channel][sourceIndex] ?? 0));
+        const sample = Math.max(-1, Math.min(1, (channelData[channel][sourceIndex] ?? 0) * range.multiplier));
         view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
         offset += 2;
       }

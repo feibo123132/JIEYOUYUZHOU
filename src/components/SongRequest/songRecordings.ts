@@ -1,4 +1,5 @@
 import { normalizeAudioMarkers, type AudioMarker } from './audioMarkers.ts';
+import { isRecordingGain, type RecordingGain } from './audioGain.ts';
 
 export interface AudioCut {
   start: number;
@@ -27,6 +28,8 @@ export interface SongRecording {
   clipEnd: number;
   /** 在保留区间内需要移除的片段（相对原音频时间轴）。 */
   cuts?: AudioCut[];
+  /** 整段与选区增益。选区使用原音频时间，增益叠加。 */
+  gain?: RecordingGain;
   /** 源音频坐标中的标记。空数组表示已移除全部标记，缺省表示旧录音。 */
   markers?: AudioMarker[];
   pendingSync?: boolean;
@@ -105,7 +108,7 @@ export const isValidSongRecording = (value: unknown): value is SongRecording => 
 export const parseSongRecordings = (value: unknown): SongRecording[] => {
   if (!Array.isArray(value)) return [];
   return value.filter(isValidSongRecording).map((item) => {
-    const { markers, ...recording } = item;
+    const { markers, gain, ...recording } = item;
     const clipStart = Math.max(0, Math.min(item.clipStart, item.duration));
     const clipEnd = Math.max(clipStart + 0.05, Math.min(item.clipEnd, item.duration));
     return {
@@ -113,6 +116,7 @@ export const parseSongRecordings = (value: unknown): SongRecording[] => {
       clipStart,
       clipEnd,
       cuts: normalizeAudioCuts(item.cuts, clipStart, clipEnd),
+      ...(isRecordingGain(gain, item.duration) ? { gain } : {}),
       ...(Array.isArray(markers) ? { markers: normalizeAudioMarkers(markers, item.duration) } : {}),
     };
   });

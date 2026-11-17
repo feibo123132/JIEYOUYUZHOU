@@ -67,7 +67,7 @@ test('CloudBase deployment config points directly at the small function director
   }]);
 });
 
-test('recording markers sync privately and survive older clients saving trims', async () => {
+test('recording markers and gain sync privately and survive older clients saving trims', async () => {
   const store = memoryStore();
   const handler = loadFunction().createHandler(store);
   const account = { alias: 'recording-owner', password: 'recording-fixture-password' };
@@ -97,6 +97,16 @@ test('recording markers sync privately and survive older clients saving trims', 
   assert.equal((await save({ markers: [{ ...markers[0], time: 31 }] })).ok, false);
   assert.deepEqual((await save({ markers: [] })).recording.markers, []);
   assert.deepEqual((await save({})).recording.markers, []);
+
+  const gain = { overallDb: 3, ranges: [{ start: 4, end: 8, db: -6 }, { start: 12, end: 14, db: 2 }] };
+  assert.deepEqual((await save({ gain })).recording.gain, gain);
+  assert.deepEqual((await save({ clipEnd: 9 })).recording.gain, gain);
+  assert.deepEqual((await pull(account)).recordings[0].gain, gain);
+  assert.equal((await save({ gain: { ...gain, ranges: [...gain.ranges, { start: 13, end: 30, db: 1 }] } })).ok, false);
+  const reset = { overallDb: 0, ranges: [] };
+  assert.deepEqual((await save({ gain: reset })).recording.gain, reset);
+  assert.deepEqual((await pull(account)).recordings[0].gain, reset);
+  assert.deepEqual((await pull(other)).recordings, []);
 });
 
 function loadFunction() {

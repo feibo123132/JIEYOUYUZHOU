@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Check, Flag, Minus, Pause, Pencil, Play, Redo2, RotateCcw, Scissors, Trash2, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { Check, Flag, Minus, Pause, Pencil, Play, Redo2, RotateCcw, Scissors, Trash2, Volume2, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { computeWaveformPeaks, formatDuration, getAudioContext } from './audioClipping';
+import {
+  clampGainDb, dbToGain, DEFAULT_RECORDING_GAIN, MAX_GAIN_DB, MAX_GAIN_RANGES, MIN_GAIN_DB,
+  replaceGainRange, resolveGainSegments, sameRecordingGain, scheduleAudioGain, type RecordingGain,
+} from './audioGain';
 import { AUDIO_MARKER_COLORS, DEFAULT_AUDIO_MARKER_COLOR, normalizeAudioMarkers, type AudioMarker } from './audioMarkers';
 import { keptDuration, normalizeAudioCuts, resolveKeptSegments, type AudioCut } from './songRecordings';
 
@@ -11,15 +15,16 @@ interface AudioTrimDialogProps {
   initialStart: number;
   initialEnd: number;
   initialCuts?: AudioCut[];
+  initialGain?: RecordingGain;
   initialMarkers: AudioMarker[];
   minimized: boolean;
   onMinimize: () => void;
   saving?: boolean;
   onCancel: () => void;
-  onSave: (clip: { start: number; end: number; cuts: AudioCut[]; markers?: AudioMarker[] }) => boolean;
+  onSave: (clip: { start: number; end: number; cuts: AudioCut[]; gain?: RecordingGain; markers?: AudioMarker[] }) => boolean;
 }
 
-type EditMode = 'range' | 'cut';
+type EditMode = 'range' | 'cut' | 'gain';
 type Boundary = keyof AudioCut;
 type CutDraft = Partial<AudioCut> & { original?: AudioCut };
 
@@ -27,8 +32,44 @@ const HANDLE_HIT_PX = 14;
 const MIN_CLIP_SECONDS = 0.05;
 const MIN_VIEW_SECONDS = 0.4;
 const PEAK_BUCKETS = 12_000;
+const CUT_PAN_EDGE_PX = 24;
+const CUT_PAN_SPANS_PER_SECOND = 0.6;
+const METER_FLOOR_DB = -60;
+const METER_TICKS = [-60, -48, -36, -24, -18, -12, -6, 0];
+const METER_GRADIENT = 'linear-gradient(90deg, #34d399 70%, #facc15 70%, #facc15 90%, #f87171 90%)';
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+const levelPercent = (db: number) => (clamp(db, METER_FLOOR_DB, 0) - METER_FLOOR_DB) / -METER_FLOOR_DB * 100;
+const emptyLevels = (count: number) => Array.from({ length: count }, () => ({ db: -Infinity, peak: -Infinity }));
+const formatGain = (db: number) => `${db > 0 ? '+' : ''}${db} dB`;
+
+const GainControl = ({ label, db, onChange }: { label: string; db: number; onChange: (value: number) => void }) => {
+  const [input, setInput] = useState<string | null>(null);
+  const update = (value: number) => onChange(Math.round(clampGainDb(value) * 10) / 10);
+  return (
+    <div className="flex min-w-0 items-center gap-2">
+      <span className="shrink-0 text-xs font-medium text-white/75">{label}</span>
+      <input type="range" min={MIN_GAIN_DB} max={MAX_GAIN_DB} step={0.1} value={db}
+        aria-label={label} aria-valuetext={formatGain(db)}
+        onChange={event => update(event.currentTarget.valueAsNumber)}
+        className="w-24 min-w-[3rem] accent-sky-300 sm:w-36" />
+      <input type="number" min={MIN_GAIN_DB} max={MAX_GAIN_DB} step={0.1} value={input ?? db}
+        aria-label={`${label} dB 数值`}
+        onChange={event => {
+          const field = event.currentTarget;
+          setInput(field.value);
+          if (field.valueAsNumber >= MIN_GAIN_DB && field.valueAsNumber <= MAX_GAIN_DB) update(field.valueAsNumber);
+        }}
+        onBlur={event => {
+          if (Number.isFinite(event.currentTarget.valueAsNumber)) update(event.currentTarget.valueAsNumber);
+          setInput(null);
+        }}
+        onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); }}
+        className="h-8 w-[4.5rem] rounded-lg border border-white/15 bg-black/40 px-2 text-right font-mono text-xs text-white" />
+      <span className="text-[11px] text-white/50">dB</span>
+    </div>
+  );
+};
 
 const markerTimeLabel = (time: number) => {
   const milliseconds = Math.round(time * 1000);
@@ -61,7 +102,7 @@ const prepareWaveform = (canvas: HTMLCanvasElement) => {
 
 const drawWaveformBars = (
   context: CanvasRenderingContext2D, left: number, width: number, height: number, peaks: Float32Array,
-  firstIndex: number, lastIndex: number, colorAt: (x: number) => string,
+  firstIndex: number, lastIndex: number, colorAt: (x: number) => string, multiplier: number,
 ) => {
   const visibleCount = Math.max(1, lastIndex - firstIndex);
   const columnStep = 2;
@@ -72,7 +113,7 @@ const drawWaveformBars = (
     for (let index = from; index < Math.min(peaks.length, Math.max(from + 1, to)); index += 1) {
       if (peaks[index] > amplitude) amplitude = peaks[index];
     }
-    const barHeight = Math.max(1, amplitude * height * 0.86);
+    const barHeight = Math.max(1, Math.min(1, amplitude * multiplier) * height * 0.86);
     context.fillStyle = colorAt(left + x);
     context.fillRect(left + x, (height - barHeight) / 2, Math.min(columnStep - 1, width - x), barHeight);
   }
@@ -110,7 +151,7 @@ const buildWaveformTimeline = (cuts: AudioCut[], duration: number) => {
 const drawJoinedWaveform = (
   context: CanvasRenderingContext2D, width: number, height: number, peaks: Float32Array, duration: number,
   timeline: ReturnType<typeof buildWaveformTimeline>, viewStart: number, viewEnd: number,
-  colorAt: (x: number) => string,
+  colorAt: (x: number) => string, gain: RecordingGain,
 ) => {
   if (viewEnd <= viewStart) return;
   const pixelsPerSecond = width / (viewEnd - viewStart);
@@ -120,13 +161,18 @@ const drawJoinedWaveform = (
     if (to <= from) continue;
     const sourceFrom = part.start + (from - part.offset);
     const sourceTo = part.start + (to - part.offset);
-    drawWaveformBars(context, (from - viewStart) * pixelsPerSecond, (to - from) * pixelsPerSecond, height, peaks,
-      Math.floor(sourceFrom / duration * peaks.length), Math.ceil(sourceTo / duration * peaks.length), colorAt);
+    for (const span of resolveGainSegments({ start: sourceFrom, end: sourceTo }, gain.ranges)) {
+      const left = (from - viewStart + (span.start - sourceFrom)) * pixelsPerSecond;
+      drawWaveformBars(context, left, (span.end - span.start) * pixelsPerSecond, height, peaks,
+        Math.floor(span.start / duration * peaks.length), Math.ceil(span.end / duration * peaks.length),
+        colorAt, dbToGain(gain.overallDb + span.db));
+    }
   }
 };
 
 const AudioTrimDialog = ({
-  songTitle, recordingTitle, buffer, initialStart, initialEnd, initialCuts = [], initialMarkers, minimized, onMinimize, saving = false, onCancel, onSave,
+  songTitle, recordingTitle, buffer, initialStart, initialEnd, initialCuts = [], initialGain = DEFAULT_RECORDING_GAIN,
+  initialMarkers, minimized, onMinimize, saving = false, onCancel, onSave,
 }: AudioTrimDialogProps) => {
   const duration = buffer.duration;
   const peaks = useMemo(() => computeWaveformPeaks(buffer, PEAK_BUCKETS), [buffer]);
@@ -139,17 +185,24 @@ const AudioTrimDialog = ({
   }));
   const cuts = cutHistory[cutHistoryIndex];
   const [mode, setMode] = useState<EditMode>('range');
+  const [gain, setGain] = useState(initialGain);
+  const overallDbRef = useRef(gain.overallDb);
+  overallDbRef.current = gain.overallDb;
+  const [selectionDb, setSelectionDb] = useState(0);
+  const [gainError, setGainError] = useState('');
   const [cutDraft, setCutDraft] = useState<CutDraft | null>(null);
   const [boundaryInput, setBoundaryInput] = useState<{ field: Boundary; text: string } | null>(null);
   const [view, setView] = useState<{ sourceStart: number; span: number } | null>(null);
   const [playing, setPlaying] = useState(false);
+  const meterChannels = Math.min(2, buffer.numberOfChannels);
+  const [levels, setLevels] = useState(() => emptyLevels(meterChannels));
   // 播放指针：可点击/拖拽/键盘定位，试听从这里开始。
   const [playhead, setPlayhead] = useState<number>(() => clamp(initialStart, 0, duration));
   const [markers, setMarkers] = useState(() => normalizeAudioMarkers(initialMarkers, duration));
   const [editingMarkerTime, setEditingMarkerTime] = useState<number | null>(null);
   const editingMarker = markers.find(marker => marker.time === editingMarkerTime);
   const [saveError, setSaveError] = useState('');
-  const [saved, setSaved] = useState({ start, end, cuts, markers, confirmed: false });
+  const [saved, setSaved] = useState({ start, end, cuts, gain, markers, confirmed: false });
 
   const dialogRef = useRef<HTMLDialogElement | null>(null);
   const markerEditorRef = useRef<HTMLDivElement | null>(null);
@@ -161,6 +214,9 @@ const AudioTrimDialog = ({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const sourcesRef = useRef<AudioBufferSourceNode[]>([]);
+  const splitterRef = useRef<ChannelSplitterNode | null>(null);
+  const previewGainRef = useRef<{ local: GainNode; overall: GainNode } | null>(null);
+  const previewVersionRef = useRef(0);
   const rafRef = useRef<number | null>(null);
   const playbackRef = useRef<{
     startedAt: number;
@@ -175,6 +231,7 @@ const AudioTrimDialog = ({
     anchorTime: number;
   } | null>(null);
   const tapRef = useRef<{ time: number; moved: boolean; canRelocate: boolean } | null>(null);
+  const cutPanRef = useRef<{ direction: -1 | 1; frame: number } | null>(null);
 
   const timeline = useMemo(() => buildWaveformTimeline(cuts, duration), [cuts, duration]);
   const viewSpan = Math.min(view?.span ?? timeline.length, timeline.length);
@@ -197,20 +254,38 @@ const AudioTrimDialog = ({
     : -1;
   const canApplyCut = Boolean(selection && selection.end - selection.start > 0.01
     && (!originalCut || selection.start !== originalCut.start || selection.end !== originalCut.end));
+  const canApplyGain = selection !== null && keptDuration(selection.start, selection.end, cuts) > 0.01;
 
   const stopPlayback = useCallback(() => {
+    previewVersionRef.current += 1;
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     rafRef.current = null;
     playbackRef.current = null;
     for (const source of sourcesRef.current) {
       try { source.onended = null; source.stop(); } catch { /* 已停止 */ }
+      source.disconnect();
     }
     sourcesRef.current = [];
+    splitterRef.current?.disconnect();
+    splitterRef.current = null;
+    previewGainRef.current?.local.disconnect();
+    previewGainRef.current?.overall.disconnect();
+    previewGainRef.current = null;
     setPlaying(false);
     // 指针保留在当前位置，方便暂停后继续定位。
   }, []);
 
   useEffect(() => stopPlayback, [stopPlayback]);
+
+  useEffect(() => {
+    const overall = previewGainRef.current?.overall;
+    if (overall) overall.gain.setTargetAtTime(dbToGain(gain.overallDb), overall.context.currentTime, 0.01);
+  }, [gain.overallDb]);
+
+  const stopCutPan = useCallback(() => {
+    if (cutPanRef.current) cancelAnimationFrame(cutPanRef.current.frame);
+    cutPanRef.current = null;
+  }, []);
 
   useLayoutEffect(() => {
     const dialog = dialogRef.current;
@@ -220,10 +295,11 @@ const AudioTrimDialog = ({
     dialog.showModal();
     page.style.overflow = 'hidden';
     return () => {
+      stopCutPan();
       dialog.close();
       page.style.overflow = previousOverflow;
     };
-  }, [minimized]);
+  }, [minimized, stopCutPan]);
 
   useEffect(() => {
     const canvas = overviewCanvasRef.current;
@@ -232,13 +308,13 @@ const AudioTrimDialog = ({
       const surface = prepareWaveform(canvas);
       if (!surface) return;
       const { context, width, height } = surface;
-      drawJoinedWaveform(context, width, height, peaks, duration, timeline, 0, timeline.length, () => '#a8b9ca');
+      drawJoinedWaveform(context, width, height, peaks, duration, timeline, 0, timeline.length, () => '#a8b9ca', gain);
     };
     draw();
     const observer = new ResizeObserver(draw);
     observer.observe(canvas);
     return () => observer.disconnect();
-  }, [peaks, duration, timeline]);
+  }, [peaks, duration, timeline, gain]);
 
   const drawWaveform = useCallback(() => {
     const canvas = canvasRef.current;
@@ -256,14 +332,20 @@ const AudioTrimDialog = ({
     context.fillStyle = 'rgba(251,146,60,0.07)';
     context.fillRect(rangeStartX, 0, Math.max(0, rangeEndX - rangeStartX), height);
 
-    // 当前选择（删除模式）
-    if (mode === 'cut' && selection) {
+    for (const range of gain.ranges) {
+      const from = clamp(xAtTime(range.start, width), 0, width);
+      const to = clamp(xAtTime(range.end, width), 0, width);
+      context.fillStyle = 'rgba(125,211,252,0.12)';
+      context.fillRect(from, 0, Math.max(0, to - from), height);
+    }
+
+    if (mode !== 'range' && selection) {
       const from = clamp(xAtTime(selection.start, width), 0, width);
       const to = clamp(xAtTime(selection.end, width), 0, width);
       if (to > from) {
         context.fillStyle = 'rgba(250,204,21,0.12)';
         context.fillRect(from, 0, to - from, height);
-        context.strokeStyle = 'rgba(250,204,21,0.8)';
+        context.strokeStyle = mode === 'gain' ? 'rgba(186,230,253,0.9)' : 'rgba(250,204,21,0.8)';
         context.lineWidth = 1;
         context.setLineDash([5, 4]);
         context.strokeRect(Math.round(from) + 0.5, 1, Math.max(1, to - from - 1), height - 2);
@@ -273,7 +355,7 @@ const AudioTrimDialog = ({
 
     // 波形
     drawJoinedWaveform(context, width, height, peaks, duration, timeline, viewStart, viewEnd,
-      x => x >= rangeStartX && x <= rangeEndX ? 'rgba(253,186,116,0.9)' : 'rgba(255,255,255,0.18)');
+      x => x >= rangeStartX && x <= rangeEndX ? 'rgba(253,186,116,0.9)' : 'rgba(255,255,255,0.18)', gain);
 
     // 范围边界手柄（仅首尾模式可拖）
     if (mode === 'range' && viewSpan > 0) {
@@ -288,7 +370,7 @@ const AudioTrimDialog = ({
       drawEdge(rangeStartX);
       drawEdge(rangeEndX);
     }
-  }, [duration, end, mode, peaks, selection, start, timeline, viewEnd, viewSpan, viewStart, xAtTime]);
+  }, [duration, end, gain, mode, peaks, selection, start, timeline, viewEnd, viewSpan, viewStart, xAtTime]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -361,7 +443,7 @@ const AudioTrimDialog = ({
   };
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (viewSpan <= 0) return;
+    if (viewSpan <= 0 || !event.isPrimary || event.button !== 0) return;
     const rect = event.currentTarget.getBoundingClientRect();
     const x = event.clientX - rect.left;
     const time = clamp(timeAtX(x, rect.width), 0, duration);
@@ -375,13 +457,13 @@ const AudioTrimDialog = ({
       && (Math.abs(x - startX) <= HANDLE_HIT_PX || Math.abs(x - endX) <= HANDLE_HIT_PX);
 
     // 指针附近（±7px）可直接拖动播放指针，但让位给首尾手柄，避免抢边界。
-    if (!nearRangeHandle && Math.abs(x - xAtTime(playhead, rect.width)) <= 7) {
+    if (mode !== 'gain' && !nearRangeHandle && Math.abs(x - xAtTime(playhead, rect.width)) <= 7) {
       setPlayhead(clamp(time, start, end));
       dragRef.current = { mode: 'playhead', originX: x, originStart: start, originEnd: end, anchorTime: time };
       return;
     }
 
-    if (mode === 'cut') {
+    if (mode !== 'range') {
       // 先记录锚点，等确认是拖动才生成选区；单击则定位指针。
       setCutDraft(null);
       dragRef.current = { mode: 'create', originX: x, originStart: time, originEnd: time, anchorTime: time };
@@ -398,9 +480,43 @@ const AudioTrimDialog = ({
     if (dragMode === 'create' || dragMode === 'move') tapRef.current = { time, moved: false, canRelocate: true };
   };
 
+  const updateCutDraft = (anchor: number, time: number) => {
+    setCutDraft(time >= anchor
+      ? { start: anchor, end: Math.min(duration, Math.max(anchor + MIN_CLIP_SECONDS, time)) }
+      : { start: Math.max(0, time), end: Math.max(anchor, time + MIN_CLIP_SECONDS) });
+  };
+
+  const extendCutAtEdge = (anchor: number, x: number, width: number) => {
+    const edge = Math.min(CUT_PAN_EDGE_PX, width / 4);
+    const direction = x <= edge ? -1 : x >= width - edge ? 1 : 0;
+    if (direction && cutPanRef.current?.direction === direction) return;
+    stopCutPan();
+
+    if (!direction || (direction < 0 ? viewStart <= 0 : viewStart >= maxViewStart)) {
+      updateCutDraft(anchor, timeAtX(clamp(x, 0, width), width));
+      return;
+    }
+
+    const edgeOffset = direction > 0 ? viewSpan : 0;
+    let left = viewStart;
+    let previousFrame = performance.now();
+    const step = (now: number) => {
+      const seconds = Math.min(now - previousFrame, 50) / 1000;
+      previousFrame = now;
+      left = clamp(left + direction * viewSpan * CUT_PAN_SPANS_PER_SECOND * seconds, 0, maxViewStart);
+      panViewTo(left);
+      updateCutDraft(anchor, timeline.toSource(left + edgeOffset));
+      cutPanRef.current = left > 0 && left < maxViewStart
+        ? { direction, frame: requestAnimationFrame(step) }
+        : null;
+    };
+    cutPanRef.current = { direction, frame: requestAnimationFrame(step) };
+    updateCutDraft(anchor, timeline.toSource(left + edgeOffset));
+  };
+
   const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
-    if (!drag) return;
+    if (!drag || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
     const rect = event.currentTarget.getBoundingClientRect();
     const x = event.clientX - rect.left;
     const tap = tapRef.current;
@@ -413,15 +529,12 @@ const AudioTrimDialog = ({
 
     if (drag.mode === 'create') {
       if (!tap?.moved) return;
-      const time = clamp(timeAtX(x, rect.width), 0, duration);
       const anchor = drag.anchorTime;
-      if (mode === 'cut') {
-        const nextSelection = time >= anchor
-          ? { start: anchor, end: Math.min(duration, Math.max(anchor + MIN_CLIP_SECONDS, time)) }
-          : { start: Math.max(0, time), end: Math.max(anchor, time + MIN_CLIP_SECONDS) };
-        setCutDraft(nextSelection);
+      if (mode !== 'range') {
+        extendCutAtEdge(anchor, x, rect.width);
         return;
       }
+      const time = clamp(timeAtX(x, rect.width), 0, duration);
       // 首尾模式：从锚点拖出新范围
       const from = Math.max(0, Math.min(anchor, time));
       const to = Math.min(duration, Math.max(anchor, time));
@@ -442,7 +555,9 @@ const AudioTrimDialog = ({
     }
   };
 
-  const handlePointerUp = () => {
+  const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!event.isPrimary) return;
+    stopCutPan();
     const drag = dragRef.current;
     const tap = tapRef.current;
     dragRef.current = null;
@@ -453,10 +568,10 @@ const AudioTrimDialog = ({
       if (tap && !tap.moved && tap.canRelocate) {
         // 单击：把播放指针移到点击处，不改动裁剪范围。
         setPlayhead(clamp(tap.time, start, end));
-        if (mode === 'cut') setCutDraft(null);
+        if (mode !== 'range') setCutDraft(null);
         return;
       }
-      if (mode === 'cut' && drag.mode === 'create') {
+      if (mode !== 'range' && drag.mode === 'create') {
         setCutDraft((current) => {
           if (current?.start === undefined || current.end === undefined) return null;
           const from = Math.max(start, current.start);
@@ -470,6 +585,7 @@ const AudioTrimDialog = ({
 
   const play = async () => {
     stopPlayback();
+    const previewVersion = previewVersionRef.current;
     const allParts = resolveKeptSegments(start, end, cuts);
     // 从播放指针开始：若指针落在删除段内，自动从下一个保留段接着播。
     const origin = clamp(playhead, start, end);
@@ -482,26 +598,56 @@ const AudioTrimDialog = ({
     }
     const context = getAudioContext();
     await context.resume();
+    if (previewVersion !== previewVersionRef.current) return;
+    const local = context.createGain();
+    const overall = context.createGain();
+    overall.gain.value = dbToGain(overallDbRef.current);
+    local.connect(overall);
+    overall.connect(context.destination);
+    previewGainRef.current = { local, overall };
+    // 在增益之后取样，电平表显示试听实际峰值。
+    const splitter = context.createChannelSplitter(meterChannels);
+    splitterRef.current = splitter;
+    overall.connect(splitter);
+    const meters = Array.from({ length: meterChannels }, (_, channel) => {
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 4096;
+      splitter.connect(analyser, channel);
+      return { analyser, samples: new Float32Array(analyser.fftSize) };
+    });
     // 分段精确调度：删除段被直接跳过，段与段之间无缝衔接。
     const startedAt = context.currentTime + 0.03;
+    scheduleAudioGain(local.gain, parts, { overallDb: 0, ranges: gain.ranges }, startedAt);
     let cursor = startedAt;
     const timeline: Array<{ at: number; from: number; duration: number }> = [];
     for (const part of parts) {
       const partDuration = part.end - part.start;
       const source = context.createBufferSource();
       source.buffer = buffer;
-      source.connect(context.destination);
+      source.connect(local);
       source.start(cursor, part.start, partDuration);
       sourcesRef.current.push(source);
       timeline.push({ at: cursor, from: part.start, duration: partDuration });
       cursor += partDuration;
     }
     playbackRef.current = { startedAt, total: cursor - startedAt, timeline };
+    setLevels(emptyLevels(meterChannels));
     setPlaying(true);
     const tick = () => {
       const playback = playbackRef.current;
       if (!playback) return;
       const elapsed = context.currentTime - playback.startedAt;
+      if (elapsed < 0) {
+        rafRef.current = requestAnimationFrame(tick);
+        return;
+      }
+      const readings = meters.map(({ analyser, samples }) => {
+        analyser.getFloatTimeDomainData(samples);
+        let peak = 0;
+        for (const sample of samples) peak = Math.max(peak, Math.abs(sample));
+        return 20 * Math.log10(peak);
+      });
+      setLevels(previous => readings.map((db, channel) => ({ db, peak: Math.max(previous[channel].peak, db) })));
       if (elapsed >= playback.total) { stopPlayback(); return; }
       let current = playback.timeline[0];
       for (const item of playback.timeline) {
@@ -549,7 +695,11 @@ const AudioTrimDialog = ({
 
   const save = () => {
     stopPlayback();
-    if (!onSave({ start, end, cuts: visibleCuts, markers: markersChanged ? markers : undefined })) {
+    if (!onSave({
+      start, end, cuts: visibleCuts,
+      gain: sameRecordingGain(gain, saved.gain) ? undefined : gain,
+      markers: markersChanged ? markers : undefined,
+    })) {
       setSaveError('裁剪无法保存到本机，请重试。');
       return;
     }
@@ -557,18 +707,41 @@ const AudioTrimDialog = ({
       ...current,
       cutHistory: current.cutHistory.map((snapshot, index) => index === current.cutHistoryIndex ? visibleCuts : snapshot),
     }));
-    setSaved({ start, end, cuts: visibleCuts, markers, confirmed: true });
+    setSaved({ start, end, cuts: visibleCuts, gain, markers, confirmed: true });
     setSaveError('');
   };
 
   // 有未保存改动时先确认，避免手快点了「取消」白剪一场。
   const dirty = useMemo(() => {
+    if (!sameRecordingGain(gain, saved.gain)) return true;
     if (start.toFixed(3) !== saved.start.toFixed(3) || end.toFixed(3) !== saved.end.toFixed(3)) return true;
     if (saved.cuts.length !== cuts.length) return true;
     return cuts.some((cut, index) => (
       cut.start !== saved.cuts[index].start || cut.end !== saved.cuts[index].end
     ));
-  }, [cuts, end, saved, start]);
+  }, [cuts, end, gain, saved, start]);
+
+  const applySelectionGain = (db: number) => {
+    if (!selection || !canApplyGain) return;
+    const ranges = replaceGainRange(gain.ranges, selection, db);
+    if (ranges.length > MAX_GAIN_RANGES) {
+      setGainError(`最多可保留 ${MAX_GAIN_RANGES} 个增益区间，请先还原部分区间。`);
+      return;
+    }
+    stopPlayback();
+    setGain({ ...gain, ranges });
+    setSelectionDb(db);
+    setGainError('');
+    setPlayhead(selection.start);
+  };
+
+  const changeMode = (next: EditMode) => {
+    if (next === mode) return;
+    setMode(next);
+    setCutDraft(null);
+    setBoundaryInput(null);
+    setGainError('');
+  };
 
   const requestClose = useCallback(() => {
     if ((dirty || markersChanged) && !window.confirm('这次编辑还没保存，确定放弃吗？')) return;
@@ -634,7 +807,7 @@ const AudioTrimDialog = ({
         movePlayhead(event.key === 'ArrowLeft' ? -step : step);
         return;
       }
-      if (event.key === ' ' && !target?.closest?.('[aria-controls="audio-marker-editor"], #audio-marker-editor button')) {
+      if (event.key === ' ' && !target?.closest?.('[aria-controls="audio-marker-editor"], #audio-marker-editor button, [data-gain-controls]')) {
         event.preventDefault();
         if (playing) stopPlayback(); else void play();
         return;
@@ -653,7 +826,7 @@ const AudioTrimDialog = ({
   }, [movePlayhead, playing, stopPlayback, play, start, end, mode, canApplyCut, addCut, addMarker, stepCutHistory]);
 
   const setBoundary = (field: Boundary, value: number | undefined) => {
-    if (mode === 'cut') {
+    if (mode !== 'range') {
       setCutDraft((current) => {
         const { min, max } = boundaryLimits(field, current ?? {}, start, end);
         return { ...current, [field]: value === undefined ? undefined : clamp(value, min, max) };
@@ -666,9 +839,9 @@ const AudioTrimDialog = ({
     setValue(clamp(value, min, max));
   };
 
-  const activeRange = mode === 'cut' ? cutDraft ?? {} : { start, end };
+  const activeRange = mode === 'range' ? { start, end } : cutDraft ?? {};
   const getBoundaryLimits = (field: Boundary) => boundaryLimits(
-    field, activeRange, mode === 'cut' ? start : 0, mode === 'cut' ? end : duration,
+    field, activeRange, mode === 'range' ? 0 : start, mode === 'range' ? duration : end,
   );
   const nudge = (field: Boundary, delta: number) => {
     setBoundaryInput(null);
@@ -709,8 +882,9 @@ const AudioTrimDialog = ({
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-4 py-3 sm:px-6 sm:py-4 [&>*]:shrink-0">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex rounded-xl border border-white/10 bg-black/30 p-1">
-              <button type="button" onClick={() => { setMode('range'); setCutDraft(null); }} className={`rounded-lg px-3 py-1.5 text-xs font-black transition ${mode === 'range' ? 'bg-orange-300 text-black' : 'text-white/55 hover:text-white'}`}>裁剪首尾</button>
-              <button type="button" onClick={() => setMode('cut')} className={`rounded-lg px-3 py-1.5 text-xs font-black transition ${mode === 'cut' ? 'bg-red-300 text-black' : 'text-white/55 hover:text-white'}`}>删除中间片段</button>
+              <button type="button" onClick={() => changeMode('range')} className={`rounded-lg px-3 py-1.5 text-xs font-black transition ${mode === 'range' ? 'bg-orange-300 text-black' : 'text-white/55 hover:text-white'}`}>裁剪首尾</button>
+              <button type="button" onClick={() => changeMode('cut')} className={`rounded-lg px-3 py-1.5 text-xs font-black transition ${mode === 'cut' ? 'bg-red-300 text-black' : 'text-white/55 hover:text-white'}`}>删除中间片段</button>
+              <button type="button" onClick={() => changeMode('gain')} aria-pressed={mode === 'gain'} className={`rounded-lg px-3 py-1.5 text-xs font-black transition ${mode === 'gain' ? 'bg-sky-200 text-black' : 'text-white/55 hover:text-white'}`}>局部增益</button>
             </div>
             <div className="flex items-center gap-1.5">
               <button type="button" onClick={() => zoomBy(1 / 1.6)} title="缩小" aria-label="缩小波形" className="grid h-9 w-9 place-items-center rounded-xl border border-white/10 text-white/60 transition hover:border-white/25 hover:text-white"><ZoomOut className="h-4 w-4" /></button>
@@ -725,6 +899,13 @@ const AudioTrimDialog = ({
             <span className="text-white/45">保留 <b className="font-black text-emerald-300">{formatDuration(kept, true)}</b></span>
             {visibleCuts.length > 0 && <span className="text-red-200/80">已删 {visibleCuts.length} 段（{formatDuration(Math.max(0, (end - start) - kept), true)}）</span>}
             {selectedCutIndex >= 0 && <span className="text-amber-200/80">已选中第 {selectedCutIndex + 1} 个删除段</span>}
+          </div>
+
+          <div data-gain-controls className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-white/10 bg-sky-300/5 px-3 py-2">
+            <Volume2 aria-hidden="true" className="hidden h-4 w-4 shrink-0 text-sky-200 sm:block" />
+            <GainControl label="整段增益" db={gain.overallDb} onChange={overallDb => setGain(current => ({ ...current, overallDb }))} />
+            <button type="button" onClick={() => setGain(current => ({ ...current, overallDb: 0 }))}
+              aria-label="还原整段增益" className="rounded-lg border border-white/15 px-2 py-1 text-xs text-white/70 hover:text-white">归零</button>
           </div>
 
           <div className="mt-3">
@@ -780,6 +961,7 @@ const AudioTrimDialog = ({
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
             onPointerCancel={handlePointerUp}
+            onLostPointerCapture={handlePointerUp}
           >
             <canvas ref={canvasRef} className="absolute inset-0 block h-full w-full cursor-crosshair rounded-[inherit]" />
             {viewSpan > 0 && viewMarkers.map(({ time, color, topic, note }) => {
@@ -815,14 +997,56 @@ const AudioTrimDialog = ({
             </div>
           </div>
 
+          <div className="mt-2 rounded-xl border border-white/10 bg-black/25 px-2.5 py-2 sm:px-3" aria-label="试听峰值电平">
+            <div className="mb-1.5 flex flex-wrap items-center gap-x-2 text-[11px] text-white/60">
+              <span className="font-medium">试听峰值电平 <span className="font-mono">dBFS</span></span>
+              {levels.some(level => level.peak >= 0) && (
+                <span className="font-medium text-red-300" title="试听的数字采样峰值达到或超过 0 dBFS">达到满刻度</span>
+              )}
+            </div>
+            <div className="grid grid-cols-[2.5rem_minmax(0,1fr)_3.75rem] items-center gap-x-2 gap-y-1 font-mono text-[11px] tabular-nums">
+              {levels.map((level, channel) => {
+                const label = meterChannels === 1 ? '单声道' : channel === 0 ? 'L' : 'R';
+                const db = playing ? level.db : -Infinity;
+                const text = !playing ? '—' : Number.isFinite(db) ? db.toFixed(1) : '−∞';
+                return (
+                  <div key={label} className="contents">
+                    <span className={level.peak >= 0 ? 'font-bold text-red-300' : 'text-white/65'}>{label}</span>
+                    <div
+                      role="meter"
+                      aria-label={`${label} 声道峰值电平`}
+                      aria-valuemin={METER_FLOOR_DB}
+                      aria-valuemax={0}
+                      aria-valuenow={clamp(db, METER_FLOOR_DB, 0)}
+                      aria-valuetext={!playing ? '未播放' : Number.isFinite(db) ? `${text} dBFS` : '静音'}
+                      className="relative h-2.5 overflow-hidden rounded-sm bg-white/10"
+                    >
+                      <div className="absolute inset-0" style={{ background: METER_GRADIENT, clipPath: `inset(0 ${100 - levelPercent(db)}% 0 0)` }} />
+                      {level.peak > METER_FLOOR_DB && (
+                        <span className="absolute inset-y-0 w-px bg-white/90" style={{ left: `clamp(0px, ${levelPercent(level.peak)}%, calc(100% - 1px))` }} />
+                      )}
+                    </div>
+                    <span className={`text-right ${db >= -6 ? 'text-red-300' : 'text-white/70'}`}>{text}</span>
+                  </div>
+                );
+              })}
+              <div className="relative col-start-2 mt-0.5 h-3 text-[10px] leading-3 text-white/45" aria-hidden="true">
+                {METER_TICKS.map((db, index) => (
+                  <span key={db} className={`absolute ${db === -48 || db === -24 || db === -12 ? 'hidden sm:block' : ''}`}
+                    style={{ left: `${levelPercent(db)}%`, transform: `translateX(-${index === 0 ? 0 : db === 0 ? 100 : 50}%)` }}>{db}</span>
+                ))}
+              </div>
+            </div>
+          </div>
+
           {mode === 'range' ? (
             <p className="mt-2 text-[11px] leading-5 text-white/35">
               单击波形定位播放指针（也可直接拖动绿线）；拖橙色边界调首尾；拖范围内侧整体平移；拖空白处重新框选。
             </p>
-          ) : (
+          ) : mode === 'cut' ? (
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <p className="text-[11px] leading-5 text-white/35">
-                拖动波形框选，或输入原音频的待删起止秒数。点击下方的已删时段可调整或恢复。
+                拖动波形框选，拖到两侧可继续延伸。也可输入待删起止秒数，或点击下方已删时段调整和恢复。
               </p>
               <button
                 type="button"
@@ -840,6 +1064,35 @@ const AudioTrimDialog = ({
               >
                 <Redo2 className="h-3.5 w-3.5" />恢复这段
               </button>
+            </div>
+          ) : (
+            <div data-gain-controls className="mt-2 rounded-xl border border-sky-200/20 bg-sky-300/5 px-3 py-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <GainControl label="选区增益" db={selectionDb} onChange={setSelectionDb} />
+                <button type="button" disabled={!canApplyGain} onClick={() => applySelectionGain(selectionDb)}
+                  className="rounded-lg bg-sky-200 px-3 py-1.5 text-xs font-bold text-black disabled:opacity-30">应用到选区</button>
+                <button type="button" disabled={!canApplyGain} onClick={() => applySelectionGain(0)}
+                  className="rounded-lg border border-white/15 px-3 py-1.5 text-xs text-white/75 disabled:opacity-30">还原选区</button>
+                <p className="text-xs text-white/60">
+                  {selection
+                    ? `${formatDuration(selection.start, true)}–${formatDuration(selection.end, true)} · 与整段增益叠加`
+                    : '在波形上拖选，或输入下方起止时间。'}
+                </p>
+              </div>
+              {gainError && <p role="alert" className="mt-1 text-xs text-red-200">{gainError}</p>}
+              {gain.ranges.length > 0 && (
+                <div className="mt-2 flex max-h-20 flex-wrap gap-1.5 overflow-y-auto">
+                  {gain.ranges.filter(range => range.end > start && range.start < end).map(range => (
+                    <button key={range.start} type="button" onClick={() => {
+                      setBoundaryInput(null);
+                      setCutDraft({ start: Math.max(start, range.start), end: Math.min(end, range.end) });
+                      setSelectionDb(range.db);
+                    }} className="rounded-full border border-sky-200/25 px-2.5 py-1 font-mono text-[11px] text-sky-100 hover:bg-sky-300/15">
+                      {formatDuration(range.start, true)}–{formatDuration(range.end, true)} · {formatGain(range.db)}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -900,7 +1153,7 @@ const AudioTrimDialog = ({
                     {(['start', 'end'] as const).map(field => {
                       const { min, max } = getBoundaryLimits(field);
                       const boundary = field === 'start' ? '起点' : '终点';
-                      const target = `${mode === 'cut' ? '待删' : '范围'}${boundary}`;
+                      const target = `${mode === 'cut' ? '待删' : mode === 'gain' ? '选区' : '范围'}${boundary}`;
                       const allowed = time >= min - 1e-9 && time <= max + 1e-9;
                       return (
                         <button
@@ -986,7 +1239,7 @@ const AudioTrimDialog = ({
           <div className="mt-4 grid gap-2 sm:grid-cols-2">
             {(['start', 'end'] as const).map((field) => {
               const value = activeRange[field];
-              const label = `${mode === 'cut' ? '待删' : '范围'}${field === 'start' ? '起点' : '终点'}`;
+              const label = `${mode === 'cut' ? '待删' : mode === 'gain' ? '选区' : '范围'}${field === 'start' ? '起点' : '终点'}`;
               const { min, max } = getBoundaryLimits(field);
               return (
                 <div key={field} className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
@@ -999,7 +1252,7 @@ const AudioTrimDialog = ({
                       min={min}
                       max={max}
                       step={0.001}
-                      placeholder={mode === 'cut' ? '秒数' : undefined}
+                      placeholder={mode !== 'range' ? '秒数' : undefined}
                       value={boundaryInput?.field === field ? boundaryInput.text : value === undefined ? '' : Number(value.toFixed(3))}
                       onChange={(event) => {
                         const input = event.currentTarget;

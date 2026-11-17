@@ -15,6 +15,7 @@ import {
 import { decodeAudioBlob, downloadBlob, encodeAudioClipToWav, formatDuration, formatFileSize as formatRecordingSize, getAudioContext } from './audioClipping';
 import AudioTrimDialog from './AudioTrimDialog';
 import { loadLegacyAudioMarkers, type AudioMarker } from './audioMarkers';
+import { hasRecordingGain, sameRecordingGain, scheduleAudioGain, type RecordingGain } from './audioGain';
 
 export interface SongRecordingsHandle {
   upload: (file: File) => Promise<void>;
@@ -63,6 +64,8 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
   /** 解码后的音频只留最近一条：播放和裁剪共用，省掉重复解码。 */
   const bufferCacheRef = useRef<{ id: string; buffer: AudioBuffer } | null>(null);
   const sourcesRef = useRef<AudioBufferSourceNode[]>([]);
+  const playbackGainRef = useRef<GainNode | null>(null);
+  const playbackVersionRef = useRef(0);
   const urlCacheRef = useRef(new Map<string, string>());
   const recordingsRef = useRef(recordings);
   recordingsRef.current = recordings;
@@ -171,6 +174,9 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
         ))) {
           throw new Error('RECORDING_MARKERS_UNSUPPORTED');
         }
+        if (payload.gain !== undefined && !sameRecordingGain(payload.gain, remote?.gain)) {
+          throw new Error('RECORDING_GAIN_UNSUPPORTED');
+        }
         const synced: SongRecording = remote ? { ...remote, localBlobId: latest.localBlobId } : payload;
         commitWith((items) => items.map((item) => (item.id === id ? synced : item)));
         setMessage('录音已同步到云端，换设备也能听到。');
@@ -205,18 +211,24 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
   }, [session?.alias, syncRecording]);
 
   useEffect(() => () => {
+    playbackVersionRef.current += 1;
     for (const source of sourcesRef.current) { try { source.onended = null; source.stop(); } catch { /* 已停止 */ } }
     sourcesRef.current = [];
+    playbackGainRef.current?.disconnect();
     if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
     for (const url of urlCacheRef.current.values()) URL.revokeObjectURL(url);
     urlCacheRef.current.clear();
   }, []);
 
   const stopPlayback = () => {
+    playbackVersionRef.current += 1;
+    setBusy(current => current === '正在加载音频…' ? '' : current);
     for (const source of sourcesRef.current) {
       try { source.onended = null; source.stop(); } catch { /* 已停止 */ }
     }
     sourcesRef.current = [];
+    playbackGainRef.current?.disconnect();
+    playbackGainRef.current = null;
     const audio = audioRef.current;
     if (audio) { audio.pause(); try { audio.currentTime = 0; } catch { /* ignore */ } }
     setPlayingId(null);
@@ -245,8 +257,9 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
    * 兜底播放：解码失败（超大文件 / 特殊编码）时交给 <audio>。
    * 跳段精度受 timeupdate（约 250ms）限制，所以只当备用。
    */
-  const playFromElement = async (recording: SongRecording) => {
+  const playFromElement = async (recording: SongRecording, version: number) => {
     const url = await playableUrl(recording);
+    if (version !== playbackVersionRef.current) return;
     const audio = audioRef.current ?? new Audio();
     audioRef.current = audio;
     audio.src = url;
@@ -263,7 +276,7 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
     };
     audio.currentTime = recording.clipStart;
     await audio.play();
-    setPlayingId(recording.id);
+    if (version === playbackVersionRef.current) setPlayingId(recording.id);
   };
 
   /**
@@ -274,15 +287,25 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
   const togglePlay = async (recording: SongRecording) => {
     if (playingId === recording.id) { stopPlayback(); return; }
     stopPlayback();
+    const version = playbackVersionRef.current;
 
     let buffer = bufferCacheRef.current?.id === recording.id ? bufferCacheRef.current.buffer : null;
     if (!buffer) {
       setBusy('正在加载音频…');
       buffer = await loadBuffer(recording).catch(() => null);
-      setBusy('');
+      setBusy(current => current === '正在加载音频…' && version === playbackVersionRef.current ? '' : current);
     }
+    if (version !== playbackVersionRef.current) return;
     if (!buffer) {
-      try { await playFromElement(recording); } catch { setMessage('这段录音暂时无法播放，请重新上传。'); }
+      if (hasRecordingGain(recording.gain)) {
+        setMessage('无法读取音频来应用已保存的增益，请重试。');
+        return;
+      }
+      try {
+        await playFromElement(recording, version);
+      } catch {
+        if (version === playbackVersionRef.current) setMessage('这段录音暂时无法播放，请重新上传。');
+      }
       return;
     }
     bufferCacheRef.current = { id: recording.id, buffer };
@@ -293,23 +316,37 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
     try {
       const context = getAudioContext();
       await context.resume();
+      if (version !== playbackVersionRef.current) return;
       const startedAt = context.currentTime + 0.03;
+      const gainNode = recording.gain && hasRecordingGain(recording.gain) ? context.createGain() : null;
+      if (gainNode && recording.gain) {
+        playbackGainRef.current = gainNode;
+        gainNode.connect(context.destination);
+        scheduleAudioGain(gainNode.gain, parts, recording.gain, startedAt);
+      }
       let cursor = startedAt;
       const sources: AudioBufferSourceNode[] = [];
+      sourcesRef.current = sources;
       for (const part of parts) {
         const duration = part.end - part.start;
         const source = context.createBufferSource();
         source.buffer = buffer;
-        source.connect(context.destination);
+        source.connect(gainNode ?? context.destination);
         source.start(cursor, part.start, duration);
         cursor += duration;
         sources.push(source);
       }
       const last = sources[sources.length - 1];
-      if (last) last.onended = () => { sourcesRef.current = []; setPlayingId(null); };
-      sourcesRef.current = sources;
+      if (last) last.onended = () => {
+        gainNode?.disconnect();
+        playbackGainRef.current = null;
+        sourcesRef.current = [];
+        setPlayingId(null);
+      };
       setPlayingId(recording.id);
     } catch {
+      if (version !== playbackVersionRef.current) return;
+      stopPlayback();
       setMessage('这段录音暂时无法播放，请重新上传。');
     }
   };
@@ -420,7 +457,7 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
     void syncRecording(id, recording);
   };
 
-  const saveTrim = (clip: { start: number; end: number; cuts: AudioCut[]; markers?: AudioMarker[] }) => {
+  const saveTrim = (clip: { start: number; end: number; cuts: AudioCut[]; gain?: RecordingGain; markers?: AudioMarker[] }) => {
     if (!trimming) return false;
     // 裁剪期间录音可能已经上传完成，必须并到最新那条记录上，避免把 fileID 冲掉。
     const latest = recordingsRef.current.find((item) => item.id === trimming.recording.id);
@@ -436,6 +473,7 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
       clipStart: Number(clip.start.toFixed(3)),
       clipEnd,
       cuts: normalizeAudioCuts(clip.cuts, clip.start, clip.end),
+      ...(clip.gain === undefined ? {} : { gain: clip.gain }),
       ...(markers === undefined ? {} : { markers }),
       pendingSync: true,
       updatedAt: new Date().toISOString(),
@@ -452,7 +490,7 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
       const buffer = await loadBuffer(recording);
       const segments = resolveKeptSegments(recording.clipStart, recording.clipEnd, recording.cuts);
       if (!segments.length) { setMessage('没有可导出的片段，请检查删除段是否覆盖了全部内容。'); return; }
-      const blob = encodeAudioClipToWav(buffer, segments);
+      const blob = encodeAudioClipToWav(buffer, segments, recording.gain);
       downloadBlob(blob, `${song.title} - ${recording.title}（裁剪）.wav`);
       setMessage(`已导出 WAV（${segments.length} 段拼接）；原文件仍完整保留。`);
     } catch (error) {
@@ -532,10 +570,21 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
           const kept = keptDuration(recording.clipStart, recording.clipEnd, cuts);
           const trimmed = recording.clipStart > 0.01 || recording.clipEnd < recording.duration - 0.01 || cuts.length > 0;
           return (
-            <div key={recording.id} className="rounded-xl border border-white/8 bg-black/25 p-3">
+            <div key={recording.id} className="relative isolate rounded-xl border border-white/8 bg-black/25 p-3">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="truncate text-sm font-bold text-white">{recording.title}</div>
+                  {canManage ? (
+                    <button
+                      type="button"
+                      onClick={() => void openTrim(recording)}
+                      title="打开波形裁剪"
+                      className="block max-w-full text-left text-sm font-bold text-white after:absolute after:inset-0 after:rounded-xl after:content-[''] hover:text-orange-100 focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-orange-300"
+                    >
+                      <span className="block truncate">{recording.title}</span>
+                    </button>
+                  ) : (
+                    <div className="truncate text-sm font-bold text-white">{recording.title}</div>
+                  )}
                   <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-white/40">
                     <span>{formatDuration(recording.duration)}</span>
                     <span className="text-white/15">·</span>
@@ -558,7 +607,7 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
                             type="button"
                             onClick={() => void syncRecording(recording.id)}
                             disabled={syncingId === recording.id}
-                            className="inline-flex items-center gap-1 text-amber-200/85 underline decoration-dotted underline-offset-2 transition hover:text-amber-100 disabled:opacity-50"
+                            className="relative z-10 inline-flex items-center gap-1 text-amber-200/85 underline decoration-dotted underline-offset-2 transition hover:text-amber-100 disabled:opacity-50"
                           >
                             {syncingId === recording.id && <Loader2 className="h-3 w-3 animate-spin" />}
                             {syncingId === recording.id ? '同步中' : '重试同步'}
@@ -568,7 +617,7 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
                     )}
                   </div>
                 </div>
-                <div className="flex shrink-0 items-center gap-1">
+                <div className="relative z-10 flex shrink-0 items-center gap-1">
                   <button type="button" onClick={() => void togglePlay(recording)} aria-label={isPlaying ? '停止播放' : '播放裁剪片段'} className={`grid h-8 w-8 place-items-center rounded-full transition ${isPlaying ? 'bg-emerald-300 text-black' : 'border border-white/10 text-white/65 hover:border-white/25 hover:text-white'}`}>
                     {isPlaying ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
                   </button>
@@ -602,6 +651,7 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
           initialStart={trimming.recording.clipStart}
           initialEnd={trimming.recording.clipEnd}
           initialCuts={trimming.recording.cuts}
+          initialGain={trimming.recording.gain}
           initialMarkers={trimming.recording.markers ?? loadLegacyAudioMarkers(
             window.localStorage, session?.alias ?? '', trimming.recording.id, trimming.buffer.duration,
           )}

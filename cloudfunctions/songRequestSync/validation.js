@@ -411,6 +411,24 @@ const validateRecording = (value) => {
     if (cutStart < clipStart - 0.01 || cutEnd <= cutStart || cutEnd > clipEnd + 0.5) throw new Error('INVALID_RECORDING');
     return { start: cutStart, end: cutEnd };
   }).sort((left, right) => left.start - right.start);
+  let gain;
+  if (value.gain !== undefined) {
+    const validDb = (db) => Number.isFinite(db) && db >= -60 && db <= 24;
+    const { overallDb, ranges } = value.gain ?? {};
+    if (!validDb(overallDb) || !Array.isArray(ranges) || ranges.length > 100) throw new Error('INVALID_RECORDING');
+    let previousEnd = 0;
+    gain = {
+      overallDb,
+      ranges: ranges.map((range) => {
+        if (!range || !validDb(range.db) || range.db === 0 || !Number.isFinite(range.start)
+          || !Number.isFinite(range.end) || range.start < previousEnd || range.end <= range.start || range.end > duration) {
+          throw new Error('INVALID_RECORDING');
+        }
+        previousEnd = range.end;
+        return { start: range.start, end: range.end, db: range.db };
+      }),
+    };
+  }
   const createdAt = cleanOptionalText(value.createdAt, 40, 'INVALID_RECORDING') || new Date().toISOString();
   const updatedAt = cleanOptionalText(value.updatedAt, 40, 'INVALID_RECORDING') || createdAt;
   let markers;
@@ -434,6 +452,7 @@ const validateRecording = (value) => {
   return {
     id, songId, songTitle, songArtist, title, fileName, mimeType, fileID: value.fileID,
     size: value.size, duration, clipStart, clipEnd, ...(cuts.length ? { cuts } : {}),
+    ...(gain === undefined ? {} : { gain }),
     ...(markers === undefined ? {} : { markers }), createdAt, updatedAt,
   };
 };
