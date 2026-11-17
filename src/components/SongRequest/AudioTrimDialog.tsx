@@ -524,10 +524,10 @@ const AudioTrimDialog = ({
     const time = clamp(Number(sourceTime.toFixed(3)), 0, duration);
     setMarkers(current => current.some(marker => marker.time === time)
       ? current
-      : [...current, { time, note: '', color: DEFAULT_AUDIO_MARKER_COLOR }].sort((left, right) => left.time - right.time));
+      : [...current, { time, topic: '', note: '', color: DEFAULT_AUDIO_MARKER_COLOR }].sort((left, right) => left.time - right.time));
   };
 
-  const updateMarker = (time: number, patch: Partial<Pick<AudioMarker, 'note' | 'color'>>) => {
+  const updateMarker = (time: number, patch: Partial<Pick<AudioMarker, 'topic' | 'note' | 'color'>>) => {
     setMarkers(current => current.map(marker => marker.time === time ? { ...marker, ...patch } : marker));
   };
 
@@ -541,7 +541,8 @@ const AudioTrimDialog = ({
   const markersChanged = saved.markers.length !== markers.length
     || markers.some((marker, index) => {
       const previous = saved.markers[index];
-      return marker.time !== previous.time || marker.note !== previous.note || marker.color !== previous.color;
+      return marker.time !== previous.time || marker.topic !== previous.topic
+        || marker.note !== previous.note || marker.color !== previous.color;
     });
 
   const save = () => {
@@ -773,7 +774,7 @@ const AudioTrimDialog = ({
             onPointerCancel={handlePointerUp}
           >
             <canvas ref={canvasRef} className="absolute inset-0 block h-full w-full cursor-crosshair rounded-[inherit]" />
-            {viewSpan > 0 && viewMarkers.map(({ time, color, note }) => {
+            {viewSpan > 0 && viewMarkers.map(({ time, color, topic, note }) => {
               const position = timeline.toDisplay(time);
               if (position < viewStart || position > viewEnd) return null;
               const label = markerTimeLabel(time);
@@ -784,7 +785,7 @@ const AudioTrimDialog = ({
                     aria-label={`编辑标记 ${label}`}
                     aria-expanded={editingMarkerTime === time}
                     aria-controls="audio-marker-editor"
-                    title={note.trim() || `编辑标记 ${label}`}
+                    title={[topic?.trim(), note.trim()].filter(Boolean).join('\n') || `编辑标记 ${label}`}
                     onPointerDown={event => event.stopPropagation()}
                     onClick={() => setEditingMarkerTime(time)}
                     className="pointer-events-auto absolute top-0 z-10 grid h-7 w-7 -translate-x-1/2 place-items-center rounded-md hover:bg-black/55 focus-visible:outline focus-visible:outline-2 focus-visible:outline-current"
@@ -868,8 +869,9 @@ const AudioTrimDialog = ({
 
           {markers.length > 0 && (
             <ul aria-label="音频标记" className="mt-2 flex max-h-24 flex-wrap gap-1.5 overflow-y-auto overscroll-contain">
-              {markers.map(({ time, note, color }) => {
+              {markers.map(({ time, topic, note, color }) => {
                 const label = markerTimeLabel(time);
+                const preview = topic?.trim() || note.trim();
                 return (
                   <li key={time} className="inline-flex max-w-full items-center rounded-full border border-white/15 bg-white/[.06] text-white/85">
                     <button type="button" aria-label={`跳到标记 ${label}`} onClick={() => jumpToMarker(time)} style={{ color }} className="inline-flex min-h-8 shrink-0 items-center gap-1 rounded-l-full pl-2 pr-1 font-mono text-[11px] hover:bg-white/10">
@@ -877,15 +879,15 @@ const AudioTrimDialog = ({
                     </button>
                     <button
                       type="button"
-                      aria-label={`编辑标记 ${label}的备注和颜色`}
+                      aria-label={`编辑标记 ${label}的主题、备注和颜色`}
                       aria-expanded={editingMarkerTime === time}
                       aria-controls="audio-marker-editor"
-                      title={note.trim() || '编辑备注和颜色'}
+                      title={[topic?.trim(), note.trim()].filter(Boolean).join('\n') || '编辑主题、备注和颜色'}
                       onClick={() => setEditingMarkerTime(time)}
                       className="inline-flex min-h-8 min-w-8 items-center justify-center gap-1.5 border-l border-white/10 px-1.5 text-[11px] text-white/75 hover:bg-white/10 aria-expanded:bg-white/10"
                     >
                       <Pencil aria-hidden="true" className="h-3 w-3 shrink-0" />
-                      {note.trim() && <span className="max-w-[7rem] truncate">{note.trim()}</span>}
+                      {preview && <span className="max-w-[7rem] truncate">{preview}</span>}
                     </button>
                     {(['start', 'end'] as const).map(field => {
                       const { min, max } = getBoundaryLimits(field);
@@ -900,8 +902,8 @@ const AudioTrimDialog = ({
                           title={allowed ? `设为${target}` : `此标记超出${target}的可用范围`}
                           disabled={!allowed}
                           onClick={() => { stopPlayback(); setBoundaryInput(null); setBoundary(field, time); }}
-                          className="min-h-8 shrink-0 whitespace-nowrap border-l border-white/10 px-1.5 text-[11px] enabled:hover:bg-white/10 enabled:hover:text-white disabled:opacity-35"
-                        >设为{boundary}</button>
+                          className="min-h-8 min-w-8 shrink-0 whitespace-nowrap border-l border-white/10 px-1.5 text-[11px] enabled:hover:bg-white/10 enabled:hover:text-white disabled:opacity-35"
+                        >{field === 'start' ? '起' : '终'}</button>
                       );
                     })}
                     <button type="button" aria-label={`移除标记 ${label}`} onClick={() => {
@@ -932,7 +934,16 @@ const AudioTrimDialog = ({
                 <button type="button" onClick={() => setEditingMarkerTime(null)} className="min-h-8 rounded-lg px-3 text-xs font-bold text-white/65 hover:bg-white/10 hover:text-white">完成</button>
               </div>
               <label className="grid gap-1.5 text-xs font-semibold text-white/75">
-                感受备注
+                主题
+                <input
+                  type="text"
+                  value={editingMarker.topic ?? ''}
+                  onChange={event => updateMarker(editingMarker.time, { topic: event.currentTarget.value })}
+                  className="min-w-0 rounded-lg border border-white/10 bg-black/35 px-3 py-2 text-sm text-white outline-none focus:border-sky-300/55"
+                />
+              </label>
+              <label className="grid gap-1.5 text-xs font-semibold text-white/75">
+                备注
                 <textarea
                   rows={3}
                   value={editingMarker.note}

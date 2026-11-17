@@ -906,9 +906,15 @@ function createHandler(store) {
         const recordings = [...(workspace.recordings || [])];
         const index = recordings.findIndex((item) => item.id === request.recording.id);
         const existingMarkers = recordings[index]?.markers;
+        // Older clients omit topics even when they send the marker list.
+        const topicsByTime = new Map((existingMarkers ?? []).map(({ time, topic }) => [time, topic]));
+        const markers = request.recording.markers?.map((marker) => {
+          const topic = topicsByTime.get(marker.time);
+          return marker.topic === undefined && topic !== undefined ? { ...marker, topic } : marker;
+        }) ?? existingMarkers;
         const saved = {
-          ...(existingMarkers === undefined ? {} : { markers: existingMarkers }),
           ...request.recording,
+          ...(markers === undefined ? {} : { markers }),
           workspaceId: id,
           updatedAt: store.now(),
         };

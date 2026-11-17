@@ -164,7 +164,9 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
           latest = current;
           continue;
         }
-        if (payload.markers !== undefined && remote?.markers === undefined) {
+        if (payload.markers !== undefined && (remote?.markers === undefined || payload.markers.some(
+          ({ topic }, index) => topic !== undefined && topic !== remote.markers?.[index]?.topic,
+        ))) {
           throw new Error('RECORDING_MARKERS_UNSUPPORTED');
         }
         const synced: SongRecording = remote ? { ...remote, localBlobId: latest.localBlobId } : payload;

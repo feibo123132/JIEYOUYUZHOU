@@ -80,7 +80,8 @@ test('recording markers sync privately and survive older clients saving trims', 
     fileName: 'take.mp3', mimeType: 'audio/mpeg', size: 100, duration: 30, clipStart: 0, clipEnd: 30,
     createdAt: '2026-08-25T12:00:00.000Z', updatedAt: '2026-08-25T12:00:00.000Z',
   };
-  const markers = [{ time: 23.456, note: '这里很好听\n✅ 原调', color: '#fda4af' }];
+  const originalMarker = { time: 23.456, note: '这里很好听\n✅ 原调', color: '#fda4af' };
+  const markers = [{ ...originalMarker, topic: '原调' }];
   const save = fields => handler({ action: 'recordings:save', ...account, recording: { ...recording, ...fields } });
   const pull = credentials => handler({ action: 'recordings:pull', ...credentials });
   assert.equal((await save({})).recording.markers, undefined);
@@ -89,6 +90,9 @@ test('recording markers sync privately and survive older clients saving trims', 
   assert.equal(trimmed.recording.clipEnd, 20);
   assert.deepEqual(trimmed.recording.markers, markers);
   assert.deepEqual((await pull(account)).recordings[0].markers, markers);
+  assert.deepEqual((await save({ markers: [originalMarker] })).recording.markers, markers);
+  assert.deepEqual((await save({ markers: [{ ...originalMarker, topic: '' }] })).recording.markers,
+    [{ ...originalMarker, topic: '' }]);
   assert.deepEqual((await pull(other)).recordings, []);
   assert.equal((await save({ markers: [{ ...markers[0], time: 31 }] })).ok, false);
   assert.deepEqual((await save({ markers: [] })).recording.markers, []);

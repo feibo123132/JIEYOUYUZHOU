@@ -420,11 +420,15 @@ const validateRecording = (value) => {
     markers = value.markers.map((marker) => {
       if (!marker || !Number.isFinite(marker.time) || marker.time < 0 || marker.time > duration
         || times.has(marker.time) || typeof marker.note !== 'string'
+        || (marker.topic !== undefined && typeof marker.topic !== 'string')
         || typeof marker.color !== 'string' || !/^#[0-9a-f]{6}$/i.test(marker.color)) {
         throw new Error('INVALID_RECORDING');
       }
       times.add(marker.time);
-      return { time: marker.time, note: marker.note, color: marker.color.toLowerCase() };
+      return {
+        time: marker.time, note: marker.note, color: marker.color.toLowerCase(),
+        ...(marker.topic === undefined ? {} : { topic: marker.topic }),
+      };
     }).sort((left, right) => left.time - right.time);
   }
   return {

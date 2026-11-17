@@ -8,6 +8,7 @@ export const AUDIO_MARKER_COLORS = [
 
 export interface AudioMarker {
   time: number;
+  topic?: string;
   note: string;
   color: typeof AUDIO_MARKER_COLORS[number]['value'];
 }
@@ -24,6 +25,7 @@ export const normalizeAudioMarkers = (entries: unknown, duration: number): Audio
     if (typeof time !== 'number' || !Number.isFinite(time) || time < 0 || time > duration || markers.has(time)) continue;
     markers.set(time, {
       time,
+      ...(typeof details?.topic === 'string' ? { topic: details.topic } : {}),
       note: typeof details?.note === 'string' ? details.note : '',
       color: AUDIO_MARKER_COLORS.find(option => option.value === details?.color)?.value ?? DEFAULT_AUDIO_MARKER_COLOR,
     });

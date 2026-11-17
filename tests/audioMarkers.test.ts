@@ -6,7 +6,7 @@ test('reads legacy timestamp markers and round-trips a marker note and color', (
   const markers = parseAudioMarkers('[21, 7, 7]', 30);
   assert.deepEqual(markers.map(marker => [marker.time, marker.note]), [[7, ''], [21, '']]);
 
-  const edited = [{ ...markers[0], note: '这句进得太急了\n下次多留半拍', color: '#fda4af' }, markers[1]];
+  const edited = [{ ...markers[0], topic: '副歌入口', note: '这句进得太急了\n下次多留半拍', color: '#fda4af' }, markers[1]];
   assert.deepEqual(parseAudioMarkers(JSON.stringify(edited), 30), edited);
 });
 
