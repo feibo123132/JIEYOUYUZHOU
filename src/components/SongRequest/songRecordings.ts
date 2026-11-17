@@ -124,8 +124,10 @@ export const loadRecordingCache = (storage: { getItem: (key: string) => string |
 export const saveRecordingCache = (storage: { setItem: (key: string, value: string) => void }, alias: string, recordings: SongRecording[]) => {
   try {
     storage.setItem(`${RECORDINGS_CACHE_PREFIX}${alias}`, JSON.stringify(recordings));
+    return true;
   } catch {
     // 缓存失败不影响云端权威数据。
+    return false;
   }
 };
 

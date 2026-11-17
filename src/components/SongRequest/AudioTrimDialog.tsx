@@ -1,18 +1,20 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Pause, Play, Redo2, RotateCcw, Scissors, Trash2, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { Check, Flag, Pause, Pencil, Play, Redo2, RotateCcw, Scissors, Trash2, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { computeWaveformPeaks, formatDuration, getAudioContext } from './audioClipping';
+import { AUDIO_MARKER_COLORS, DEFAULT_AUDIO_MARKER_COLOR, parseAudioMarkers, type AudioMarker } from './audioMarkers';
 import { keptDuration, normalizeAudioCuts, resolveKeptSegments, type AudioCut } from './songRecordings';
 
 interface AudioTrimDialogProps {
   songTitle: string;
   recordingTitle: string;
+  markerStorageKey: string;
   buffer: AudioBuffer;
   initialStart: number;
   initialEnd: number;
   initialCuts?: AudioCut[];
   saving?: boolean;
   onCancel: () => void;
-  onSave: (clip: { start: number; end: number; cuts: AudioCut[] }) => void;
+  onSave: (clip: { start: number; end: number; cuts: AudioCut[] }) => boolean;
 }
 
 type EditMode = 'range' | 'cut';
@@ -25,6 +27,17 @@ const MIN_VIEW_SECONDS = 0.4;
 const PEAK_BUCKETS = 12_000;
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+
+const readMarkers = (key: string, duration: number): AudioMarker[] => {
+  try {
+    return parseAudioMarkers(localStorage.getItem(key) ?? '[]', duration);
+  } catch { return []; }
+};
+
+const markerTimeLabel = (time: number) => {
+  const milliseconds = Math.round(time * 1000);
+  return `${formatDuration(Math.floor(milliseconds / 1000))}.${String(milliseconds % 1000).padStart(3, '0')}`;
+};
 
 const boundaryLimits = (field: Boundary, range: Partial<AudioCut>, min: number, max: number) => (
   field === 'start'
@@ -51,46 +64,102 @@ const prepareWaveform = (canvas: HTMLCanvasElement) => {
 };
 
 const drawWaveformBars = (
-  context: CanvasRenderingContext2D, width: number, height: number, peaks: Float32Array,
+  context: CanvasRenderingContext2D, left: number, width: number, height: number, peaks: Float32Array,
   firstIndex: number, lastIndex: number, colorAt: (x: number) => string,
 ) => {
   const visibleCount = Math.max(1, lastIndex - firstIndex);
   const columnStep = 2;
   for (let x = 0; x < width; x += columnStep) {
     const from = firstIndex + Math.floor((x / width) * visibleCount);
-    const to = firstIndex + Math.floor(((x + columnStep) / width) * visibleCount);
+    const to = Math.min(lastIndex, firstIndex + Math.ceil(((x + columnStep) / width) * visibleCount));
     let amplitude = 0;
     for (let index = from; index < Math.min(peaks.length, Math.max(from + 1, to)); index += 1) {
       if (peaks[index] > amplitude) amplitude = peaks[index];
     }
     const barHeight = Math.max(1, amplitude * height * 0.86);
-    context.fillStyle = colorAt(x);
-    context.fillRect(x, (height - barHeight) / 2, columnStep - 1, barHeight);
+    context.fillStyle = colorAt(left + x);
+    context.fillRect(left + x, (height - barHeight) / 2, Math.min(columnStep - 1, width - x), barHeight);
+  }
+};
+
+// Keep edits and markers in source seconds. The waveform uses seconds after the applied cuts.
+const buildWaveformTimeline = (cuts: AudioCut[], duration: number) => {
+  const segments: Array<AudioCut & { offset: number }> = [];
+  let sourceStart = 0;
+  let length = 0;
+  for (const cut of [...normalizeAudioCuts(cuts, 0, duration), { start: duration, end: duration }]) {
+    if (cut.start > sourceStart) {
+      segments.push({ start: sourceStart, end: cut.start, offset: length });
+      length += cut.start - sourceStart;
+    }
+    sourceStart = cut.end;
+  }
+  const toDisplay = (time: number) => {
+    const segment = segments.find(part => time <= part.end);
+    return segment ? segment.offset + Math.max(0, time - segment.start) : length;
+  };
+  const toSource = (time: number, preferLeft = false) => {
+    const target = clamp(time, 0, length);
+    for (const part of segments) {
+      const end = part.offset + (part.end - part.start);
+      if (target < end || (preferLeft && target === end)) {
+        return clamp(part.start + (target - part.offset), part.start, part.end);
+      }
+    }
+    return segments[segments.length - 1]?.end ?? 0;
+  };
+  return { length, segments, toDisplay, toSource, contains: (time: number) => segments.some(part => time >= part.start && time <= part.end) };
+};
+
+const drawJoinedWaveform = (
+  context: CanvasRenderingContext2D, width: number, height: number, peaks: Float32Array, duration: number,
+  timeline: ReturnType<typeof buildWaveformTimeline>, viewStart: number, viewEnd: number,
+  colorAt: (x: number) => string,
+) => {
+  if (viewEnd <= viewStart) return;
+  const pixelsPerSecond = width / (viewEnd - viewStart);
+  for (const part of timeline.segments) {
+    const from = Math.max(viewStart, part.offset);
+    const to = Math.min(viewEnd, part.offset + (part.end - part.start));
+    if (to <= from) continue;
+    const sourceFrom = part.start + (from - part.offset);
+    const sourceTo = part.start + (to - part.offset);
+    drawWaveformBars(context, (from - viewStart) * pixelsPerSecond, (to - from) * pixelsPerSecond, height, peaks,
+      Math.floor(sourceFrom / duration * peaks.length), Math.ceil(sourceTo / duration * peaks.length), colorAt);
   }
 };
 
 const AudioTrimDialog = ({
-  songTitle, recordingTitle, buffer, initialStart, initialEnd, initialCuts = [], saving = false, onCancel, onSave,
+  songTitle, recordingTitle, markerStorageKey, buffer, initialStart, initialEnd, initialCuts = [], saving = false, onCancel, onSave,
 }: AudioTrimDialogProps) => {
   const duration = buffer.duration;
   const peaks = useMemo(() => computeWaveformPeaks(buffer, PEAK_BUCKETS), [buffer]);
 
   const [start, setStart] = useState(() => clamp(initialStart, 0, Math.max(0, duration - MIN_CLIP_SECONDS)));
   const [end, setEnd] = useState(() => clamp(initialEnd, start + MIN_CLIP_SECONDS, duration));
-  const [cuts, setCuts] = useState<AudioCut[]>(() => normalizeAudioCuts(initialCuts, start, end));
+  const [{ cutHistory, cutHistoryIndex }, setCutState] = useState(() => ({
+    cutHistory: [normalizeAudioCuts(initialCuts, start, end)],
+    cutHistoryIndex: 0,
+  }));
+  const cuts = cutHistory[cutHistoryIndex];
   const [mode, setMode] = useState<EditMode>('range');
   const [cutDraft, setCutDraft] = useState<CutDraft | null>(null);
   const [boundaryInput, setBoundaryInput] = useState<{ field: Boundary; text: string } | null>(null);
-  const [{ start: viewStart, end: viewEnd }, setView] = useState({ start: 0, end: duration });
+  const [view, setView] = useState<{ sourceStart: number; span: number } | null>(null);
   const [playing, setPlaying] = useState(false);
   // 播放指针：可点击/拖拽/键盘定位，试听从这里开始。
   const [playhead, setPlayhead] = useState<number>(() => clamp(initialStart, 0, duration));
-
-  // 打开时的初始状态，用来判断「有没有改过」。
-  const baselineRef = useRef<{ start: number; end: number; cuts: AudioCut[] } | null>(null);
-  if (!baselineRef.current) baselineRef.current = { start, end, cuts };
+  const [markers, setMarkers] = useState(() => readMarkers(markerStorageKey, duration));
+  const [editingMarkerTime, setEditingMarkerTime] = useState<number | null>(null);
+  const editingMarker = markers.find(marker => marker.time === editingMarkerTime);
+  const [saveError, setSaveError] = useState('');
+  const [saved, setSaved] = useState({ start, end, cuts, markers, confirmed: false });
 
   const dialogRef = useRef<HTMLDialogElement | null>(null);
+  const markerEditorRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    markerEditorRef.current?.focus();
+  }, [editingMarkerTime]);
   const overviewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const overviewGrabOffset = useRef<number | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -103,7 +172,7 @@ const AudioTrimDialog = ({
     timeline: Array<{ at: number; from: number; duration: number }>;
   } | null>(null);
   const dragRef = useRef<{
-    mode: 'start' | 'end' | 'move' | 'create' | 'select' | 'playhead';
+    mode: 'start' | 'end' | 'move' | 'create' | 'playhead';
     originX: number;
     originStart: number;
     originEnd: number;
@@ -111,10 +180,14 @@ const AudioTrimDialog = ({
   } | null>(null);
   const tapRef = useRef<{ time: number; moved: boolean; canRelocate: boolean } | null>(null);
 
-  const viewSpan = viewEnd - viewStart;
-  const maxViewStart = Math.max(0, duration - viewSpan);
-  const timeAtX = useCallback((x: number, width: number) => viewStart + (x / Math.max(1, width)) * viewSpan, [viewStart, viewSpan]);
-  const xAtTime = useCallback((time: number, width: number) => ((time - viewStart) / viewSpan) * width, [viewStart, viewSpan]);
+  const timeline = useMemo(() => buildWaveformTimeline(cuts, duration), [cuts, duration]);
+  const viewSpan = Math.min(view?.span ?? timeline.length, timeline.length);
+  const maxViewStart = timeline.length - viewSpan;
+  const viewStart = view ? clamp(timeline.toDisplay(view.sourceStart), 0, maxViewStart) : 0;
+  const viewEnd = viewStart + viewSpan;
+  const timeAtX = (x: number, width: number) => timeline.toSource(viewStart + (x / Math.max(1, width)) * viewSpan);
+  const xAtTime = useCallback((time: number, width: number) => viewSpan > 0
+    ? ((timeline.toDisplay(time) - viewStart) / viewSpan) * width : 0, [timeline, viewStart, viewSpan]);
 
   const visibleCuts = useMemo(() => normalizeAudioCuts(cuts, start, end), [cuts, start, end]);
   const kept = useMemo(() => keptDuration(start, end, cuts), [start, end, cuts]);
@@ -163,13 +236,13 @@ const AudioTrimDialog = ({
       const surface = prepareWaveform(canvas);
       if (!surface) return;
       const { context, width, height } = surface;
-      drawWaveformBars(context, width, height, peaks, 0, peaks.length, () => '#a8b9ca');
+      drawJoinedWaveform(context, width, height, peaks, duration, timeline, 0, timeline.length, () => '#a8b9ca');
     };
     draw();
     const observer = new ResizeObserver(draw);
     observer.observe(canvas);
     return () => observer.disconnect();
-  }, [peaks]);
+  }, [peaks, duration, timeline]);
 
   const drawWaveform = useCallback(() => {
     const canvas = canvasRef.current;
@@ -181,68 +254,33 @@ const AudioTrimDialog = ({
     const middle = height / 2;
     const rangeStartX = clamp(xAtTime(start, width), 0, width);
     const rangeEndX = clamp(xAtTime(end, width), 0, width);
-    const cutRanges = visibleCuts.map((cut) => ({
-      from: clamp(xAtTime(cut.start, width), 0, width),
-      to: clamp(xAtTime(cut.end, width), 0, width),
-    }));
 
     context.fillStyle = 'rgba(255,255,255,0.02)';
     context.fillRect(0, 0, width, height);
     context.fillStyle = 'rgba(251,146,60,0.07)';
     context.fillRect(rangeStartX, 0, Math.max(0, rangeEndX - rangeStartX), height);
 
-    // 删除片段：红色底 + 斜纹
-    for (const range of cutRanges) {
-      const cutWidth = Math.max(0, range.to - range.from);
-      if (!cutWidth) continue;
-      context.fillStyle = 'rgba(248,113,113,0.14)';
-      context.fillRect(range.from, 0, cutWidth, height);
-      context.save();
-      context.beginPath();
-      context.rect(range.from, 0, cutWidth, height);
-      context.clip();
-      context.strokeStyle = 'rgba(248,113,113,0.28)';
-      context.lineWidth = 1;
-      for (let x = range.from - height; x < range.to + height; x += 7) {
-        context.beginPath();
-        context.moveTo(x, height);
-        context.lineTo(x + height, 0);
-        context.stroke();
-      }
-      context.restore();
-      context.fillStyle = 'rgba(248,113,113,0.85)';
-      context.fillRect(Math.round(range.from), 0, 1, height);
-      context.fillRect(Math.round(range.to) - 1, 0, 1, height);
-    }
-
     // 当前选择（删除模式）
     if (mode === 'cut' && selection) {
       const from = clamp(xAtTime(selection.start, width), 0, width);
       const to = clamp(xAtTime(selection.end, width), 0, width);
-      context.fillStyle = 'rgba(250,204,21,0.12)';
-      context.fillRect(from, 0, Math.max(0, to - from), height);
-      context.strokeStyle = 'rgba(250,204,21,0.8)';
-      context.lineWidth = 1;
-      context.setLineDash([5, 4]);
-      context.strokeRect(Math.round(from) + 0.5, 1, Math.max(1, to - from - 1), height - 2);
-      context.setLineDash([]);
+      if (to > from) {
+        context.fillStyle = 'rgba(250,204,21,0.12)';
+        context.fillRect(from, 0, to - from, height);
+        context.strokeStyle = 'rgba(250,204,21,0.8)';
+        context.lineWidth = 1;
+        context.setLineDash([5, 4]);
+        context.strokeRect(Math.round(from) + 0.5, 1, Math.max(1, to - from - 1), height - 2);
+        context.setLineDash([]);
+      }
     }
 
     // 波形
-    const firstIndex = Math.max(0, Math.floor((viewStart / duration) * peaks.length));
-    const lastIndex = Math.min(peaks.length, Math.ceil((viewEnd / duration) * peaks.length));
-    drawWaveformBars(context, width, height, peaks, firstIndex, lastIndex, (x) => {
-      const insideRange = x >= rangeStartX && x <= rangeEndX;
-      const insideCut = cutRanges.some((range) => x >= range.from && x <= range.to);
-      return insideCut
-        ? 'rgba(248,113,113,0.35)'
-        : insideRange
-          ? 'rgba(253,186,116,0.9)'
-          : 'rgba(255,255,255,0.18)';
-    });
+    drawJoinedWaveform(context, width, height, peaks, duration, timeline, viewStart, viewEnd,
+      x => x >= rangeStartX && x <= rangeEndX ? 'rgba(253,186,116,0.9)' : 'rgba(255,255,255,0.18)');
 
     // 范围边界手柄（仅首尾模式可拖）
-    if (mode === 'range') {
+    if (mode === 'range' && viewSpan > 0) {
       const drawEdge = (x: number) => {
         context.fillStyle = 'rgb(251,146,60)';
         context.fillRect(Math.round(x) - 1, 0, 2, height);
@@ -254,7 +292,7 @@ const AudioTrimDialog = ({
       drawEdge(rangeStartX);
       drawEdge(rangeEndX);
     }
-  }, [duration, end, mode, peaks, selection, start, viewEnd, viewStart, xAtTime, visibleCuts]);
+  }, [duration, end, mode, peaks, selection, start, timeline, viewEnd, viewSpan, viewStart, xAtTime]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -267,13 +305,15 @@ const AudioTrimDialog = ({
 
   const zoomBy = useCallback((factor: number, anchorRatio?: number) => {
     setView((view) => {
-      const span = view.end - view.start;
-      const nextSpan = clamp(span / factor, Math.min(MIN_VIEW_SECONDS, duration), duration);
-      const ratio = anchorRatio ?? clamp(((start + end) / 2 - view.start) / span, 0, 1);
-      const nextStart = clamp(view.start + ratio * (span - nextSpan), 0, duration - nextSpan);
-      return { start: nextStart, end: Math.min(duration, nextStart + nextSpan) };
+      const span = Math.min(view?.span ?? timeline.length, timeline.length);
+      const nextSpan = clamp(span / factor, Math.min(MIN_VIEW_SECONDS, timeline.length), timeline.length);
+      if (nextSpan >= timeline.length) return null;
+      const left = view ? clamp(timeline.toDisplay(view.sourceStart), 0, timeline.length - span) : 0;
+      const ratio = anchorRatio ?? clamp((timeline.toDisplay((start + end) / 2) - left) / span, 0, 1);
+      const nextStart = clamp(left + ratio * (span - nextSpan), 0, timeline.length - nextSpan);
+      return { sourceStart: timeline.toSource(nextStart), span: nextSpan };
     });
-  }, [duration, start, end]);
+  }, [timeline, start, end]);
 
   useEffect(() => {
     const waveform = wrapRef.current;
@@ -291,13 +331,12 @@ const AudioTrimDialog = ({
   }, [zoomBy]);
 
   const panViewTo = (time: number) => {
-    const nextStart = clamp(time, 0, maxViewStart);
-    setView({ start: nextStart, end: Math.min(duration, nextStart + viewSpan) });
+    if (maxViewStart > 0) setView({ sourceStart: timeline.toSource(clamp(time, 0, maxViewStart)), span: viewSpan });
   };
 
   const overviewTime = (event: React.PointerEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
-    return ((event.clientX - rect.left) / Math.max(1, rect.width)) * duration;
+    return ((event.clientX - rect.left) / Math.max(1, rect.width)) * timeline.length;
   };
 
   const handleOverviewPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -326,6 +365,7 @@ const AudioTrimDialog = ({
   };
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (viewSpan <= 0) return;
     const rect = event.currentTarget.getBoundingClientRect();
     const x = event.clientX - rect.left;
     const time = clamp(timeAtX(x, rect.width), 0, duration);
@@ -346,12 +386,6 @@ const AudioTrimDialog = ({
     }
 
     if (mode === 'cut') {
-      const hitCut = visibleCuts.find((cut) => time >= cut.start && time <= cut.end);
-      if (hitCut) {
-        setCutDraft({ ...hitCut, original: hitCut });
-        dragRef.current = { mode: 'select', originX: x, originStart: hitCut.start, originEnd: hitCut.end, anchorTime: time };
-        return;
-      }
       // 先记录锚点，等确认是拖动才生成选区；单击则定位指针。
       setCutDraft(null);
       dragRef.current = { mode: 'create', originX: x, originStart: time, originEnd: time, anchorTime: time };
@@ -399,9 +433,7 @@ const AudioTrimDialog = ({
       setEnd(clamp(Math.max(to, from + MIN_CLIP_SECONDS), from + MIN_CLIP_SECONDS, duration));
       return;
     }
-    if (drag.mode === 'select') return;
-
-    const delta = ((x - drag.originX) / Math.max(1, rect.width)) * viewSpan;
+    const delta = timeAtX(x, rect.width) - drag.anchorTime;
     if (drag.mode === 'start') {
       setStart(clamp(drag.originStart + delta, 0, end - MIN_CLIP_SECONDS));
     } else if (drag.mode === 'end') {
@@ -486,34 +518,99 @@ const AudioTrimDialog = ({
   };
 
   const movePlayhead = useCallback((delta: number) => {
-    setPlayhead((current) => clamp(Number((current + delta).toFixed(3)), start, end));
-  }, [start, end]);
+    setPlayhead(current => {
+      const time = timeline.toSource(timeline.toDisplay(current) + delta, delta < 0);
+      return clamp(Number(time.toFixed(3)), start, end);
+    });
+  }, [timeline, start, end]);
+
+  const addMarker = () => {
+    if (!timeline.length) return;
+    const sourceTime = timeline.contains(playhead) ? playhead : timeline.toSource(timeline.toDisplay(playhead));
+    const time = clamp(Number(sourceTime.toFixed(3)), 0, duration);
+    setMarkers(current => current.some(marker => marker.time === time)
+      ? current
+      : [...current, { time, note: '', color: DEFAULT_AUDIO_MARKER_COLOR }].sort((left, right) => left.time - right.time));
+  };
+
+  const updateMarker = (time: number, patch: Partial<Pick<AudioMarker, 'note' | 'color'>>) => {
+    setMarkers(current => current.map(marker => marker.time === time ? { ...marker, ...patch } : marker));
+  };
+
+  const jumpToMarker = (time: number) => {
+    stopPlayback();
+    setPlayhead(time);
+    const offset = timeline.toDisplay(time);
+    if (offset < viewStart || offset > viewEnd) panViewTo(offset - viewSpan / 2);
+  };
+
+  const markersChanged = saved.markers.length !== markers.length
+    || markers.some((marker, index) => {
+      const previous = saved.markers[index];
+      return marker.time !== previous.time || marker.note !== previous.note || marker.color !== previous.color;
+    });
+
+  const save = () => {
+    if (markersChanged) {
+      try { localStorage.setItem(markerStorageKey, JSON.stringify(markers)); }
+      catch { setSaveError('浏览器无法保存标记，请重试。'); return; }
+    }
+    stopPlayback();
+    if (!onSave({ start, end, cuts: visibleCuts })) {
+      setSaveError('裁剪无法保存到本机，请重试。');
+      return;
+    }
+    setCutState(current => ({
+      ...current,
+      cutHistory: current.cutHistory.map((snapshot, index) => index === current.cutHistoryIndex ? visibleCuts : snapshot),
+    }));
+    setSaved({ start, end, cuts: visibleCuts, markers, confirmed: true });
+    setSaveError('');
+  };
 
   // 有未保存改动时先确认，避免手快点了「取消」白剪一场。
   const dirty = useMemo(() => {
-    const baseline = baselineRef.current;
-    if (!baseline) return false;
-    if (Math.abs(start - baseline.start) > 0.01 || Math.abs(end - baseline.end) > 0.01) return true;
-    if (baseline.cuts.length !== cuts.length) return true;
+    if (start.toFixed(3) !== saved.start.toFixed(3) || end.toFixed(3) !== saved.end.toFixed(3)) return true;
+    if (saved.cuts.length !== cuts.length) return true;
     return cuts.some((cut, index) => (
-      cut.start !== baseline.cuts[index].start || cut.end !== baseline.cuts[index].end
+      cut.start !== saved.cuts[index].start || cut.end !== saved.cuts[index].end
     ));
-  }, [cuts, end, start]);
+  }, [cuts, end, saved, start]);
 
   const requestClose = useCallback(() => {
-    if (dirty && !window.confirm('这次裁剪还没保存，确定放弃吗？')) return;
+    if ((dirty || markersChanged) && !window.confirm('这次编辑还没保存，确定放弃吗？')) return;
     onCancel();
-  }, [dirty, onCancel]);
+  }, [dirty, markersChanged, onCancel]);
 
   const updateCut = useCallback((replacement?: AudioCut) => {
-    setCuts((current) => {
+    stopPlayback();
+    setCutState((current) => {
+      const currentCuts = current.cutHistory[current.cutHistoryIndex];
       const remaining = originalCut
-        ? current.filter((cut) => cut.end <= originalCut.start || cut.start >= originalCut.end)
-        : current;
-      return replacement ? normalizeAudioCuts([...remaining, replacement], start, end) : remaining;
+        ? currentCuts.filter((cut) => cut.end <= originalCut.start || cut.start >= originalCut.end)
+        : currentCuts;
+      const nextCuts = replacement ? normalizeAudioCuts([...remaining, replacement], start, end) : remaining;
+      if (nextCuts.length === currentCuts.length && nextCuts.every((cut, index) => (
+        cut.start === currentCuts[index].start && cut.end === currentCuts[index].end
+      ))) return current;
+      const cutHistoryIndex = current.cutHistoryIndex + 1;
+      return { cutHistory: [...current.cutHistory.slice(0, cutHistoryIndex), nextCuts], cutHistoryIndex };
     });
     setCutDraft(null);
-  }, [originalCut, start, end]);
+    setBoundaryInput(null);
+  }, [originalCut, start, end, stopPlayback]);
+
+  const stepCutHistory = useCallback((step: -1 | 1) => {
+    const nextIndex = cutHistoryIndex + step;
+    if (nextIndex < 0 || nextIndex >= cutHistory.length) return;
+    stopPlayback();
+    setCutState(current => ({
+      ...current,
+      cutHistoryIndex: clamp(current.cutHistoryIndex + step, 0, current.cutHistory.length - 1),
+    }));
+    setCutDraft(null);
+    setBoundaryInput(null);
+  }, [cutHistory.length, cutHistoryIndex, stopPlayback]);
 
   const addCut = useCallback(() => {
     if (canApplyCut && selection) updateCut(selection);
@@ -524,13 +621,26 @@ const AudioTrimDialog = ({
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+      if (!event.defaultPrevented && !event.isComposing && event.ctrlKey && !event.altKey && !event.metaKey) {
+        const key = event.key.toLowerCase();
+        if (key === 'z' || (key === 'y' && !event.shiftKey)) {
+          event.preventDefault();
+          if (!event.repeat) stepCutHistory(key === 'z' && !event.shiftKey ? -1 : 1);
+          return;
+        }
+      }
+      if (!event.defaultPrevented && !event.isComposing && !event.repeat && !event.ctrlKey && !event.metaKey && !event.altKey && event.key.toLowerCase() === 'm') {
+        event.preventDefault();
+        addMarker();
+        return;
+      }
       if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
         event.preventDefault();
         const step = event.shiftKey ? 1 : event.altKey ? 0.01 : 0.1;
         movePlayhead(event.key === 'ArrowLeft' ? -step : step);
         return;
       }
-      if (event.key === ' ') {
+      if (event.key === ' ' && !target?.closest?.('[aria-controls="audio-marker-editor"], #audio-marker-editor button')) {
         event.preventDefault();
         if (playing) stopPlayback(); else void play();
         return;
@@ -546,7 +656,7 @@ const AudioTrimDialog = ({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [movePlayhead, playing, stopPlayback, play, start, end, mode, canApplyCut, addCut]);
+  }, [movePlayhead, playing, stopPlayback, play, start, end, mode, canApplyCut, addCut, addMarker, stepCutHistory]);
 
   const setBoundary = (field: Boundary, value: number | undefined) => {
     if (mode === 'cut') {
@@ -563,13 +673,18 @@ const AudioTrimDialog = ({
   };
 
   const activeRange = mode === 'cut' ? cutDraft ?? {} : { start, end };
+  const getBoundaryLimits = (field: Boundary) => boundaryLimits(
+    field, activeRange, mode === 'cut' ? start : 0, mode === 'cut' ? end : duration,
+  );
   const nudge = (field: Boundary, delta: number) => {
     setBoundaryInput(null);
-    setBoundary(field, Number(((activeRange[field] ?? playhead) + delta).toFixed(2)));
+    setBoundary(field, Number(((activeRange[field] ?? playhead) + delta).toFixed(3)));
   };
 
-  const resetView = () => setView({ start: 0, end: duration });
+  const resetView = () => setView(null);
   const canSave = kept >= MIN_CLIP_SECONDS;
+  const viewMarkers = markers.filter(marker => timeline.contains(marker.time));
+  const displayedPlayhead = timeline.toDisplay(playhead);
 
   return (
     <dialog
@@ -607,7 +722,7 @@ const AudioTrimDialog = ({
 
           <div className="mt-3 flex flex-wrap items-end gap-x-4 gap-y-1 font-mono text-sm tabular-nums">
             <span className="text-white/45">范围 <b className="font-black text-orange-200">{formatDuration(start, true)}</b> → <b className="font-black text-orange-200">{formatDuration(end, true)}</b></span>
-            <span className="text-white/45">指针 <b className="font-black text-emerald-300">{formatDuration(playhead, true)}</b></span>
+            <span className="text-white/45">指针{timeline.length < duration && '（原音频）'} <b className="font-black text-emerald-300">{formatDuration(playhead, true)}</b></span>
             <span className="text-white/45">保留 <b className="font-black text-emerald-300">{formatDuration(kept, true)}</b></span>
             {visibleCuts.length > 0 && <span className="text-red-200/80">已删 {visibleCuts.length} 段（{formatDuration(Math.max(0, (end - start) - kept), true)}）</span>}
             {selectedCutIndex >= 0 && <span className="text-amber-200/80">已选中第 {selectedCutIndex + 1} 个删除段</span>}
@@ -616,7 +731,7 @@ const AudioTrimDialog = ({
           <div className="mt-3">
             <div className="mb-1.5 flex items-center justify-between text-[11px] font-medium text-white/55">
               <span>全曲概览</span>
-              <span className="font-mono tabular-nums">{formatDuration(duration, true)}</span>
+              <span className="font-mono tabular-nums">{timeline.length < duration && '剪后 '}{formatDuration(timeline.length, true)}</span>
             </div>
             <div
               role="slider"
@@ -642,8 +757,20 @@ const AudioTrimDialog = ({
               <div
                 aria-hidden="true"
                 className={`absolute inset-y-0 min-w-[3px] rounded-md border-2 border-sky-200/80 bg-sky-200/10 shadow-[0_0_0_100vmax_rgba(0,0,0,0.53)] ${maxViewStart > 0 ? 'cursor-grab active:cursor-grabbing' : ''}`}
-                style={{ left: `${viewStart / duration * 100}%`, width: `${viewSpan / duration * 100}%` }}
+                style={{ left: `${timeline.length ? viewStart / timeline.length * 100 : 0}%`, width: `${timeline.length ? viewSpan / timeline.length * 100 : 100}%` }}
               />
+              {viewMarkers.map(({ time, color }) => (
+                <span key={time} aria-hidden="true" className="pointer-events-none absolute inset-y-0 w-px opacity-75" style={{ left: `${timeline.toDisplay(time) / timeline.length * 100}%`, backgroundColor: color }} />
+              ))}
+              {timeline.length > 0 && (
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-y-0 z-10 w-0.5 -translate-x-1/2 bg-emerald-300/90"
+                  style={{ left: `${displayedPlayhead / timeline.length * 100}%` }}
+                >
+                  <span className="absolute left-1/2 top-0 h-0 w-0 -translate-x-1/2 border-x-[3px] border-t-[5px] border-x-transparent border-t-emerald-300" />
+                </div>
+              )}
             </div>
           </div>
 
@@ -656,9 +783,30 @@ const AudioTrimDialog = ({
             onPointerCancel={handlePointerUp}
           >
             <canvas ref={canvasRef} className="absolute inset-0 block h-full w-full cursor-crosshair rounded-[inherit]" />
-            {playhead >= viewStart && playhead <= viewEnd && <div
+            {viewSpan > 0 && viewMarkers.map(({ time, color, note }) => {
+              const position = timeline.toDisplay(time);
+              if (position < viewStart || position > viewEnd) return null;
+              const label = markerTimeLabel(time);
+              return (
+                <div key={time} className="pointer-events-none absolute inset-y-0 border-l border-dashed border-current" style={{ left: `${xAtTime(time, 100)}%`, color }}>
+                  <button
+                    type="button"
+                    aria-label={`编辑标记 ${label}`}
+                    aria-expanded={editingMarkerTime === time}
+                    aria-controls="audio-marker-editor"
+                    title={note.trim() || `编辑标记 ${label}`}
+                    onPointerDown={event => event.stopPropagation()}
+                    onClick={() => setEditingMarkerTime(time)}
+                    className="pointer-events-auto absolute top-0 z-10 grid h-7 w-7 -translate-x-1/2 place-items-center rounded-md hover:bg-black/55 focus-visible:outline focus-visible:outline-2 focus-visible:outline-current"
+                  >
+                    <Flag aria-hidden="true" className="h-3.5 w-3.5 fill-current" />
+                  </button>
+                </div>
+              );
+            })}
+            {viewSpan > 0 && displayedPlayhead >= viewStart && displayedPlayhead <= viewEnd && <div
               className="pointer-events-none absolute top-0 h-full w-0.5 bg-emerald-300/90"
-              style={{ left: `${(playhead - viewStart) / viewSpan * 100}%` }}
+              style={{ left: `${xAtTime(playhead, 100)}%` }}
             >
               <span className="absolute -top-0.5 left-1/2 h-0 w-0 -translate-x-1/2 border-x-4 border-t-[6px] border-x-transparent border-t-emerald-300" />
             </div>}
@@ -675,7 +823,7 @@ const AudioTrimDialog = ({
           ) : (
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <p className="text-[11px] leading-5 text-white/35">
-                拖动波形框选，或在下方输入待删起止秒数。点红色区域可调整或恢复已删片段。
+                拖动波形框选，或输入原音频的待删起止秒数。点击下方的已删时段可调整或恢复。
               </p>
               <button
                 type="button"
@@ -715,19 +863,122 @@ const AudioTrimDialog = ({
           )}
 
           <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-white/30">
+            <button type="button" aria-keyshortcuts="M" onClick={addMarker} className="inline-flex items-center gap-1 rounded text-sky-200/80 hover:text-sky-100">
+              <kbd className="rounded border border-sky-200/25 bg-sky-300/10 px-1.5 py-0.5 font-mono">M</kbd>标记指针
+            </button>
             <span className="inline-flex items-center gap-1"><kbd className="rounded border border-white/15 bg-white/5 px-1.5 py-0.5 font-mono text-white/50">空格</kbd>播放/暂停</span>
             <span className="inline-flex items-center gap-1"><kbd className="rounded border border-white/15 bg-white/5 px-1.5 py-0.5 font-mono text-white/50">← →</kbd>指针 ±0.1s</span>
             <span className="inline-flex items-center gap-1"><kbd className="rounded border border-white/15 bg-white/5 px-1.5 py-0.5 font-mono text-white/50">Shift</kbd>±1s</span>
             <span className="inline-flex items-center gap-1"><kbd className="rounded border border-white/15 bg-white/5 px-1.5 py-0.5 font-mono text-white/50">Alt</kbd>±0.01s</span>
             <span className="inline-flex items-center gap-1"><kbd className="rounded border border-white/15 bg-white/5 px-1.5 py-0.5 font-mono text-white/50">Delete</kbd>删除选中段</span>
+            <span className="inline-flex items-center gap-1"><kbd className="rounded border border-white/15 bg-white/5 px-1.5 py-0.5 font-mono text-white/50">Ctrl+Z</kbd>撤回片段操作</span>
+            <span className="inline-flex items-center gap-1"><kbd className="rounded border border-white/15 bg-white/5 px-1.5 py-0.5 font-mono text-white/50">Ctrl+Y / Ctrl+Shift+Z</kbd>重做片段操作</span>
             <span className="inline-flex items-center gap-1"><kbd className="rounded border border-white/15 bg-white/5 px-1.5 py-0.5 font-mono text-white/50">Home / End</kbd>首尾</span>
           </div>
+
+          {markers.length > 0 && (
+            <ul aria-label="音频标记" className="mt-2 flex max-h-24 flex-wrap gap-1.5 overflow-y-auto overscroll-contain">
+              {markers.map(({ time, note, color }) => {
+                const label = markerTimeLabel(time);
+                return (
+                  <li key={time} className="inline-flex max-w-full items-center rounded-full border border-white/15 bg-white/[.06] text-white/85">
+                    <button type="button" aria-label={`跳到标记 ${label}`} onClick={() => jumpToMarker(time)} style={{ color }} className="inline-flex min-h-8 shrink-0 items-center gap-1 rounded-l-full pl-2 pr-1 font-mono text-[11px] hover:bg-white/10">
+                      <Flag aria-hidden="true" className="h-3 w-3" />{label}
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`编辑标记 ${label}的备注和颜色`}
+                      aria-expanded={editingMarkerTime === time}
+                      aria-controls="audio-marker-editor"
+                      title={note.trim() || '编辑备注和颜色'}
+                      onClick={() => setEditingMarkerTime(time)}
+                      className="inline-flex min-h-8 min-w-8 items-center justify-center gap-1.5 border-l border-white/10 px-1.5 text-[11px] text-white/75 hover:bg-white/10 aria-expanded:bg-white/10"
+                    >
+                      <Pencil aria-hidden="true" className="h-3 w-3 shrink-0" />
+                      {note.trim() && <span className="max-w-[7rem] truncate">{note.trim()}</span>}
+                    </button>
+                    {(['start', 'end'] as const).map(field => {
+                      const { min, max } = getBoundaryLimits(field);
+                      const boundary = field === 'start' ? '起点' : '终点';
+                      const target = `${mode === 'cut' ? '待删' : '范围'}${boundary}`;
+                      const allowed = time >= min - 1e-9 && time <= max + 1e-9;
+                      return (
+                        <button
+                          key={field}
+                          type="button"
+                          aria-label={`将标记 ${label} 设为${target}`}
+                          title={allowed ? `设为${target}` : `此标记超出${target}的可用范围`}
+                          disabled={!allowed}
+                          onClick={() => { stopPlayback(); setBoundaryInput(null); setBoundary(field, time); }}
+                          className="min-h-8 shrink-0 whitespace-nowrap border-l border-white/10 px-1.5 text-[11px] enabled:hover:bg-white/10 enabled:hover:text-white disabled:opacity-35"
+                        >设为{boundary}</button>
+                      );
+                    })}
+                    <button type="button" aria-label={`移除标记 ${label}`} onClick={() => {
+                      setMarkers(current => current.filter(marker => marker.time !== time));
+                      if (editingMarkerTime === time) setEditingMarkerTime(null);
+                    }} className="grid min-h-8 w-7 shrink-0 place-items-center rounded-r-full text-white/55 hover:bg-white/10 hover:text-white">
+                      <X aria-hidden="true" className="h-3 w-3" />
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+
+          {editingMarker && (
+            <div
+              id="audio-marker-editor"
+              ref={markerEditorRef}
+              tabIndex={-1}
+              className="mt-3 grid max-w-xl gap-3 rounded-xl border border-white/12 border-l-2 bg-[#15151d] p-3 outline-none sm:p-4"
+              style={{ borderLeftColor: editingMarker.color }}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="inline-flex items-center gap-2 text-sm font-bold" style={{ color: editingMarker.color }}>
+                  <Flag aria-hidden="true" className="h-4 w-4" />
+                  <span className="font-mono tabular-nums">{markerTimeLabel(editingMarker.time)}</span>
+                </div>
+                <button type="button" onClick={() => setEditingMarkerTime(null)} className="min-h-8 rounded-lg px-3 text-xs font-bold text-white/65 hover:bg-white/10 hover:text-white">完成</button>
+              </div>
+              <label className="grid gap-1.5 text-xs font-semibold text-white/75">
+                感受备注
+                <textarea
+                  rows={3}
+                  value={editingMarker.note}
+                  onChange={event => updateMarker(editingMarker.time, { note: event.currentTarget.value })}
+                  className="min-w-0 resize-y rounded-lg border border-white/10 bg-black/35 px-3 py-2 text-sm leading-6 text-white outline-none focus:border-sky-300/55"
+                />
+              </label>
+              <fieldset className="min-w-0">
+                <legend className="mb-1.5 text-xs font-semibold text-white/75">标记颜色</legend>
+                <div className="flex flex-wrap gap-1.5">
+                  {AUDIO_MARKER_COLORS.map(({ label, value }) => (
+                    <button
+                      key={value}
+                      type="button"
+                      aria-label={label}
+                      title={label}
+                      aria-pressed={editingMarker.color === value}
+                      onClick={() => updateMarker(editingMarker.time, { color: value })}
+                      className="grid h-9 w-9 place-items-center rounded-full border border-transparent hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-current aria-pressed:border-current"
+                      style={{ color: value }}
+                    >
+                      <span className="grid h-5 w-5 place-items-center rounded-full bg-current">
+                        {editingMarker.color === value && <Check aria-hidden="true" className="h-3 w-3 text-[#14141c]" />}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+            </div>
+          )}
 
           <div className="mt-4 grid gap-2 sm:grid-cols-2">
             {(['start', 'end'] as const).map((field) => {
               const value = activeRange[field];
               const label = `${mode === 'cut' ? '待删' : '范围'}${field === 'start' ? '起点' : '终点'}`;
-              const { min, max } = boundaryLimits(field, activeRange, mode === 'cut' ? start : 0, mode === 'cut' ? end : duration);
+              const { min, max } = getBoundaryLimits(field);
               return (
                 <div key={field} className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
                   <div className="mb-1.5 text-[10px] font-bold tracking-widest text-white/35">{label}</div>
@@ -738,13 +989,13 @@ const AudioTrimDialog = ({
                       type="number"
                       min={min}
                       max={max}
-                      step={0.01}
+                      step={0.001}
                       placeholder={mode === 'cut' ? '秒数' : undefined}
-                      value={boundaryInput?.field === field ? boundaryInput.text : value === undefined ? '' : Number(value.toFixed(2))}
+                      value={boundaryInput?.field === field ? boundaryInput.text : value === undefined ? '' : Number(value.toFixed(3))}
                       onChange={(event) => {
                         const input = event.currentTarget;
                         setBoundaryInput({ field, text: input.value });
-                        if (Number.isFinite(input.valueAsNumber)) setBoundary(field, Number(input.valueAsNumber.toFixed(2)));
+                        if (Number.isFinite(input.valueAsNumber)) setBoundary(field, Number(input.valueAsNumber.toFixed(3)));
                         else if (!input.validity.badInput) setBoundary(field, undefined);
                       }}
                       onBlur={() => setBoundaryInput(null)}
@@ -770,12 +1021,16 @@ const AudioTrimDialog = ({
             {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
             {playing ? '停止试听' : '试听（从指针开始）'}
           </button>
+          {saveError && <p role="alert" className="text-xs text-rose-200">{saveError}</p>}
+          {!saveError && saved.confirmed && !dirty && !markersChanged && (
+            <p role="status" className="text-xs text-emerald-300">裁剪已保存到本机</p>
+          )}
           <div className="flex items-center gap-2">
             <button type="button" onClick={requestClose} className="h-11 rounded-full border border-white/12 px-5 text-sm font-bold text-white/65 transition hover:border-white/25 hover:text-white">取消</button>
             <button
               type="button"
               disabled={saving || !canSave}
-              onClick={() => { stopPlayback(); onSave({ start, end, cuts: normalizeAudioCuts(cuts, start, end) }); }}
+              onClick={save}
               className="inline-flex h-11 items-center gap-2 rounded-full bg-orange-400 px-6 text-sm font-black text-black transition hover:bg-orange-300 disabled:opacity-40"
             >
               <Scissors className="h-4 w-4" />{saving ? '保存中…' : '保存裁剪'}

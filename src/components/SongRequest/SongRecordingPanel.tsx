@@ -125,7 +125,7 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
     const next = updater(recordingsRef.current);
     recordingsRef.current = next;
     setRecordings(next);
-    if (session) saveRecordingCache(window.localStorage, session.alias, next);
+    return session ? saveRecordingCache(window.localStorage, session.alias, next) : false;
   }, [session]);
 
   /**
@@ -153,12 +153,21 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
         // 音频已经进了云存储，先把 fileID 落到本机，重试时不会重复上传整首。
         commitWith((items) => items.map((item) => (item.id === id ? { ...item, fileID, pendingSync: true } : item)));
       }
-      const latest = recordingsRef.current.find((item) => item.id === id) ?? local;
-      const payload: SongRecording = { ...latest, fileID, pendingSync: false };
-      const remote = parseSongRecordings([await saveCloudSongRecording(credentials, payload)])[0];
-      const synced: SongRecording = remote ? { ...remote, localBlobId: latest.localBlobId } : payload;
-      commitWith((items) => items.map((item) => (item.id === id ? synced : item)));
-      setMessage('录音已同步到云端，换设备也能听到。');
+      let latest = recordingsRef.current.find((item) => item.id === id);
+      while (latest) {
+        const payload: SongRecording = { ...latest, fileID, pendingSync: false };
+        const remote = parseSongRecordings([await saveCloudSongRecording(credentials, payload)])[0];
+        const current = recordingsRef.current.find((item) => item.id === id);
+        // 窗口可以连续保存。上一笔同步完成时，继续提交保存期间产生的新版本。
+        if (current !== latest) {
+          latest = current;
+          continue;
+        }
+        const synced: SongRecording = remote ? { ...remote, localBlobId: latest.localBlobId } : payload;
+        commitWith((items) => items.map((item) => (item.id === id ? synced : item)));
+        setMessage('录音已同步到云端，换设备也能听到。');
+        break;
+      }
     } catch (error) {
       commitWith((items) => items.map((item) => (item.id === id ? { ...item, pendingSync: true } : item)));
       setMessage(mapSongRecordingError(error));
@@ -398,42 +407,25 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
     void syncRecording(id, recording);
   };
 
-  /** 后台把裁剪区间写回云端；失败只标记待同步，不回滚本地结果。 */
-  const pushTrimToCloud = async (updated: SongRecording) => {
-    const credentials = sessionRef.current;
-    if (!credentials || !updated.fileID) return;
-    const apply = (pendingSync: boolean) => commitWith((items) => items.map((item) => (
-      // 期间又改过一次的话，以新的那条为准。
-      item.id === updated.id && item.updatedAt === updated.updatedAt ? { ...item, pendingSync } : item
-    )));
-    try {
-      await saveCloudSongRecording(credentials, { ...updated, pendingSync: false });
-      apply(false);
-      setMessage('裁剪已保存，并同步到云端。');
-    } catch {
-      apply(true);
-      setMessage('裁剪已保存在本机，云端同步失败（可点「重试同步」）。');
-    }
-  };
-
   const saveTrim = (clip: { start: number; end: number; cuts: AudioCut[] }) => {
-    if (!trimming) return;
+    if (!trimming) return false;
     // 裁剪期间录音可能已经上传完成，必须并到最新那条记录上，避免把 fileID 冲掉。
-    const latest = recordingsRef.current.find((item) => item.id === trimming.recording.id) ?? trimming.recording;
+    const latest = recordingsRef.current.find((item) => item.id === trimming.recording.id);
+    if (!latest) return false;
+    const clipEnd = Number(clip.end.toFixed(3));
     const updated: SongRecording = {
       ...latest,
-      clipStart: Number(clip.start.toFixed(2)),
-      clipEnd: Number(clip.end.toFixed(2)),
+      duration: Math.max(latest.duration, clipEnd),
+      clipStart: Number(clip.start.toFixed(3)),
+      clipEnd,
       cuts: normalizeAudioCuts(clip.cuts, clip.start, clip.end),
+      pendingSync: true,
       updatedAt: new Date().toISOString(),
     };
-    // 本地立刻生效并关窗：裁剪只是改一段索引，不该等网络往返。
-    commitWith((items) => items.map((item) => (item.id === updated.id ? updated : item)));
-    setTrimming(null);
-    setMessage('已保存裁剪结果。');
-    // 已经在云端的只补元数据；还只在本机的连音频一起传，保证别的设备也能看到这次裁剪。
-    if (updated.fileID) void pushTrimToCloud(updated);
-    else void syncRecording(updated.id);
+    const savedLocally = commitWith((items) => items.map((item) => (item.id === updated.id ? updated : item)));
+    if (savedLocally) setMessage('已保存裁剪结果。');
+    void syncRecording(updated.id);
+    return savedLocally;
   };
 
   const exportClip = async (recording: SongRecording) => {
@@ -587,6 +579,7 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
         <AudioTrimDialog
           songTitle={song.title}
           recordingTitle={trimming.recording.title}
+          markerStorageKey={`jieyou-recording-markers-v1:${encodeURIComponent(session?.alias.trim().toLowerCase() ?? '')}:${trimming.recording.id}`}
           buffer={trimming.buffer}
           initialStart={trimming.recording.clipStart}
           initialEnd={trimming.recording.clipEnd}
