@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Check, Flag, Pause, Pencil, Play, Redo2, RotateCcw, Scissors, Trash2, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { Check, Flag, Minus, Pause, Pencil, Play, Redo2, RotateCcw, Scissors, Trash2, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { computeWaveformPeaks, formatDuration, getAudioContext } from './audioClipping';
 import { AUDIO_MARKER_COLORS, DEFAULT_AUDIO_MARKER_COLOR, normalizeAudioMarkers, type AudioMarker } from './audioMarkers';
 import { keptDuration, normalizeAudioCuts, resolveKeptSegments, type AudioCut } from './songRecordings';
@@ -12,6 +12,8 @@ interface AudioTrimDialogProps {
   initialEnd: number;
   initialCuts?: AudioCut[];
   initialMarkers: AudioMarker[];
+  minimized: boolean;
+  onMinimize: () => void;
   saving?: boolean;
   onCancel: () => void;
   onSave: (clip: { start: number; end: number; cuts: AudioCut[]; markers?: AudioMarker[] }) => boolean;
@@ -124,7 +126,7 @@ const drawJoinedWaveform = (
 };
 
 const AudioTrimDialog = ({
-  songTitle, recordingTitle, buffer, initialStart, initialEnd, initialCuts = [], initialMarkers, saving = false, onCancel, onSave,
+  songTitle, recordingTitle, buffer, initialStart, initialEnd, initialCuts = [], initialMarkers, minimized, onMinimize, saving = false, onCancel, onSave,
 }: AudioTrimDialogProps) => {
   const duration = buffer.duration;
   const peaks = useMemo(() => computeWaveformPeaks(buffer, PEAK_BUCKETS), [buffer]);
@@ -212,7 +214,7 @@ const AudioTrimDialog = ({
 
   useLayoutEffect(() => {
     const dialog = dialogRef.current;
-    if (!dialog) return;
+    if (!dialog || minimized) return;
     const page = document.documentElement;
     const previousOverflow = page.style.overflow;
     dialog.showModal();
@@ -221,7 +223,7 @@ const AudioTrimDialog = ({
       dialog.close();
       page.style.overflow = previousOverflow;
     };
-  }, []);
+  }, [minimized]);
 
   useEffect(() => {
     const canvas = overviewCanvasRef.current;
@@ -610,6 +612,7 @@ const AudioTrimDialog = ({
   // 键盘控制播放指针：←/→ 微调，Shift ±1s、Alt ±0.01s；空格播放/暂停；Home/End 到首尾。
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (!dialogRef.current?.open) return;
       const target = event.target as HTMLElement | null;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
       if (!event.defaultPrevented && !event.isComposing && event.ctrlKey && !event.altKey && !event.metaKey) {
@@ -693,9 +696,14 @@ const AudioTrimDialog = ({
             <h2 className="mt-1 truncate font-serif text-xl font-black text-white sm:text-2xl">{recordingTitle}</h2>
             <p className="mt-0.5 truncate text-xs text-white/40">{songTitle}</p>
           </div>
-          <button type="button" onClick={requestClose} aria-label="关闭裁剪" className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-white/10 text-white/60 transition hover:border-white/25 hover:text-white">
-            <X className="h-4 w-4" />
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            <button type="button" onClick={onMinimize} className="inline-flex h-9 items-center gap-1.5 rounded-full border border-white/10 px-3 text-xs font-bold text-orange-100 hover:bg-orange-300/10">
+              <Minus aria-hidden="true" className="h-4 w-4" />退到后台
+            </button>
+            <button type="button" onClick={requestClose} aria-label="关闭裁剪" className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-white/10 text-white/60 transition hover:border-white/25 hover:text-white">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </header>
 
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-4 py-3 sm:px-6 sm:py-4 [&>*]:shrink-0">

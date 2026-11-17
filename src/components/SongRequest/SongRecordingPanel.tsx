@@ -1,4 +1,5 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Download, Loader2, Mic2, Pause, Play, RefreshCw, Scissors, Trash2 } from 'lucide-react';
 import type { Song } from './songCatalog';
 import type { SongRecordSession } from './songRecords';
@@ -55,6 +56,7 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [trimming, setTrimming] = useState<{ recording: SongRecording; buffer: AudioBuffer } | null>(null);
+  const [trimMinimized, setTrimMinimized] = useState(false);
   const [syncingId, setSyncingId] = useState<string | null>(null);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -337,6 +339,10 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
   };
 
   const openTrim = async (recording: SongRecording) => {
+    if (trimming) {
+      setTrimMinimized(false);
+      return;
+    }
     stopPlayback();
     setMessage('');
     try {
@@ -346,7 +352,7 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
       setBusy('正在读取音频波形…');
       const buffer = await loadBuffer(recording);
       bufferCacheRef.current = { id: recording.id, buffer };
-      setTrimming({ recording, buffer });
+      setTrimming(current => current ?? { recording, buffer });
     } catch (error) {
       setMessage(mapSongRecordingError(error));
     } finally {
@@ -406,7 +412,8 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
     if (!buffer) buffer = await decodeAudioBlob(file).catch(() => null);
     if (buffer) {
       bufferCacheRef.current = { id, buffer };
-      setTrimming({ recording, buffer });
+      const decodedBuffer = buffer;
+      setTrimming(current => current ?? { recording, buffer: decodedBuffer });
     } else setMessage('已保存到本机；这段格式画不出波形，暂时不能精细裁剪，但可以直接播放。');
 
     // ③ 再异步上云；成功前这段录音一直是「仅在本机」，可随时手动重试。
@@ -477,14 +484,15 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
   useImperativeHandle(ref, () => ({
     upload,
     openTrimPicker: () => {
+      if (trimming) { setTrimMinimized(false); return; }
       if (!songRecordings.length) { setMessage('请先上传一段录音，再进入裁剪。'); return; }
       if (songRecordings.length === 1) { void openTrim(songRecordings[0]); return; }
       setMessage('这首歌有多段录音，请在下方列表里选择要裁剪的那一段。');
       document.getElementById(`recording-list-${song.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     },
-  }), [songRecordings, session, canManage]);
+  }), [songRecordings, session, canManage, trimming]);
 
-  if (!songRecordings.length && !busy && !message) return null;
+  if (!songRecordings.length && !busy && !message && !trimming) return null;
 
   const pendingCount = songRecordings.filter((item) => item.pendingSync && !item.fileID).length;
 
@@ -597,9 +605,17 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
           initialMarkers={trimming.recording.markers ?? loadLegacyAudioMarkers(
             window.localStorage, session?.alias ?? '', trimming.recording.id, trimming.buffer.duration,
           )}
+          minimized={trimMinimized}
+          onMinimize={() => setTrimMinimized(true)}
           onCancel={() => setTrimming(null)}
           onSave={saveTrim}
         />
+      )}
+      {trimming && trimMinimized && createPortal(
+        <button type="button" onClick={() => setTrimMinimized(false)} className="fixed bottom-5 right-5 z-[85] inline-flex h-11 items-center gap-2 rounded-full border border-orange-200/30 bg-[#211814] px-4 text-sm font-bold text-orange-100 shadow-lg hover:bg-[#33221a]">
+          <Scissors aria-hidden="true" className="h-4 w-4" />返回录音
+        </button>,
+        document.body,
       )}
     </section>
   );
