@@ -3,8 +3,9 @@ import { createPortal } from 'react-dom';
 import { Download, Loader2, Mic2, Pause, Play, RefreshCw, Scissors, Trash2 } from 'lucide-react';
 import type { Song } from './songCatalog';
 import type { SongRecordSession } from './songRecords';
+import { getMatchQuality } from './songRecords';
 import {
-  deleteRecordingBlob, getRecordingBlob, keptDuration, loadRecordingCache, normalizeAudioCuts,
+  deleteRecordingBlob, getRecordingBlob, isRecordingScore, keptDuration, loadRecordingCache, normalizeAudioCuts,
   parseSongRecordings, putRecordingBlob, RECORDING_MAX_BYTES, resolveKeptSegments, saveRecordingCache,
   type AudioCut, type SongRecording,
 } from './songRecordings';
@@ -34,6 +35,8 @@ interface SongRecordingsProps {
   onPlayingChange?: (playing: boolean) => void;
   showWaveform?: boolean;
   onWaveformChange?: (waveform: RecordingWaveform | null) => void;
+  /** 裁剪弹窗里点「录音榜」：评分已经落库，这里只需通知页面跳过去。 */
+  onOpenRecordingBoard?: () => void;
 }
 
 const fileNameOf = (file: File) => file.name.replace(/\.[^.]+$/, '').trim() || '录音';
@@ -58,7 +61,7 @@ const readAudioDuration = (file: File): Promise<number> => new Promise((resolve,
 });
 
 const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({
-  song, session, canManage, onCountChange, onPlayingChange, showWaveform, onWaveformChange,
+  song, session, canManage, onCountChange, onPlayingChange, showWaveform, onWaveformChange, onOpenRecordingBoard,
 }, ref) => {
   const [recordings, setRecordings] = useState<SongRecording[]>(() => loadRecordingCache(window.localStorage, session?.alias ?? null));
   const [busy, setBusy] = useState('');
@@ -180,7 +183,9 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({
       }
       let latest = recordingsRef.current.find((item) => item.id === id);
       while (latest) {
-        const payload: SongRecording = { ...latest, fileID, pendingSync: false };
+        // 录音指数跟着录音一起上云：没有分就显式送 0，云端按「这段没评」处理，
+        // 这样清空评分也能同步出去（省略字段的含义是「本次客户端没带这个信息」）。
+        const payload: SongRecording = { ...latest, fileID, pendingSync: false, score: latest.score ?? 0 };
         const remote = parseSongRecordings([await saveCloudSongRecording(credentials, payload)])[0];
         const current = recordingsRef.current.find((item) => item.id === id);
         // 窗口可以连续保存。上一笔同步完成时，继续提交保存期间产生的新版本。
@@ -193,8 +198,17 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({
         ))) {
           throw new Error('RECORDING_MARKERS_UNSUPPORTED');
         }
+        // 片段评论的终点是后加的字段：老云函数会把它剥掉，那样评论就退回成一个点。
+        if (payload.markers?.some((marker, index) => marker.end !== undefined && (
+          remote?.markers?.[index]?.end === undefined || Math.abs(remote.markers[index].end! - marker.end) > 0.001
+        ))) {
+          throw new Error('RECORDING_MARKER_SPAN_UNSUPPORTED');
+        }
         if (payload.gain !== undefined && !sameRecordingGain(payload.gain, remote?.gain)) {
           throw new Error('RECORDING_GAIN_UNSUPPORTED');
+        }
+        if ((isRecordingScore(payload.score) ? payload.score : null) !== (remote?.score ?? null)) {
+          throw new Error('RECORDING_SCORE_UNSUPPORTED');
         }
         const synced: SongRecording = remote ? { ...remote, localBlobId: latest.localBlobId } : payload;
         commitWith((items) => items.map((item) => (item.id === id ? synced : item)));
@@ -563,6 +577,27 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({
     return savedLocally;
   };
 
+  /**
+   * 录音指数落在录音本身：本机立刻写入并缓存，再异步推给云端（云端没更新就先留在本机待同步）。
+   * null 表示清空评分。
+   */
+  const rateRecording = useCallback((id: string, score: number | null) => {
+    if (!sessionRef.current) return false;
+    const latest = recordingsRef.current.find((item) => item.id === id);
+    if (!latest || (isRecordingScore(latest.score) ? latest.score : null) === score) return false;
+    const updated: SongRecording = {
+      ...latest,
+      // 清空时写成 undefined：落缓存时这个键会自然消失，云端按「送 0」处理成没评。
+      score: score ?? undefined,
+      pendingSync: true,
+      updatedAt: new Date().toISOString(),
+    };
+    const savedLocally = commitWith((items) => items.map((item) => (item.id === id ? updated : item)));
+    setMessage(score === null ? '已清空录音指数。' : `录音指数已记 ${score}。`);
+    void syncRecording(id);
+    return savedLocally;
+  }, [commitWith, syncRecording]);
+
   const exportClip = async (recording: SongRecording) => {
     setBusy('正在导出裁剪片段…');
     try {
@@ -672,6 +707,7 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({
           const cuts = normalizeAudioCuts(recording.cuts, recording.clipStart, recording.clipEnd);
           const kept = keptDuration(recording.clipStart, recording.clipEnd, cuts);
           const trimmed = recording.clipStart > 0.01 || recording.clipEnd < recording.duration - 0.01 || cuts.length > 0;
+          const scoreQuality = isRecordingScore(recording.score) ? getMatchQuality(recording.score) : null;
           return (
             <div key={recording.id} className="relative isolate rounded-xl border border-white/8 bg-black/25 p-3">
               <div className="flex items-start justify-between gap-3">
@@ -692,6 +728,16 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({
                     <span>{formatDuration(recording.duration)}</span>
                     <span className="text-white/15">·</span>
                     <span>{formatRecordingSize(recording.size)}</span>
+                    {scoreQuality && (
+                      <>
+                        <span className="text-white/15">·</span>
+                        <span className="inline-flex items-center gap-1" title={`录音指数 ${recording.score}（${scoreQuality.label}）`}>
+                          <b className="font-mono text-[11px] font-black text-orange-200/85">{recording.score}</b>
+                          <em className={`practice-quality ${scoreQuality.tone}`}>{scoreQuality.label}</em>
+                          <span>录音指数</span>
+                        </span>
+                      </>
+                    )}
                     {trimmed && (
                       <>
                         <span className="text-white/15">·</span>
@@ -755,6 +801,9 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({
           initialCuts={trimming.recording.cuts}
           initialGain={trimming.recording.gain}
           noteStorageKey={`jieyou-recording-note-v1:${JSON.stringify([session?.alias.trim().toLowerCase() ?? '', trimming.recording.id])}`}
+          initialScore={trimming.recording.score}
+          onScoreChange={score => rateRecording(trimming.recording.id, score)}
+          onOpenRecordingBoard={onOpenRecordingBoard}
           initialMarkers={trimming.recording.markers ?? loadLegacyAudioMarkers(
             window.localStorage, session?.alias ?? '', trimming.recording.id, trimming.buffer.duration,
           )}

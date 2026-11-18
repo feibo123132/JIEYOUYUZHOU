@@ -12,6 +12,8 @@
 - 排序/同步路径：`commitCatalog`（本地持久化）→ `commitSongOrder`（权限校验+持久化+`syncCurrentArtistSettings` 云同步）。
 - 点歌/投票系统：云函数 `songRequestSync`，votes 集合按 songId 为文档：`count`（总榜）+ `locationCounts.{medicalWuming|medicalMain|nanhu}`（分地点）；`votes:pull` 按 request.location 读对应桶，无地点读 count；`votes:finishAll`（唱完）把待唱累加到站主 workspace 的 `sungVoteCounts`/`sungVoteCountsByLocation`。归类决策**后端权威**：优先 request.location（validation 已放行），否则按 `latestRoadshowLocation(owner)` 取站主最近路演地点，无路演则只进总榜。`incrementCloudVote` 返回 `{ count, location }` 供前端提示去向。
 - 练习徽章：`songPracticeStats` memo 聚合 `{count, score}`；显示开关持久化在 `localStorage` `jieyou_show_practice_badges`。
+- **录音指数（第五个指数，2026-11 新增）**：存在录音记录 `SongRecording.score`（70–100 整数，同一套 `getMatchQuality` 分档），跟着录音上云。线上用 `score: 0` 表示「这段没评」（省略字段=本次客户端没带，云端沿用已有值）；云函数 `validation.js` 把 0 落成不存字段，`index.js recordings:save` 里「显式 0=清空、省略=沿用」。旧云函数会把它洗掉，客户端回环比对抛 `RECORDING_SCORE_UNSUPPORTED` 并保留本机（与 markers/gain 同一套降级范式）。录入位置：`AudioTrimDialog` 留言框左侧，失焦/回车/关闭/保存时提交。
+- **录音榜**：`PracticeBoard` 第五个成员 `'recording'`。数据不走 `rankSongsByPracticeMatch`（只收有匹配指数的歌），而是 `collectRecordingScores(录音)` 按 songId 取最高分；数据源＝本机 `loadRecordingCache` + 云端 `pullCloudSongRecordings`，用 `mergeSongRecordings` 按 id（较新 updatedAt 胜出）合并，防止云端旧数据盖掉本机刚评的分。
 
 ## 谱子（SongScore）图片加载（重要坑）
 - 云端只存 `cloud://.../song-request-scores/...jpg` fileID（`toStoredSongScore` 会剥离 pageUrls）；显示必须用 `getTempFileURL` 换签名地址，**签名地址有有效期**。

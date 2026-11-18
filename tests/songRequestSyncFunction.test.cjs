@@ -1165,3 +1165,34 @@ test('keeps private song records isolated, independent, and soft-deleted', async
   assert.deepEqual((await handler({ action: 'songRecords:pull', ...auth })).records.map((record) => record.id), ['feedback-1']);
   assert.deepEqual(await handler({ action: 'songRecords:save', ...auth, record: practice }), { ok: false, error: 'NOT_FOUND' });
 })
+
+test('segment comment ends survive save, trim from an older client, and reload', async () => {
+  const store = memoryStore();
+  const handler = loadFunction().createHandler(store);
+  const account = { alias: 'segment-owner', password: 'segment-fixture-password' };
+  await seedExistingAccount(store, account);
+  const recording = {
+    id: 'rec-span', title: '录音', songId: 'song-span', songTitle: '我们俩', songArtist: '郭顶',
+    fileID: `cloud://fixture/song-request-recordings/${'a'.repeat(64)}/${'b'.repeat(64)}/take.mp3`,
+    fileName: 'take.mp3', mimeType: 'audio/mpeg', size: 100, duration: 30, clipStart: 0, clipEnd: 30,
+    createdAt: '2026-08-25T12:00:00.000Z', updatedAt: '2026-08-25T12:00:00.000Z',
+  };
+  const save = fields => handler({ action: 'recordings:save', ...account, recording: { ...recording, ...fields } });
+  const marker = { time: 12, end: 18.5, topic: '副歌', note: '这段气不够', color: '#6ee7b7' };
+
+  assert.deepEqual((await save({ markers: [marker] })).recording.markers, [marker]);
+  // 老客户端只认识 time/topic：云端补回 end，评论不会退化成点。
+  const legacy = { time: 12, topic: '副歌', note: '这段气不够', color: '#6ee7b7' };
+  assert.deepEqual((await save({ markers: [legacy] })).recording.markers, [marker]);
+  assert.deepEqual((await save({ clipEnd: 20 })).recording.markers, [marker]);
+  assert.deepEqual((await handler({ action: 'recordings:pull', ...account })).recordings[0].markers, [marker]);
+
+  // 终点早于起点 / 太短 / 越界都要拒绝。
+  for (const end of [9, 12.01, 31]) {
+    assert.equal((await save({ markers: [{ ...marker, end }] })).ok, false);
+  }
+  // 退回点标记仍然允许。
+  assert.deepEqual((await save({ markers: [{ time: 12, topic: '副歌', note: '这段气不够', color: '#6ee7b7' }] }))
+    .recording.markers, [marker]);
+  assert.deepEqual((await save({ markers: [] })).recording.markers, []);
+});

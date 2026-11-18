@@ -635,7 +635,9 @@ export const deleteSongRecordingFile = async (fileID: string): Promise<void> => 
 export const mapSongRecordingError = (error: unknown) => {
   const code = error instanceof Error ? error.message : 'SYNC_FAILED';
   if (code === 'RECORDING_MARKERS_UNSUPPORTED') return '云端暂未保存最新的录音标记，改动已保存在本机，可在云端更新后重试同步。';
+  if (code === 'RECORDING_MARKER_SPAN_UNSUPPORTED') return '片段评论的区间还没上云（云端是旧版）。本机已保存，更新云函数后点「重试同步」即可。';
   if (code === 'RECORDING_GAIN_UNSUPPORTED') return '增益已保存在本机。云端更新后可点「重试同步」。';
+  if (code === 'RECORDING_SCORE_UNSUPPORTED') return '录音指数已保存在本机。云端更新后可点「重试同步」。';
   if (code === 'PAYLOAD_TOO_LARGE') return '录音文件过大，请换更小的文件或先压缩。';
   if (code === 'RECORDING_UPLOAD_FAILED') return '录音未能传到云存储，已保存在本机，可点「重试同步」。';
   if (code === 'RECORDING_TOO_LARGE') return '录音超过 40MB 上限，请先压缩或剪短。';

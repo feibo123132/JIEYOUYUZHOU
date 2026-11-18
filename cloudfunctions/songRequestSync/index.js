@@ -909,17 +909,31 @@ function createHandler(store) {
         const gain = request.recording.gain ?? recordings[index]?.gain;
         // Older clients omit topics even when they send the marker list.
         const topicsByTime = new Map((existingMarkers ?? []).map(({ time, topic }) => [time, topic]));
+        // 同理：不认识片段评论的老客户端会把 end 丢了，这里按时间补回云端已有的终点。
+        const endsByTime = new Map((existingMarkers ?? []).map(({ time, end }) => [time, end]));
         const markers = request.recording.markers?.map((marker) => {
           const topic = topicsByTime.get(marker.time);
-          return marker.topic === undefined && topic !== undefined ? { ...marker, topic } : marker;
+          const end = endsByTime.get(marker.time);
+          return {
+            ...marker,
+            ...(marker.topic === undefined && topic !== undefined ? { topic } : {}),
+            ...(marker.end === undefined && end !== undefined ? { end } : {}),
+          };
         }) ?? existingMarkers;
+        // 录音指数：显式送 0 表示清空评分；字段省略表示本次客户端没带，沿用云端已有的分。
+        const incomingScore = request.recording.score;
+        const score = incomingScore === undefined
+          ? recordings[index]?.score
+          : (incomingScore >= 70 && incomingScore <= 100 ? incomingScore : undefined);
         const saved = {
           ...request.recording,
+          ...(score === undefined ? {} : { score }),
           ...(markers === undefined ? {} : { markers }),
           ...(gain === undefined ? {} : { gain }),
           workspaceId: id,
           updatedAt: store.now(),
         };
+        if (score === undefined) delete saved.score;
         if (index >= 0) recordings[index] = saved;
         else {
           if (recordings.filter((item) => !item.deletedAt).length >= 30) throw new Error('INVALID_RECORDING');

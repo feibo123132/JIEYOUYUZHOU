@@ -59,8 +59,8 @@ export const paginateRankingItems = <T>(items: T[], requestedPage: number, pageS
 
 export type RankingDisplayMode = 'normal' | 'reverse' | 'random';
 
-/** 练习页签下的四种榜单：按匹配指数排的练习榜 / 按合唱指数排的合唱榜 / 按狂扫指数排的狂扫榜 / 按板凳指数排的板凳榜。 */
-export type PracticeBoard = 'practice' | 'chorus' | 'strum' | 'stool';
+/** 练习页签下的五种榜单：按匹配指数排的练习榜 / 按合唱指数排的合唱榜 / 按狂扫指数排的狂扫榜 / 按板凳指数排的板凳榜 / 按录音指数排的录音榜。 */
+export type PracticeBoard = 'practice' | 'chorus' | 'strum' | 'stool' | 'recording';
 
 export const togglePersonalRankingReverse = (mode: RankingDisplayMode): RankingDisplayMode => (
   mode === 'reverse' ? 'normal' : 'reverse'

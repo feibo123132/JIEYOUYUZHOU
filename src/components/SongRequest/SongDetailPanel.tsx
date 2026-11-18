@@ -57,6 +57,8 @@ interface SongDetailPanelProps {
   onScoreChange: (songId: string, score: SongScore | null, alreadySynced?: boolean) => void;
   onOpenPrivateSpace: () => void;
   onOpenPracticeRanking: () => void;
+  /** 从录音裁剪弹窗直达「录音榜」。 */
+  onOpenRecordingRanking: () => void;
   roadshowSingState: CloudRoadshowSingState;
   roadshowSingCountsReady: boolean;
   onRoadshowRecorded: (state: CloudRoadshowSingState) => void;
@@ -108,7 +110,8 @@ const displayRoadshowDate = (value: string) => value.replace(/-/g, '/');
 const SongDetailPanel = ({
   song, records, roadshows = [], session, syncStatus = '', quizLevel, quizCounts,
   canManageQuiz, quizBusy = false, score = null, scoreBusy = false, scoreSyncStatus = '', onQuizLevelChange, onRecordsChange,
-  onScoreChange, onOpenPrivateSpace, onOpenPracticeRanking, roadshowSingState, roadshowSingCountsReady, onRoadshowRecorded,
+  onScoreChange, onOpenPrivateSpace, onOpenPracticeRanking, onOpenRecordingRanking, roadshowSingState,
+  roadshowSingCountsReady, onRoadshowRecorded,
 }: SongDetailPanelProps) => {
   const songRecords = useMemo(() => sortSongRecords(records.filter((record) => record.songId === song.id)), [records, song.id]);
   const practices = songRecords.filter((record): record is PracticeRecord => record.kind === 'practice');
@@ -644,6 +647,7 @@ const SongDetailPanel = ({
             onPlayingChange={setIsRecordingPlaying}
             showWaveform={scoreViewerOpen}
             onWaveformChange={setRecordingWaveform}
+            onOpenRecordingBoard={onOpenRecordingRanking}
           />
         )}
         {isOwner && session && <SongPerformanceControls key={song.id} song={song} session={session} latestRoadshow={getLatestRoadshow(roadshows) ?? null} singState={roadshowSingState} ready={roadshowSingCountsReady} onRoadshowRecorded={onRoadshowRecorded} />}

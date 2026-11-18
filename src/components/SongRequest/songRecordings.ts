@@ -32,6 +32,8 @@ export interface SongRecording {
   gain?: RecordingGain;
   /** 源音频坐标中的标记。空数组表示已移除全部标记，缺省表示旧录音。 */
   markers?: AudioMarker[];
+  /** 录音指数：70–100 整数，与匹配 / 合唱 / 狂扫 / 板凳指数共用同一套刻度；缺省表示这段没评。 */
+  score?: number;
   pendingSync?: boolean;
   createdAt: string;
   updatedAt: string;
@@ -43,6 +45,20 @@ export const RECORDING_MAX_BYTES = 40 * 1024 * 1024;
 export const RECORDING_MAX_CUTS = 30;
 
 const isFiniteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+
+/** 录音指数只认 70–100 的整数；云端用 0 表示「这段没评」。 */
+export const RECORDING_SCORE_MIN = 70;
+export const RECORDING_SCORE_MAX = 100;
+
+export const isRecordingScore = (value: unknown): value is number => (
+  Number.isInteger(value) && Number(value) >= RECORDING_SCORE_MIN && Number(value) <= RECORDING_SCORE_MAX
+);
+
+/** 把输入框里的内容收成 70–100 整数；越界、非整数或空值一律当作「没评」返回 null。 */
+export const parseRecordingScoreInput = (value: string | number): number | null => {
+  const number = typeof value === 'number' ? value : Number(value.trim());
+  return isRecordingScore(number) ? number : null;
+};
 
 /** 排序并合并重叠的删除段，同时裁到 [start, end] 内。 */
 export const normalizeAudioCuts = (cuts: AudioCut[] | undefined, start: number, end: number): AudioCut[] => {
@@ -108,13 +124,14 @@ export const isValidSongRecording = (value: unknown): value is SongRecording => 
 export const parseSongRecordings = (value: unknown): SongRecording[] => {
   if (!Array.isArray(value)) return [];
   return value.filter(isValidSongRecording).map((item) => {
-    const { markers, gain, ...recording } = item;
+    const { markers, gain, score, ...recording } = item;
     const clipStart = Math.max(0, Math.min(item.clipStart, item.duration));
     const clipEnd = Math.max(clipStart + 0.05, Math.min(item.clipEnd, item.duration));
     return {
       ...recording,
       clipStart,
       clipEnd,
+      score: isRecordingScore(score) ? score : undefined,
       cuts: normalizeAudioCuts(item.cuts, clipStart, clipEnd),
       ...(isRecordingGain(gain, item.duration) ? { gain } : {}),
       ...(Array.isArray(markers) ? { markers: normalizeAudioMarkers(markers, item.duration) } : {}),
@@ -139,6 +156,43 @@ export const saveRecordingCache = (storage: { setItem: (key: string, value: stri
     // 缓存失败不影响云端权威数据。
     return false;
   }
+};
+
+/* ------------------------------------------------------------------ */
+/* 录音榜：把本机缓存与云端列表并成一份，再按歌汇总录音指数。            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 本机缓存与云端列表按 id 合并，较新的 updatedAt 胜出。
+ * 本机刚评的分 / 刚裁的片段还没同步上云时，不会被云端的旧数据盖掉。
+ */
+export const mergeSongRecordings = (local: SongRecording[], remote: SongRecording[]): SongRecording[] => {
+  const byId = new Map(local.map((item) => [item.id, item]));
+  for (const item of remote) {
+    const existing = byId.get(item.id);
+    if (!existing || item.updatedAt > existing.updatedAt) {
+      byId.set(item.id, { ...existing, ...item, localBlobId: existing?.localBlobId });
+    }
+  }
+  return [...byId.values()];
+};
+
+/** 每首歌取所有录音里最高的录音指数（同一套 70–100 刻度），count 为已评过的段数。 */
+/**
+ * 录音榜口径：一首歌可能有很多段录音，榜上只占一行，按「最高的一段」排名，
+ * 同时把每段的分都带上（降序），方便悬停看到这首歌到底评了几段、各是多少。
+ */
+export const collectRecordingScores = (
+  recordings: SongRecording[],
+): Map<string, { score: number; count: number; scores: number[] }> => {
+  const map = new Map<string, { score: number; count: number; scores: number[] }>();
+  for (const recording of recordings) {
+    if (!isRecordingScore(recording.score)) continue;
+    const current = map.get(recording.songId);
+    const scores = [...(current?.scores ?? []), recording.score].sort((left, right) => right - left);
+    map.set(recording.songId, { score: scores[0], count: scores.length, scores });
+  }
+  return map;
 };
 
 /* ------------------------------------------------------------------ */

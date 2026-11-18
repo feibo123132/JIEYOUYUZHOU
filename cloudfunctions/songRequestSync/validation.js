@@ -431,6 +431,13 @@ const validateRecording = (value) => {
   }
   const createdAt = cleanOptionalText(value.createdAt, 40, 'INVALID_RECORDING') || new Date().toISOString();
   const updatedAt = cleanOptionalText(value.updatedAt, 40, 'INVALID_RECORDING') || createdAt;
+  // 录音指数：70–100 整数；前端用 0 表示「这段没评」，存的时候不落字段。
+  let score;
+  if (value.score !== undefined) {
+    const raw = Number(value.score);
+    if (!Number.isInteger(raw) || (raw !== 0 && (raw < 70 || raw > 100))) throw new Error('INVALID_RECORDING');
+    if (raw) score = raw;
+  }
   let markers;
   if (value.markers !== undefined) {
     if (!Array.isArray(value.markers)) throw new Error('INVALID_RECORDING');
@@ -442,9 +449,15 @@ const validateRecording = (value) => {
         || typeof marker.color !== 'string' || !/^#[0-9a-f]{6}$/i.test(marker.color)) {
         throw new Error('INVALID_RECORDING');
       }
+      // 带 end 的是区间标记（片段评论）：必须真的是一段，且落在音频里。
+      if (marker.end !== undefined && (!Number.isFinite(marker.end)
+        || marker.end - marker.time < 0.05 || marker.end > duration + 0.5)) {
+        throw new Error('INVALID_RECORDING');
+      }
       times.add(marker.time);
       return {
         time: marker.time, note: marker.note, color: marker.color.toLowerCase(),
+        ...(marker.end === undefined ? {} : { end: marker.end }),
         ...(marker.topic === undefined ? {} : { topic: marker.topic }),
       };
     }).sort((left, right) => left.time - right.time);
@@ -453,6 +466,7 @@ const validateRecording = (value) => {
     id, songId, songTitle, songArtist, title, fileName, mimeType, fileID: value.fileID,
     size: value.size, duration, clipStart, clipEnd, ...(cuts.length ? { cuts } : {}),
     ...(gain === undefined ? {} : { gain }),
+    ...(score === undefined ? {} : { score }),
     ...(markers === undefined ? {} : { markers }), createdAt, updatedAt,
   };
 };
