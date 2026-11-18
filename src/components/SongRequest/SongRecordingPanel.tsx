@@ -16,11 +16,14 @@ import { decodeAudioBlob, downloadBlob, encodeAudioClipToWav, formatDuration, fo
 import AudioTrimDialog from './AudioTrimDialog';
 import { loadLegacyAudioMarkers, type AudioMarker } from './audioMarkers';
 import { hasRecordingGain, sameRecordingGain, scheduleAudioGain, type RecordingGain } from './audioGain';
+import { buildPlaybackPeaks, joinedPosition, playbackDuration, slicePlayback, type RecordingWaveform } from './recordingPlayback';
 
 export interface SongRecordingsHandle {
   upload: (file: File) => Promise<void>;
   openTrimPicker: () => void;
-  toggleLatestPlayback: () => Promise<string | undefined>;
+  toggleScorePlayback: () => Promise<string | undefined>;
+  readPlaybackPosition: () => number;
+  seekPlayback: (position: number) => Promise<string | undefined>;
 }
 
 interface SongRecordingsProps {
@@ -29,6 +32,8 @@ interface SongRecordingsProps {
   canManage: boolean;
   onCountChange?: (count: number) => void;
   onPlayingChange?: (playing: boolean) => void;
+  showWaveform?: boolean;
+  onWaveformChange?: (waveform: RecordingWaveform | null) => void;
 }
 
 const fileNameOf = (file: File) => file.name.replace(/\.[^.]+$/, '').trim() || '录音';
@@ -52,12 +57,15 @@ const readAudioDuration = (file: File): Promise<number> => new Promise((resolve,
   audio.src = url;
 });
 
-const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ song, session, canManage, onCountChange, onPlayingChange }, ref) => {
+const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({
+  song, session, canManage, onCountChange, onPlayingChange, showWaveform, onWaveformChange,
+}, ref) => {
   const [recordings, setRecordings] = useState<SongRecording[]>(() => loadRecordingCache(window.localStorage, session?.alias ?? null));
   const [busy, setBusy] = useState('');
   const [message, setMessage] = useState('');
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [playingId, setPlayingId] = useState<string | null>(null);
+  const [selectedRecordingId, setSelectedRecordingId] = useState<string | null>(null);
   const [trimming, setTrimming] = useState<{ recording: SongRecording; buffer: AudioBuffer } | null>(null);
   const [trimMinimized, setTrimMinimized] = useState(false);
   const [syncingId, setSyncingId] = useState<string | null>(null);
@@ -65,6 +73,9 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   /** 解码后的音频只留最近一条：播放和裁剪共用，省掉重复解码。 */
   const bufferCacheRef = useRef<{ id: string; buffer: AudioBuffer } | null>(null);
+  const pendingBuffers = useRef(new Map<string, Promise<AudioBuffer>>());
+  const playhead = useRef<{ id: string; position: number; read?: () => number } | null>(null);
+  const playbackRequested = useRef(false);
   const sourcesRef = useRef<AudioBufferSourceNode[]>([]);
   const playbackGainRef = useRef<GainNode | null>(null);
   const playbackVersionRef = useRef(0);
@@ -81,6 +92,10 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
     () => recordings.filter((item) => item.songId === song.id).sort((left, right) => right.createdAt.localeCompare(left.createdAt)),
     [recordings, song.id],
   );
+  const selectedRecording = songRecordings.find(item => item.id === selectedRecordingId) ?? songRecordings[0];
+  const selectedParts = useMemo(() => selectedRecording
+    ? resolveKeptSegments(selectedRecording.clipStart, selectedRecording.clipEnd, selectedRecording.cuts)
+    : [], [selectedRecording]);
 
   useEffect(() => { onCountChange?.(songRecordings.length); }, [onCountChange, songRecordings.length]);
   const isRecordingPlaying = playingId !== null;
@@ -226,6 +241,9 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
 
   const stopPlayback = () => {
     playbackVersionRef.current += 1;
+    playbackRequested.current = false;
+    const head = playhead.current;
+    if (head?.read) playhead.current = { id: head.id, position: head.read() };
     setBusy(current => current === '正在加载音频…' ? '' : current);
     for (const source of sourcesRef.current) {
       try { source.onended = null; source.stop(); } catch { /* 已停止 */ }
@@ -261,30 +279,38 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
    * 兜底播放：解码失败（超大文件 / 特殊编码）时交给 <audio>。
    * 跳段精度受 timeupdate（约 250ms）限制，所以只当备用。
    */
-  const playFromElement = async (recording: SongRecording, version: number) => {
+  const playFromElement = async (recording: SongRecording, version: number, parts: AudioCut[], position: number) => {
     const url = await playableUrl(recording);
     if (version !== playbackVersionRef.current) return;
     const audio = audioRef.current ?? new Audio();
     audioRef.current = audio;
     audio.src = url;
-    const cuts = normalizeAudioCuts(recording.cuts, recording.clipStart, recording.clipEnd);
-    audio.onended = () => {
-      if (version === playbackVersionRef.current) setPlayingId(null);
-    };
+    const finish = () => finishPlayback(recording.id, playbackDuration(parts), version);
+    audio.onended = finish;
     audio.ontimeupdate = () => {
       if (version !== playbackVersionRef.current) return;
       const time = audio.currentTime;
-      const cut = cuts.find((item) => time >= item.start && time < item.end);
-      if (cut) {
-        if (cut.end >= recording.clipEnd - 0.02) { audio.pause(); setPlayingId(null); return; }
-        try { audio.currentTime = cut.end; } catch { /* ignore */ }
-        return;
+      const next = parts.find(part => time < part.end);
+      if (!next) {
+        audio.pause();
+        finish();
+      } else if (time < next.start) {
+        try { audio.currentTime = next.start; } catch { /* ignore */ }
       }
-      if (time >= recording.clipEnd) { audio.pause(); setPlayingId(null); }
     };
-    audio.currentTime = recording.clipStart;
+    audio.currentTime = slicePlayback(parts, position)[0].start;
     await audio.play();
-    if (version === playbackVersionRef.current) setPlayingId(recording.id);
+    if (version === playbackVersionRef.current && playbackRequested.current) {
+      playhead.current = { id: recording.id, position, read: () => joinedPosition(parts, audio.currentTime) };
+      setPlayingId(recording.id);
+    }
+  };
+
+  const finishPlayback = (id: string, duration: number, version: number) => {
+    if (version !== playbackVersionRef.current) return;
+    playbackRequested.current = false;
+    playhead.current = { id, position: duration };
+    setPlayingId(null);
   };
 
   /**
@@ -292,19 +318,25 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
    * 删除段在调度阶段就被跳过（采样级精确、无 timeupdate 的 250ms 滞后），
    * 所以「删掉中间一小段」听上去是真的一剪就没。
    */
-  const togglePlay = async (recording: SongRecording) => {
-    if (playingId === recording.id) { stopPlayback(); return; }
+  const playRecording = async (recording: SongRecording, position = 0) => {
     stopPlayback();
+    setSelectedRecordingId(recording.id);
+    playhead.current = { id: recording.id, position };
+    playbackRequested.current = true;
     const version = playbackVersionRef.current;
     const fail = (reason: string) => {
+      playbackRequested.current = false;
       setMessage(reason);
       return reason;
     };
+    const kept = resolveKeptSegments(recording.clipStart, recording.clipEnd, recording.cuts);
+    const parts = slicePlayback(kept, position);
+    if (!parts.length) return fail('没有可播放的部分。');
 
     let buffer = bufferCacheRef.current?.id === recording.id ? bufferCacheRef.current.buffer : null;
     if (!buffer) {
       setBusy('正在加载音频…');
-      buffer = await loadBuffer(recording).catch(() => null);
+      buffer = await getPlaybackBuffer(recording).catch(() => null);
       setBusy(current => current === '正在加载音频…' && version === playbackVersionRef.current ? '' : current);
     }
     if (version !== playbackVersionRef.current) return;
@@ -313,17 +345,12 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
         return fail('无法读取音频来应用已保存的增益，请重试。');
       }
       try {
-        await playFromElement(recording, version);
+        await playFromElement(recording, version, kept, position);
       } catch {
         if (version === playbackVersionRef.current) return fail('这段录音暂时无法播放，请重新上传。');
       }
       return;
     }
-    bufferCacheRef.current = { id: recording.id, buffer };
-
-    const parts = resolveKeptSegments(recording.clipStart, recording.clipEnd, recording.cuts);
-    if (!parts.length) return fail('删除段覆盖了全部内容，没有可播放的部分。');
-
     try {
       const context = getAudioContext();
       await context.resume();
@@ -349,10 +376,15 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
       }
       const last = sources[sources.length - 1];
       if (last) last.onended = () => {
+        if (version !== playbackVersionRef.current) return;
         gainNode?.disconnect();
         playbackGainRef.current = null;
         sourcesRef.current = [];
-        setPlayingId(null);
+        finishPlayback(recording.id, playbackDuration(kept), version);
+      };
+      playhead.current = {
+        id: recording.id, position,
+        read: () => position + Math.max(0, Math.min(cursor - startedAt, context.currentTime - startedAt)),
       };
       setPlayingId(recording.id);
     } catch {
@@ -362,7 +394,12 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
     }
   };
 
-  const loadBuffer = async (recording: SongRecording): Promise<AudioBuffer> => {
+  const togglePlay = async (recording: SongRecording) => {
+    if (playingId === recording.id) { stopPlayback(); return; }
+    return playRecording(recording);
+  };
+
+  const loadBuffer = useCallback(async (recording: SongRecording): Promise<AudioBuffer> => {
     const blobKey = recording.localBlobId ?? recording.id;
     const cached = await getRecordingBlob(blobKey);
     if (cached) return decodeAudioBlob(cached);
@@ -384,7 +421,38 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
     if (!remote || !remote.size) throw new Error('RECORDING_DOWNLOAD_FAILED');
     void putRecordingBlob(blobKey, remote);
     return decodeAudioBlob(remote);
-  };
+  }, []);
+
+  const getPlaybackBuffer = useCallback((recording: SongRecording): Promise<AudioBuffer> => {
+    const cached = bufferCacheRef.current;
+    if (cached?.id === recording.id) return Promise.resolve(cached.buffer);
+    const pending = pendingBuffers.current.get(recording.id);
+    if (pending) return pending;
+    const request = loadBuffer(recording).then(buffer => {
+      bufferCacheRef.current = { id: recording.id, buffer };
+      return buffer;
+    }).finally(() => pendingBuffers.current.delete(recording.id));
+    pendingBuffers.current.set(recording.id, request);
+    return request;
+  }, [loadBuffer]);
+
+  useEffect(() => {
+    if (!showWaveform || !selectedRecording || !onWaveformChange) {
+      onWaveformChange?.(null);
+      return;
+    }
+    let cancelled = false;
+    const duration = playbackDuration(selectedParts);
+    const base = { id: selectedRecording.id, duration, peaks: null };
+    onWaveformChange(base);
+    if (!duration) return;
+    void getPlaybackBuffer(selectedRecording).then(buffer => {
+      if (!cancelled) onWaveformChange({ ...base, peaks: buildPlaybackPeaks(buffer, selectedParts, selectedRecording.gain) });
+    }).catch(() => {
+      if (!cancelled) onWaveformChange({ ...base, unavailable: true });
+    });
+    return () => { cancelled = true; };
+  }, [getPlaybackBuffer, onWaveformChange, selectedParts, selectedRecording, showWaveform]);
 
   const openTrim = async (recording: SongRecording) => {
     if (trimming) {
@@ -530,12 +598,31 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
     }
   };
 
+  const readPlaybackPosition = () => {
+    const head = playhead.current;
+    return head && head.id === selectedRecording?.id ? head.read?.() ?? head.position : 0;
+  };
+
   useImperativeHandle(ref, () => ({
     upload,
-    toggleLatestPlayback: async () => {
-      if (playingId) { stopPlayback(); return; }
-      const latest = songRecordings[0];
-      if (latest) return togglePlay(latest);
+    toggleScorePlayback: async () => {
+      if (playbackRequested.current) { stopPlayback(); return; }
+      if (selectedRecording) {
+        const position = readPlaybackPosition();
+        const duration = playbackDuration(selectedParts);
+        return playRecording(selectedRecording, position < duration - 1e-6 ? position : 0);
+      }
+    },
+    readPlaybackPosition,
+    seekPlayback: async (target) => {
+      if (!selectedRecording || !Number.isFinite(target)) return;
+      const duration = playbackDuration(selectedParts);
+      const position = Math.min(Math.max(0, target), duration);
+      if (playbackRequested.current && position < duration - 1e-6) {
+        return playRecording(selectedRecording, position);
+      }
+      stopPlayback();
+      playhead.current = { id: selectedRecording.id, position };
     },
     openTrimPicker: () => {
       if (trimming) { setTrimMinimized(false); return; }
@@ -544,7 +631,7 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
       setMessage('这首歌有多段录音，请在下方列表里选择要裁剪的那一段。');
       document.getElementById(`recording-list-${song.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     },
-  }), [songRecordings, session, canManage, trimming, playingId]);
+  }), [songRecordings, session, canManage, trimming, selectedRecording, selectedParts]);
 
   if (!songRecordings.length && !busy && !message && !trimming) return null;
 

@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom';
 import { Check, ChevronDown, ChevronLeft, ChevronRight, Loader2, Minus, Pause, Pencil, Play, Plus, X } from 'lucide-react';
 import { readScorePage, saveScorePage } from './songScores';
 import ScorePageEditor from './ScorePageEditor';
+import ScoreRecordingWaveform from './ScoreRecordingWaveform';
+import type { RecordingWaveform } from './recordingPlayback';
 import {
   getFittedScoreSize,
   getPinchScoreZoom,
@@ -28,6 +30,9 @@ interface ScoreViewerProps {
   recordingPlayback?: {
     playing: boolean;
     toggle: () => Promise<string | undefined>;
+    waveform: RecordingWaveform | null;
+    readPosition: () => number;
+    seek: (position: number) => Promise<string | undefined>;
   };
   startEditing?: boolean;
   onClose: () => void;
@@ -349,77 +354,84 @@ const ScoreViewer = ({
       aria-label={`${songTitle} 谱子翻页器`}
       style={{ overscrollBehavior: 'none' }}
     >
-      {(autoScrollAllowed || recordingPlayback) && (
-        <div className="absolute left-3 top-3 z-20 flex items-center gap-2 text-white/85 sm:left-4 sm:top-4">
-          {autoScrollAllowed && <div ref={autoScrollControlRef} className="relative">
-            <button
-              ref={autoScrollButtonRef}
-              type="button"
-              onClick={() => setAutoScrollMenuOpen((current) => !current)}
-              aria-label={autoScrollSpeed === 0 ? '自动滑谱：关闭，选择速度' : `自动滑谱：${AUTO_SCROLL_SPEED_LABELS[autoScrollSpeed]}，选择速度`}
-              aria-haspopup="menu"
-              aria-expanded={autoScrollMenuOpen}
-              aria-controls="score-auto-scroll-menu"
-              className={`inline-flex h-9 items-center gap-1.5 rounded-full border px-3 text-xs font-bold backdrop-blur-md transition ${autoScrollSpeed > 0 ? 'border-orange-200/35 bg-orange-300 text-black shadow-[0_8px_30px_rgba(251,146,60,.22)]' : 'border-white/10 bg-black/50 text-white/75 hover:bg-white/15 hover:text-white'}`}
-            >
-              <ChevronDown className={`h-4 w-4 transition ${autoScrollMenuOpen ? 'rotate-180' : ''}`} />
-              {AUTO_SCROLL_SPEED_LABELS[autoScrollSpeed]}
-            </button>
-            {autoScrollMenuOpen && (
-              <div id="score-auto-scroll-menu" role="menu" aria-label="自动滑谱速度"
-                className="absolute left-0 top-full mt-2 grid w-52 gap-1 rounded-2xl border border-white/15 bg-[#100d16]/95 p-2 shadow-2xl backdrop-blur-xl"
-                onKeyDown={(event) => {
-                  if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
-                  event.preventDefault();
-                  const options = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]'));
-                  const index = options.indexOf(document.activeElement as HTMLButtonElement);
-                  const next = event.key === 'Home' ? 0 : event.key === 'End' ? options.length - 1
-                    : (index + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length;
-                  options[next]?.focus();
-                }}>
-                {([1, 2, 3, 4, 5, 0] as AutoScrollSpeed[]).map((speed) => (
-                  <button key={speed} type="button" role="menuitemradio" aria-checked={autoScrollSpeed === speed}
-                    onClick={() => selectAutoScrollSpeed(speed)}
-                    className={`flex min-h-10 items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-bold transition ${autoScrollSpeed === speed ? 'bg-orange-300/15 text-orange-100' : 'text-white/70 hover:bg-white/10 hover:text-white'} ${speed === 0 ? 'mt-1 border-t border-white/10' : ''}`}>
-                    <span className="w-4 shrink-0">{autoScrollSpeed === speed && <Check className="h-4 w-4" />}</span>
-                    <span className="flex-1">{speed === 0 ? '关闭自动滑谱' : AUTO_SCROLL_SPEED_LABELS[speed]}</span>
-                    {speed !== 0 && <span className="text-[10px] font-normal text-white/40">{AUTO_SCROLL_PIXELS_PER_SECOND[speed]} 像素/秒</span>}
-                  </button>
-                ))}
-              </div>
+      <div className="absolute left-3 top-3 z-20 flex flex-col items-start gap-1.5 text-white/85 min-[480px]:flex-row min-[480px]:items-center sm:left-4 sm:top-4">
+        {(autoScrollAllowed || recordingPlayback) && (
+          <div className="flex items-center gap-2">
+            {autoScrollAllowed && <div ref={autoScrollControlRef} className="relative">
+              <button
+                ref={autoScrollButtonRef}
+                type="button"
+                onClick={() => setAutoScrollMenuOpen((current) => !current)}
+                aria-label={autoScrollSpeed === 0 ? '自动滑谱：关闭，选择速度' : `自动滑谱：${AUTO_SCROLL_SPEED_LABELS[autoScrollSpeed]}，选择速度`}
+                aria-haspopup="menu"
+                aria-expanded={autoScrollMenuOpen}
+                aria-controls="score-auto-scroll-menu"
+                className={`inline-flex h-9 items-center gap-1.5 rounded-full border px-3 text-xs font-bold backdrop-blur-md transition ${autoScrollSpeed > 0 ? 'border-orange-200/35 bg-orange-300 text-black shadow-[0_8px_30px_rgba(251,146,60,.22)]' : 'border-white/10 bg-black/50 text-white/75 hover:bg-white/15 hover:text-white'}`}
+              >
+                <ChevronDown className={`h-4 w-4 transition ${autoScrollMenuOpen ? 'rotate-180' : ''}`} />
+                {AUTO_SCROLL_SPEED_LABELS[autoScrollSpeed]}
+              </button>
+              {autoScrollMenuOpen && (
+                <div id="score-auto-scroll-menu" role="menu" aria-label="自动滑谱速度"
+                  className="absolute left-0 top-full z-10 mt-2 grid w-52 gap-1 rounded-2xl border border-white/15 bg-[#100d16]/95 p-2 shadow-2xl backdrop-blur-xl"
+                  onKeyDown={(event) => {
+                    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+                    event.preventDefault();
+                    const options = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]'));
+                    const index = options.indexOf(document.activeElement as HTMLButtonElement);
+                    const next = event.key === 'Home' ? 0 : event.key === 'End' ? options.length - 1
+                      : (index + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length;
+                    options[next]?.focus();
+                  }}>
+                  {([1, 2, 3, 4, 5, 0] as AutoScrollSpeed[]).map((speed) => (
+                    <button key={speed} type="button" role="menuitemradio" aria-checked={autoScrollSpeed === speed}
+                      onClick={() => selectAutoScrollSpeed(speed)}
+                      className={`flex min-h-10 items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-bold transition ${autoScrollSpeed === speed ? 'bg-orange-300/15 text-orange-100' : 'text-white/70 hover:bg-white/10 hover:text-white'} ${speed === 0 ? 'mt-1 border-t border-white/10' : ''}`}>
+                      <span className="w-4 shrink-0">{autoScrollSpeed === speed && <Check className="h-4 w-4" />}</span>
+                      <span className="flex-1">{speed === 0 ? '关闭自动滑谱' : AUTO_SCROLL_SPEED_LABELS[speed]}</span>
+                      {speed !== 0 && <span className="text-[10px] font-normal text-white/40">{AUTO_SCROLL_PIXELS_PER_SECOND[speed]} 像素/秒</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>}
+            {recordingPlayback && (
+              <button
+                type="button"
+                aria-label={recordingPlayback.playing ? '停止播放录音' : '播放录音'}
+                title={recordingPlayback.playing ? '停止播放录音' : '播放录音'}
+                disabled={recordingLoading}
+                aria-busy={recordingLoading}
+                onClick={async () => {
+                  setRecordingLoading(true);
+                  setRecordingError('');
+                  try {
+                    setRecordingError(await recordingPlayback.toggle() ?? '');
+                  } catch {
+                    setRecordingError('录音暂时无法播放。');
+                  } finally {
+                    setRecordingLoading(false);
+                  }
+                }}
+                className={`grid h-8 w-8 shrink-0 place-items-center rounded-full transition disabled:opacity-60 ${recordingPlayback.playing ? 'bg-emerald-300 text-black' : 'border border-white/10 bg-black/50 text-white/70 backdrop-blur-md hover:border-white/25 hover:text-white'}`}
+              >
+                {recordingLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : recordingPlayback.playing
+                  ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
+              </button>
             )}
-          </div>}
-          {recordingPlayback && (
-            <button
-              type="button"
-              aria-label={recordingPlayback.playing ? '停止播放录音' : '播放录音'}
-              title={recordingPlayback.playing ? '停止播放录音' : '播放最新录音'}
-              disabled={recordingLoading}
-              aria-busy={recordingLoading}
-              onClick={async () => {
-                setRecordingLoading(true);
-                setRecordingError('');
-                try {
-                  setRecordingError(await recordingPlayback.toggle() ?? '');
-                } catch {
-                  setRecordingError('录音暂时无法播放。');
-                } finally {
-                  setRecordingLoading(false);
-                }
-              }}
-              className={`grid h-8 w-8 shrink-0 place-items-center rounded-full transition disabled:opacity-60 ${recordingPlayback.playing ? 'bg-emerald-300 text-black' : 'border border-white/10 bg-black/50 text-white/70 backdrop-blur-md hover:border-white/25 hover:text-white'}`}
-            >
-              {recordingLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : recordingPlayback.playing
-                ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
-            </button>
-          )}
+          </div>
+        )}
+        <div className="flex shrink-0 items-center rounded-full border border-white/10 bg-black/50 p-0.5 text-white/75 shadow-2xl backdrop-blur-md">
+          <button type="button" aria-label="缩小谱子" disabled={!zoomed} onClick={() => applyZoom(stepScoreZoom(zoomRef.current, -1))} className="grid h-8 w-8 place-items-center rounded-full transition hover:bg-white/10 disabled:opacity-25"><Minus className="h-4 w-4" /></button>
+          <span className="flex h-8 min-w-12 items-center justify-center px-1.5 text-xs font-bold tabular-nums">{Math.round(zoom * 100)}%</span>
+          <button type="button" aria-label="放大谱子" disabled={zoom >= SCORE_ZOOM_MAX} onClick={() => applyZoom(stepScoreZoom(zoomRef.current, 1))} className="grid h-8 w-8 place-items-center rounded-full transition hover:bg-white/10 disabled:opacity-25"><Plus className="h-4 w-4" /></button>
+        </div>
           {recordingError && !autoScrollMenuOpen && (
             <p role="status" className="absolute left-0 top-full mt-2 w-max max-w-64 rounded-xl border border-white/15 bg-[#100d16]/95 px-3 py-2 text-xs text-rose-100">
               {recordingError}
             </p>
           )}
-        </div>
-      )}
+      </div>
 
       <div className="absolute right-3 top-3 z-20 flex shrink-0 items-center gap-2 text-white/85 sm:right-4 sm:top-4">
         {onSavePage && !pageError && <button type="button" disabled={!editingAllowed} onClick={() => { setAutoScrollSpeed(0); setEditingSource(pages[page]); }} className="inline-flex h-9 items-center gap-1.5 rounded-full border border-white/10 bg-black/50 px-3 text-xs font-bold text-white/85 backdrop-blur-md transition hover:bg-white/15 disabled:opacity-40"><Pencil className="h-3.5 w-3.5" />编辑</button>}
@@ -498,24 +510,31 @@ const ScoreViewer = ({
         )}
       </div>
 
-      <footer className="flex shrink-0 items-center justify-center gap-3 px-3 py-1.5 text-center text-[10px] text-white/30">
-        <div className="flex shrink-0 items-center rounded-full border border-white/10 bg-white/[.06] p-0.5 text-white/75 shadow-2xl">
-          <button type="button" aria-label="缩小谱子" disabled={!zoomed} onClick={() => applyZoom(stepScoreZoom(zoomRef.current, -1))} className="grid h-8 w-8 place-items-center rounded-full transition hover:bg-white/10 disabled:opacity-25"><Minus className="h-4 w-4" /></button>
-          <span className="flex h-8 min-w-14 items-center justify-center px-2 text-xs font-bold tabular-nums">{Math.round(zoom * 100)}%</span>
-          <button type="button" aria-label="放大谱子" disabled={zoom >= SCORE_ZOOM_MAX} onClick={() => applyZoom(stepScoreZoom(zoomRef.current, 1))} className="grid h-8 w-8 place-items-center rounded-full transition hover:bg-white/10 disabled:opacity-25"><Plus className="h-4 w-4" /></button>
-        </div>
-        {pageError ? (
+      {pageError && (
           <button
             type="button"
             onClick={() => onPagesStale?.(true)}
-            className="rounded-full border border-amber-300/30 bg-amber-300/10 px-3 py-1 font-bold text-amber-100/90 transition hover:bg-amber-300/20"
+            className="absolute left-1/2 top-1/2 z-10 -translate-x-1/2 rounded-full border border-amber-300/30 bg-amber-300/10 px-3 py-1 text-xs font-bold text-amber-100/90 transition hover:bg-amber-300/20"
           >
             谱子加载失败，点此重新加载
           </button>
-        ) : (
-          <span className="min-w-0 truncate">{zoomed ? '双指缩放 · 单指拖动阅览 · 双击复原' : '左右滑动翻页 · 双击适合宽度 · 双指缩放'}</span>
-        )}
-      </footer>
+      )}
+      {recordingPlayback?.waveform && (
+        <footer className="flex shrink-0 items-center justify-center gap-3 px-3 py-1.5">
+          <ScoreRecordingWaveform
+            key={recordingPlayback.waveform.id}
+            waveform={recordingPlayback.waveform}
+            playing={recordingPlayback.playing}
+            readPosition={recordingPlayback.readPosition}
+            onSeek={position => {
+              setRecordingError('');
+              void recordingPlayback.seek(position).then(error => {
+                if (error) setRecordingError(error);
+              }).catch(() => setRecordingError('无法跳转到这个时间。'));
+            }}
+          />
+        </footer>
+      )}
       {editingSource && onSavePage && <ScorePageEditor source={editingSource} loadFallback={loadPageFallback ? () => loadPageFallback(page) : undefined} title={songTitle} pageNumber={page + 1} onSave={(editedPage) => { onSavePage(page, editedPage); setEditingSource(null); }} onClose={() => setEditingSource(null)} />}
     </div>,
     document.body,

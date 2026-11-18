@@ -6,6 +6,7 @@ import type { Song } from './songCatalog';
 import { findSongRoadshowHistory, type RoadshowRecord } from './roadshow';
 import { QUIZ_LEVELS, type QuizLevel } from './songQuizLibrary';
 import ScoreViewer from './ScoreViewer';
+import type { RecordingWaveform } from './recordingPlayback';
 import SongPerformanceControls from './SongPerformanceControls';
 import type { CloudRoadshowSingState } from './songRequestCloud';
 import { getLatestRoadshow } from './roadshow';
@@ -145,6 +146,7 @@ const SongDetailPanel = ({
   const [scoreBusyLocal, setScoreBusyLocal] = useState('');
   const [recordingCount, setRecordingCount] = useState(0);
   const [isRecordingPlaying, setIsRecordingPlaying] = useState(false);
+  const [recordingWaveform, setRecordingWaveform] = useState<RecordingWaveform | null>(null);
   const recordingsRef = useRef<SongRecordingsHandle>(null);
   const recordingFileRef = useRef<HTMLInputElement>(null);
   const scoreFileRef = useRef<HTMLInputElement>(null);
@@ -640,6 +642,8 @@ const SongDetailPanel = ({
             canManage={isOwner}
             onCountChange={setRecordingCount}
             onPlayingChange={setIsRecordingPlaying}
+            showWaveform={scoreViewerOpen}
+            onWaveformChange={setRecordingWaveform}
           />
         )}
         {isOwner && session && <SongPerformanceControls key={song.id} song={song} session={session} latestRoadshow={getLatestRoadshow(roadshows) ?? null} singState={roadshowSingState} ready={roadshowSingCountsReady} onRoadshowRecorded={onRoadshowRecorded} />}
@@ -707,7 +711,10 @@ const SongDetailPanel = ({
           autoScrollAllowed={Boolean(session)}
           recordingPlayback={session && recordingCount > 0 ? {
             playing: isRecordingPlaying,
-            toggle: async () => recordingsRef.current?.toggleLatestPlayback(),
+            toggle: async () => recordingsRef.current?.toggleScorePlayback(),
+            waveform: recordingWaveform,
+            readPosition: () => recordingsRef.current?.readPlaybackPosition() ?? 0,
+            seek: async position => recordingsRef.current?.seekPlayback(position),
           } : undefined}
           startEditing={scoreEditorRequested}
           onClose={() => { setScoreViewerOpen(false); setScoreEditorRequested(false); }}
