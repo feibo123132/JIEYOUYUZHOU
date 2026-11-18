@@ -357,20 +357,27 @@ export const rankSongsByPracticeMatch = (songs: Song[], records: SongRecord[]) =
     if (record.kind !== 'practice') continue;
     practicesBySong.set(record.songId, [...(practicesBySong.get(record.songId) ?? []), record]);
   }
-  return songs.map((song, catalogIndex) => {
+  return songs.flatMap((song, catalogIndex) => {
     const practices = practicesBySong.get(song.id) ?? [];
-    return {
+    if (!practices.length) return [];
+    const score = bestMatchScore(practices);
+    const chorusScore = bestChorusScore(practices);
+    const strumScore = bestStrumScore(practices);
+    const stoolScore = bestStoolScore(practices);
+    // 只评了其它指数的歌也要留在这里（匹配指数记 0），否则合唱 / 狂扫 / 板凳榜会整首漏掉；
+    // 练习榜再按 score > 0 过滤，一个指数都没评的则不收录。
+    if (score === null && chorusScore === null && strumScore === null && stoolScore === null) return [];
+    return [{
       song,
-      score: bestMatchScore(practices),
+      score: score ?? 0,
       practiceCount: practices.length,
-      chorusScore: bestChorusScore(practices),
-      strumScore: bestStrumScore(practices),
+      chorusScore,
+      strumScore,
       strumBpm: bestStrumBpm(practices),
-      stoolScore: bestStoolScore(practices),
+      stoolScore,
       catalogIndex,
-    };
-  }).filter((item): item is typeof item & { score: number } => item.score !== null)
-    .sort((left, right) => right.score - left.score || left.catalogIndex - right.catalogIndex)
+    }];
+  }).sort((left, right) => right.score - left.score || left.catalogIndex - right.catalogIndex)
     .map(({ song, score, practiceCount, chorusScore, strumScore, strumBpm, stoolScore }) => ({ song, score, practiceCount, chorusScore, strumScore, strumBpm, stoolScore }));
 };
 

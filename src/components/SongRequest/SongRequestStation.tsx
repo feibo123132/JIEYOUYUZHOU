@@ -936,12 +936,16 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
     const base = personalRankingArtist
       ? personalRanking.filter(({ song }) => song.artist === personalRankingArtist)
       : personalRanking;
+    // 每个分榜只收「评过这项指数」的歌：只评了合唱的歌不该带着空分蹲在狂扫榜底部。
     const ranked = personalRankingBoard === 'chorus'
-      ? [...base].sort((left, right) => ((right.chorusScore ?? 0) - (left.chorusScore ?? 0)) || (right.score - left.score))
+      ? base.filter((item) => item.chorusScore !== null)
+        .sort((left, right) => ((right.chorusScore ?? 0) - (left.chorusScore ?? 0)) || (right.score - left.score))
       : personalRankingBoard === 'strum'
-        ? [...base].sort((left, right) => ((right.strumScore ?? 0) - (left.strumScore ?? 0)) || (right.score - left.score))
+        ? base.filter((item) => item.strumScore !== null)
+          .sort((left, right) => ((right.strumScore ?? 0) - (left.strumScore ?? 0)) || (right.score - left.score))
         : personalRankingBoard === 'stool'
-          ? [...base].sort((left, right) => ((right.stoolScore ?? 0) - (left.stoolScore ?? 0)) || (right.score - left.score))
+          ? base.filter((item) => item.stoolScore !== null)
+            .sort((left, right) => ((right.stoolScore ?? 0) - (left.stoolScore ?? 0)) || (right.score - left.score))
           // 练习榜只看匹配指数：只评了其它指数的歌会出现在对应的合唱 / 狂扫 / 板凳榜里。
           : base.filter((item) => item.score > 0);
     const ordered = orderPersonalRankingItems(ranked, personalRankingMode);

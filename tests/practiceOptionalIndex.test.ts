@@ -63,11 +63,27 @@ test('平均分与最高分只统计填过匹配指数的练习', () => {
   assert.equal(bestMatchScore([practice({ stoolScore: 93 })]), null);
 });
 
-test('只评了其它指数的歌曲不进练习榜，但仍保留自己的指数分', () => {
+test('只评了其它指数的歌不会进练习榜，但要留在合唱 / 狂扫 / 板凳榜里', () => {
   const ranking = rankSongsByPracticeMatch(songs, [practice({ stoolScore: 93, chorusScore: 88 })]);
-  assert.deepEqual(ranking, []);
+  // 匹配指数缺省记 0：既有分可排，又能被练习榜的 score > 0 过滤掉。
+  assert.equal(ranking.length, 1);
+  assert.equal(ranking[0]?.score, 0);
+  assert.equal(ranking[0]?.chorusScore, 88);
+  assert.equal(ranking[0]?.stoolScore, 93);
   const withMatch = rankSongsByPracticeMatch(songs, [practice({ matchScore: 93, stoolScore: 88 })]);
   assert.equal(withMatch[0]?.score, 93);
+});
+
+test('一个指数都没评的练习记录不占榜单名额', () => {
+  assert.deepEqual(rankSongsByPracticeMatch(songs, [practice({ feelings: '只是记一笔感想' })]), []);
+});
+
+test('分榜只收评过本项指数的歌', () => {
+  const source = readFileSync(new URL('../src/components/SongRequest/SongRequestStation.tsx', import.meta.url), 'utf8');
+  assert.match(source, /base\.filter\(\(item\) => item\.chorusScore !== null\)/);
+  assert.match(source, /base\.filter\(\(item\) => item\.strumScore !== null\)/);
+  assert.match(source, /base\.filter\(\(item\) => item\.stoolScore !== null\)/);
+  assert.match(source, /base\.filter\(\(item\) => item\.score > 0\)/);
 });
 
 test('云端把「没有匹配指数」的歌曲记为 0 分，解析后仍然保留', () => {
