@@ -26,28 +26,6 @@ export const sameRecordingGain = (left: RecordingGain, right?: RecordingGain) =>
   })
 );
 
-/** Replace only the selected interval. Preserve the unaffected sides of overlapping ranges. */
-export const replaceGainRange = (ranges: GainRange[], selection: AudioCut, db: number): GainRange[] => {
-  if (selection.end <= selection.start) return ranges;
-  const next: GainRange[] = [];
-  for (const range of ranges) {
-    if (range.end <= selection.start || range.start >= selection.end) next.push(range);
-    else {
-      if (range.start < selection.start) next.push({ ...range, end: selection.start });
-      if (range.end > selection.end) next.push({ ...range, start: selection.end });
-    }
-  }
-  if (db !== 0) next.push({ ...selection, db });
-  next.sort((left, right) => left.start - right.start);
-  const merged: GainRange[] = [];
-  for (const range of next) {
-    const last = merged[merged.length - 1];
-    if (last?.end === range.start && last.db === range.db) last.end = range.end;
-    else merged.push({ ...range });
-  }
-  return merged;
-};
-
 export const resolveGainSegments = (segment: AudioCut, ranges: GainRange[]): GainRange[] => {
   const result: GainRange[] = [];
   let cursor = segment.start;
@@ -62,6 +40,29 @@ export const resolveGainSegments = (segment: AudioCut, ranges: GainRange[]): Gai
   }
   if (cursor < segment.end) result.push({ start: cursor, end: segment.end, db: 0 });
   return result;
+};
+
+/** Apply a relative change to every span in the selection, leaving both outside edges intact. */
+export const adjustGainRange = (
+  ranges: GainRange[], selection: AudioCut, adjustment: number | 'reset',
+): GainRange[] | null => {
+  if (selection.end <= selection.start || adjustment === 0) return ranges;
+  const changed = adjustment === 'reset' ? [] : resolveGainSegments(selection, ranges).map(part => ({
+    ...part,
+    db: Number((part.db + adjustment).toFixed(10)),
+  }));
+  if (changed.some(({ db }) => db < MIN_GAIN_DB || db > MAX_GAIN_DB)) return null;
+
+  const next = changed.filter(({ db }) => db !== 0);
+  for (const range of ranges) {
+    if (range.end <= selection.start || range.start >= selection.end) next.push(range);
+    else {
+      if (range.start < selection.start) next.push({ ...range, end: selection.start });
+      if (range.end > selection.end) next.push({ ...range, start: selection.end });
+    }
+  }
+  // Keep adjacent selections individually addressable even if their gains match.
+  return next.sort((left, right) => left.start - right.start);
 };
 
 /** Schedule gain on the joined playback timeline, skipping the same deleted intervals as playback. */

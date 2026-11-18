@@ -645,13 +645,13 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
 
       {trimming && (
         <AudioTrimDialog
-          songTitle={song.title}
           recordingTitle={trimming.recording.title}
           buffer={trimming.buffer}
           initialStart={trimming.recording.clipStart}
           initialEnd={trimming.recording.clipEnd}
           initialCuts={trimming.recording.cuts}
           initialGain={trimming.recording.gain}
+          noteStorageKey={`jieyou-recording-note-v1:${JSON.stringify([session?.alias.trim().toLowerCase() ?? '', trimming.recording.id])}`}
           initialMarkers={trimming.recording.markers ?? loadLegacyAudioMarkers(
             window.localStorage, session?.alias ?? '', trimming.recording.id, trimming.buffer.duration,
           )}

@@ -7,7 +7,8 @@
  * - 需要真正剪下来时，用 OfflineAudioContext 精确截取并编码成 WAV 下载。
  */
 
-import { dbToGain, DEFAULT_RECORDING_GAIN, resolveGainSegments, type RecordingGain } from './audioGain';
+import { dbToGain, DEFAULT_RECORDING_GAIN, resolveGainSegments, type RecordingGain } from './audioGain.ts';
+import type { AudioCut } from './songRecordings.ts';
 
 let sharedContext: AudioContext | null = null;
 
@@ -26,23 +27,62 @@ export const decodeAudioBlob = async (blob: Blob): Promise<AudioBuffer> => {
   return await context.decodeAudioData(arrayBuffer.slice(0));
 };
 
-/** 按指定桶数计算波形峰值（0–1），用于 Canvas 绘制。 */
-export const computeWaveformPeaks = (buffer: AudioBuffer, buckets: number): Float32Array => {
-  const channel = buffer.getChannelData(0);
-  const count = Math.max(1, Math.floor(buckets));
-  const blockSize = Math.max(1, Math.floor(channel.length / count));
-  const peaks = new Float32Array(count);
-  for (let index = 0; index < count; index += 1) {
-    const start = index * blockSize;
-    const end = Math.min(channel.length, start + blockSize);
+export type ReadSamplePeak = (start: number, end: number) => number;
+
+const frameAt = (seconds: number, sampleRate: number, length: number) => (
+  seconds >= length / sampleRate ? length : Math.max(0, Math.floor(seconds * sampleRate))
+);
+
+/** Cache complete blocks. Scan partial blocks so a peak outside a selection cannot affect it. */
+export const createSamplePeakReader = (buffer: AudioBuffer): ReadSamplePeak => {
+  const { length, sampleRate, numberOfChannels } = buffer;
+  const channels = Array.from({ length: numberOfChannels }, (_, index) => buffer.getChannelData(index));
+  const blockSize = 128;
+  const blocks = new Float32Array(Math.ceil(length / blockSize));
+  const scan = (start: number, end: number) => {
     let max = 0;
-    for (let cursor = start; cursor < end; cursor += 1) {
-      const value = Math.abs(channel[cursor]);
-      if (value > max) max = value;
+    for (const channel of channels) {
+      for (let frame = start; frame < end; frame += 1) {
+        const amplitude = Math.abs(channel[frame]);
+        if (amplitude > max) max = amplitude;
+      }
     }
-    peaks[index] = max;
+    return max;
+  };
+  for (let block = 0; block < blocks.length; block += 1) {
+    blocks[block] = scan(block * blockSize, Math.min(length, (block + 1) * blockSize));
   }
-  return peaks;
+  return (start, end) => {
+    // Use the same inclusive start and exclusive end as the WAV encoder.
+    const from = frameAt(start, sampleRate, length);
+    const to = frameAt(end, sampleRate, length);
+    if (from >= to) return 0;
+    const firstBlock = Math.ceil(from / blockSize);
+    const lastBlock = Math.floor(to / blockSize);
+    if (firstBlock >= lastBlock) return scan(from, to);
+    let peak = Math.max(scan(from, firstBlock * blockSize), scan(lastBlock * blockSize, to));
+    for (let block = firstBlock; block < lastBlock; block += 1) {
+      if (blocks[block] > peak) peak = blocks[block];
+    }
+    return peak;
+  };
+};
+
+export const measureSamplePeak = (readPeak: ReadSamplePeak, segments: AudioCut[], gain: RecordingGain) => {
+  let peak = 0;
+  for (const segment of segments) {
+    for (const { start, end, db } of resolveGainSegments(segment, gain.ranges)) {
+      peak = Math.max(peak, readPeak(start, end) * dbToGain(gain.overallDb + db));
+    }
+  }
+  return peak;
+};
+
+/** Largest 0.1 dB adjustment that keeps a non-silent sample peak strictly below full scale. */
+export const sampleHeadroomDb = (peak: number): number => {
+  if (peak === 0) return Infinity;
+  const steps = Math.floor(-20 * Math.log10(peak) * 10);
+  return (peak * dbToGain(steps / 10) >= 1 ? steps - 1 : steps) / 10;
 };
 
 export const formatDuration = (seconds: number, withTenths = false): string => {
@@ -70,8 +110,8 @@ export const encodeAudioClipToWav = (
   const ranges = segments
     .flatMap((segment) => resolveGainSegments(segment, gain.ranges))
     .map((segment) => ({
-      from: Math.max(0, Math.floor(segment.start * sampleRate)),
-      to: Math.min(buffer.length, Math.floor(segment.end * sampleRate)),
+      from: frameAt(segment.start, sampleRate, buffer.length),
+      to: frameAt(segment.end, sampleRate, buffer.length),
       multiplier: dbToGain(gain.overallDb + segment.db),
     }))
     .filter((range) => range.to > range.from);
