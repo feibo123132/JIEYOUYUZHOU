@@ -20,6 +20,7 @@ import { hasRecordingGain, sameRecordingGain, scheduleAudioGain, type RecordingG
 export interface SongRecordingsHandle {
   upload: (file: File) => Promise<void>;
   openTrimPicker: () => void;
+  toggleLatestPlayback: () => Promise<string | undefined>;
 }
 
 interface SongRecordingsProps {
@@ -27,6 +28,7 @@ interface SongRecordingsProps {
   session: SongRecordSession | null;
   canManage: boolean;
   onCountChange?: (count: number) => void;
+  onPlayingChange?: (playing: boolean) => void;
 }
 
 const fileNameOf = (file: File) => file.name.replace(/\.[^.]+$/, '').trim() || '录音';
@@ -50,7 +52,7 @@ const readAudioDuration = (file: File): Promise<number> => new Promise((resolve,
   audio.src = url;
 });
 
-const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ song, session, canManage, onCountChange }, ref) => {
+const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ song, session, canManage, onCountChange, onPlayingChange }, ref) => {
   const [recordings, setRecordings] = useState<SongRecording[]>(() => loadRecordingCache(window.localStorage, session?.alias ?? null));
   const [busy, setBusy] = useState('');
   const [message, setMessage] = useState('');
@@ -81,6 +83,8 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
   );
 
   useEffect(() => { onCountChange?.(songRecordings.length); }, [onCountChange, songRecordings.length]);
+  const isRecordingPlaying = playingId !== null;
+  useEffect(() => { onPlayingChange?.(isRecordingPlaying); }, [onPlayingChange, isRecordingPlaying]);
 
   useEffect(() => {
     const cached = loadRecordingCache(window.localStorage, session?.alias ?? null);
@@ -264,7 +268,11 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
     audioRef.current = audio;
     audio.src = url;
     const cuts = normalizeAudioCuts(recording.cuts, recording.clipStart, recording.clipEnd);
+    audio.onended = () => {
+      if (version === playbackVersionRef.current) setPlayingId(null);
+    };
     audio.ontimeupdate = () => {
+      if (version !== playbackVersionRef.current) return;
       const time = audio.currentTime;
       const cut = cuts.find((item) => time >= item.start && time < item.end);
       if (cut) {
@@ -288,6 +296,10 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
     if (playingId === recording.id) { stopPlayback(); return; }
     stopPlayback();
     const version = playbackVersionRef.current;
+    const fail = (reason: string) => {
+      setMessage(reason);
+      return reason;
+    };
 
     let buffer = bufferCacheRef.current?.id === recording.id ? bufferCacheRef.current.buffer : null;
     if (!buffer) {
@@ -298,20 +310,19 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
     if (version !== playbackVersionRef.current) return;
     if (!buffer) {
       if (hasRecordingGain(recording.gain)) {
-        setMessage('无法读取音频来应用已保存的增益，请重试。');
-        return;
+        return fail('无法读取音频来应用已保存的增益，请重试。');
       }
       try {
         await playFromElement(recording, version);
       } catch {
-        if (version === playbackVersionRef.current) setMessage('这段录音暂时无法播放，请重新上传。');
+        if (version === playbackVersionRef.current) return fail('这段录音暂时无法播放，请重新上传。');
       }
       return;
     }
     bufferCacheRef.current = { id: recording.id, buffer };
 
     const parts = resolveKeptSegments(recording.clipStart, recording.clipEnd, recording.cuts);
-    if (!parts.length) { setMessage('删除段覆盖了全部内容，没有可播放的部分。'); return; }
+    if (!parts.length) return fail('删除段覆盖了全部内容，没有可播放的部分。');
 
     try {
       const context = getAudioContext();
@@ -347,7 +358,7 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
     } catch {
       if (version !== playbackVersionRef.current) return;
       stopPlayback();
-      setMessage('这段录音暂时无法播放，请重新上传。');
+      return fail('这段录音暂时无法播放，请重新上传。');
     }
   };
 
@@ -521,6 +532,11 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
 
   useImperativeHandle(ref, () => ({
     upload,
+    toggleLatestPlayback: async () => {
+      if (playingId) { stopPlayback(); return; }
+      const latest = songRecordings[0];
+      if (latest) return togglePlay(latest);
+    },
     openTrimPicker: () => {
       if (trimming) { setTrimMinimized(false); return; }
       if (!songRecordings.length) { setMessage('请先上传一段录音，再进入裁剪。'); return; }
@@ -528,7 +544,7 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({ 
       setMessage('这首歌有多段录音，请在下方列表里选择要裁剪的那一段。');
       document.getElementById(`recording-list-${song.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     },
-  }), [songRecordings, session, canManage, trimming]);
+  }), [songRecordings, session, canManage, trimming, playingId]);
 
   if (!songRecordings.length && !busy && !message && !trimming) return null;
 

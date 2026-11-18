@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Minus, Pencil, Plus, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Loader2, Minus, Pause, Pencil, Play, Plus, X } from 'lucide-react';
 import { readScorePage, saveScorePage } from './songScores';
 import ScorePageEditor from './ScorePageEditor';
 import {
@@ -25,6 +25,10 @@ interface ScoreViewerProps {
   onSavePage?: (index: number, page: string) => void;
   editingAllowed?: boolean;
   autoScrollAllowed?: boolean;
+  recordingPlayback?: {
+    playing: boolean;
+    toggle: () => Promise<string | undefined>;
+  };
   startEditing?: boolean;
   onClose: () => void;
 }
@@ -47,7 +51,10 @@ const AUTO_SCROLL_PIXELS_PER_SECOND: Record<Exclude<AutoScrollSpeed, 0>, number>
   5: 22,
 };
 
-const ScoreViewer = ({ songId, songTitle, pages, onPagesStale, loadPageFallback, onSavePage, editingAllowed = true, autoScrollAllowed = false, startEditing = false, onClose }: ScoreViewerProps) => {
+const ScoreViewer = ({
+  songId, songTitle, pages, onPagesStale, loadPageFallback, onSavePage, editingAllowed = true,
+  autoScrollAllowed = false, recordingPlayback, startEditing = false, onClose,
+}: ScoreViewerProps) => {
   const total = pages.length;
   const [page, setPage] = useState(() => Math.min(readScorePage(window.localStorage, songId), Math.max(total - 1, 0)));
   const [pageError, setPageError] = useState(false);
@@ -56,6 +63,8 @@ const ScoreViewer = ({ songId, songTitle, pages, onPagesStale, loadPageFallback,
   const [imageSize, setImageSize] = useState<ScoreSize>({ width: 0, height: 0 });
   const [autoScrollSpeed, setAutoScrollSpeed] = useState<AutoScrollSpeed>(0);
   const [autoScrollMenuOpen, setAutoScrollMenuOpen] = useState(false);
+  const [recordingLoading, setRecordingLoading] = useState(false);
+  const [recordingError, setRecordingError] = useState('');
   const [editingSource, setEditingSource] = useState<string | null>(() => startEditing ? pages[page] : null);
   const autoScrollControlRef = useRef<HTMLDivElement | null>(null);
   const autoScrollButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -340,47 +349,80 @@ const ScoreViewer = ({ songId, songTitle, pages, onPagesStale, loadPageFallback,
       aria-label={`${songTitle} 谱子翻页器`}
       style={{ overscrollBehavior: 'none' }}
     >
-      {autoScrollAllowed && <div ref={autoScrollControlRef} className="absolute left-3 top-3 z-20 flex shrink-0 items-center text-white/85 sm:left-4 sm:top-4">
-        <button
-          ref={autoScrollButtonRef}
-          type="button"
-          onClick={() => setAutoScrollMenuOpen((current) => !current)}
-          aria-label={autoScrollSpeed === 0 ? '自动滑谱：关闭，选择速度' : `自动滑谱：${AUTO_SCROLL_SPEED_LABELS[autoScrollSpeed]}，选择速度`}
-          aria-haspopup="menu"
-          aria-expanded={autoScrollMenuOpen}
-          aria-controls="score-auto-scroll-menu"
-          className={`inline-flex h-9 items-center gap-1.5 rounded-full border px-3 text-xs font-bold backdrop-blur-md transition ${autoScrollSpeed > 0 ? 'border-orange-200/35 bg-orange-300 text-black shadow-[0_8px_30px_rgba(251,146,60,.22)]' : 'border-white/10 bg-black/50 text-white/75 hover:bg-white/15 hover:text-white'}`}
-        >
-          <ChevronDown className={`h-4 w-4 transition ${autoScrollMenuOpen ? 'rotate-180' : ''}`} />
-          {AUTO_SCROLL_SPEED_LABELS[autoScrollSpeed]}
-        </button>
-        {autoScrollMenuOpen && (
-          <div id="score-auto-scroll-menu" role="menu" aria-label="自动滑谱速度"
-            className="absolute left-0 top-full mt-2 grid w-52 gap-1 rounded-2xl border border-white/15 bg-[#100d16]/95 p-2 shadow-2xl backdrop-blur-xl"
-            onKeyDown={(event) => {
-              if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
-              event.preventDefault();
-              const options = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]'));
-              const index = options.indexOf(document.activeElement as HTMLButtonElement);
-              const next = event.key === 'Home' ? 0 : event.key === 'End' ? options.length - 1
-                : (index + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length;
-              options[next]?.focus();
-            }}>
-            {([1, 2, 3, 4, 5, 0] as AutoScrollSpeed[]).map((speed) => (
-              <button key={speed} type="button" role="menuitemradio" aria-checked={autoScrollSpeed === speed}
-                onClick={() => selectAutoScrollSpeed(speed)}
-                className={`flex min-h-10 items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-bold transition ${autoScrollSpeed === speed ? 'bg-orange-300/15 text-orange-100' : 'text-white/70 hover:bg-white/10 hover:text-white'} ${speed === 0 ? 'mt-1 border-t border-white/10' : ''}`}>
-                <span className="w-4 shrink-0">{autoScrollSpeed === speed && <Check className="h-4 w-4" />}</span>
-                <span className="flex-1">{speed === 0 ? '关闭自动滑谱' : AUTO_SCROLL_SPEED_LABELS[speed]}</span>
-                {speed !== 0 && <span className="text-[10px] font-normal text-white/40">{AUTO_SCROLL_PIXELS_PER_SECOND[speed]} 像素/秒</span>}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>}
+      {(autoScrollAllowed || recordingPlayback) && (
+        <div className="absolute left-3 top-3 z-20 flex items-center gap-2 text-white/85 sm:left-4 sm:top-4">
+          {autoScrollAllowed && <div ref={autoScrollControlRef} className="relative">
+            <button
+              ref={autoScrollButtonRef}
+              type="button"
+              onClick={() => setAutoScrollMenuOpen((current) => !current)}
+              aria-label={autoScrollSpeed === 0 ? '自动滑谱：关闭，选择速度' : `自动滑谱：${AUTO_SCROLL_SPEED_LABELS[autoScrollSpeed]}，选择速度`}
+              aria-haspopup="menu"
+              aria-expanded={autoScrollMenuOpen}
+              aria-controls="score-auto-scroll-menu"
+              className={`inline-flex h-9 items-center gap-1.5 rounded-full border px-3 text-xs font-bold backdrop-blur-md transition ${autoScrollSpeed > 0 ? 'border-orange-200/35 bg-orange-300 text-black shadow-[0_8px_30px_rgba(251,146,60,.22)]' : 'border-white/10 bg-black/50 text-white/75 hover:bg-white/15 hover:text-white'}`}
+            >
+              <ChevronDown className={`h-4 w-4 transition ${autoScrollMenuOpen ? 'rotate-180' : ''}`} />
+              {AUTO_SCROLL_SPEED_LABELS[autoScrollSpeed]}
+            </button>
+            {autoScrollMenuOpen && (
+              <div id="score-auto-scroll-menu" role="menu" aria-label="自动滑谱速度"
+                className="absolute left-0 top-full mt-2 grid w-52 gap-1 rounded-2xl border border-white/15 bg-[#100d16]/95 p-2 shadow-2xl backdrop-blur-xl"
+                onKeyDown={(event) => {
+                  if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+                  event.preventDefault();
+                  const options = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]'));
+                  const index = options.indexOf(document.activeElement as HTMLButtonElement);
+                  const next = event.key === 'Home' ? 0 : event.key === 'End' ? options.length - 1
+                    : (index + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length;
+                  options[next]?.focus();
+                }}>
+                {([1, 2, 3, 4, 5, 0] as AutoScrollSpeed[]).map((speed) => (
+                  <button key={speed} type="button" role="menuitemradio" aria-checked={autoScrollSpeed === speed}
+                    onClick={() => selectAutoScrollSpeed(speed)}
+                    className={`flex min-h-10 items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-bold transition ${autoScrollSpeed === speed ? 'bg-orange-300/15 text-orange-100' : 'text-white/70 hover:bg-white/10 hover:text-white'} ${speed === 0 ? 'mt-1 border-t border-white/10' : ''}`}>
+                    <span className="w-4 shrink-0">{autoScrollSpeed === speed && <Check className="h-4 w-4" />}</span>
+                    <span className="flex-1">{speed === 0 ? '关闭自动滑谱' : AUTO_SCROLL_SPEED_LABELS[speed]}</span>
+                    {speed !== 0 && <span className="text-[10px] font-normal text-white/40">{AUTO_SCROLL_PIXELS_PER_SECOND[speed]} 像素/秒</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>}
+          {recordingPlayback && (
+            <button
+              type="button"
+              aria-label={recordingPlayback.playing ? '停止播放录音' : '播放录音'}
+              title={recordingPlayback.playing ? '停止播放录音' : '播放最新录音'}
+              disabled={recordingLoading}
+              aria-busy={recordingLoading}
+              onClick={async () => {
+                setRecordingLoading(true);
+                setRecordingError('');
+                try {
+                  setRecordingError(await recordingPlayback.toggle() ?? '');
+                } catch {
+                  setRecordingError('录音暂时无法播放。');
+                } finally {
+                  setRecordingLoading(false);
+                }
+              }}
+              className={`grid h-8 w-8 shrink-0 place-items-center rounded-full transition disabled:opacity-60 ${recordingPlayback.playing ? 'bg-emerald-300 text-black' : 'border border-white/10 bg-black/50 text-white/70 backdrop-blur-md hover:border-white/25 hover:text-white'}`}
+            >
+              {recordingLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : recordingPlayback.playing
+                ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
+            </button>
+          )}
+          {recordingError && !autoScrollMenuOpen && (
+            <p role="status" className="absolute left-0 top-full mt-2 w-max max-w-64 rounded-xl border border-white/15 bg-[#100d16]/95 px-3 py-2 text-xs text-rose-100">
+              {recordingError}
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="absolute right-3 top-3 z-20 flex shrink-0 items-center gap-2 text-white/85 sm:right-4 sm:top-4">
-        {onSavePage && !pageError && <button type="button" disabled={!editingAllowed} onClick={() => { setAutoScrollSpeed(0); setEditingSource(pages[page]); }} className="inline-flex h-9 items-center gap-1.5 rounded-full border border-white/10 bg-black/50 px-3 text-xs font-bold text-white/85 backdrop-blur-md transition hover:bg-white/15 disabled:opacity-40"><Pencil className="h-3.5 w-3.5" />编辑本页</button>}
+        {onSavePage && !pageError && <button type="button" disabled={!editingAllowed} onClick={() => { setAutoScrollSpeed(0); setEditingSource(pages[page]); }} className="inline-flex h-9 items-center gap-1.5 rounded-full border border-white/10 bg-black/50 px-3 text-xs font-bold text-white/85 backdrop-blur-md transition hover:bg-white/15 disabled:opacity-40"><Pencil className="h-3.5 w-3.5" />编辑</button>}
         <span className="rounded-full border border-white/10 bg-black/50 px-3 py-1 text-xs font-bold tabular-nums text-white/75 backdrop-blur-md">
           {page + 1} / {total}
         </span>

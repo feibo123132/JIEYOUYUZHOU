@@ -144,6 +144,7 @@ const SongDetailPanel = ({
   const [scoreNoteDirty, setScoreNoteDirty] = useState(false);
   const [scoreBusyLocal, setScoreBusyLocal] = useState('');
   const [recordingCount, setRecordingCount] = useState(0);
+  const [isRecordingPlaying, setIsRecordingPlaying] = useState(false);
   const recordingsRef = useRef<SongRecordingsHandle>(null);
   const recordingFileRef = useRef<HTMLInputElement>(null);
   const scoreFileRef = useRef<HTMLInputElement>(null);
@@ -638,6 +639,7 @@ const SongDetailPanel = ({
             session={session}
             canManage={isOwner}
             onCountChange={setRecordingCount}
+            onPlayingChange={setIsRecordingPlaying}
           />
         )}
         {isOwner && session && <SongPerformanceControls key={song.id} song={song} session={session} latestRoadshow={getLatestRoadshow(roadshows) ?? null} singState={roadshowSingState} ready={roadshowSingCountsReady} onRoadshowRecorded={onRoadshowRecorded} />}
@@ -703,6 +705,10 @@ const SongDetailPanel = ({
           onSavePage={session ? saveEditedScorePage : undefined}
           editingAllowed={!scoreBusy && !scoreBusyLocal}
           autoScrollAllowed={Boolean(session)}
+          recordingPlayback={session && recordingCount > 0 ? {
+            playing: isRecordingPlaying,
+            toggle: async () => recordingsRef.current?.toggleLatestPlayback(),
+          } : undefined}
           startEditing={scoreEditorRequested}
           onClose={() => { setScoreViewerOpen(false); setScoreEditorRequested(false); }}
         />
