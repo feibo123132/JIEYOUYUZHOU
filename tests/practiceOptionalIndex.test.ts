@@ -80,10 +80,10 @@ test('一个指数都没评的练习记录不占榜单名额', () => {
 
 test('分榜只收评过本项指数的歌', () => {
   const source = readFileSync(new URL('../src/components/SongRequest/SongRequestStation.tsx', import.meta.url), 'utf8');
-  assert.match(source, /base\.filter\(\(item\) => item\.chorusScore !== null\)/);
-  assert.match(source, /base\.filter\(\(item\) => item\.strumScore !== null\)/);
-  assert.match(source, /base\.filter\(\(item\) => item\.stoolScore !== null\)/);
-  assert.match(source, /base\.filter\(\(item\) => item\.score > 0\)/);
+  assert.match(source, /base\.filter\(\(item\) => allowUnscored \|\| item\.chorusScore != null\)/);
+  assert.match(source, /base\.filter\(\(item\) => allowUnscored \|\| item\.strumScore != null\)/);
+  assert.match(source, /base\.filter\(\(item\) => allowUnscored \|\| item\.stoolScore != null\)/);
+  assert.match(source, /base\.filter\(\(item\) => allowUnscored \|\| item\.score > 0\)/);
 });
 
 test('云端把「没有匹配指数」的歌曲记为 0 分，解析后仍然保留', () => {

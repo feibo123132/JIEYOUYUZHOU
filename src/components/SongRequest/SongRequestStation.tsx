@@ -53,7 +53,7 @@ import {
   type SongScore,
 } from './songScores';
 import {
-  bestMatchScore, clearBrowserSongRecordSession, clearSongRecordCache, getMatchQuality, loadSongRecordCache, parsePublicPracticeRanking, parseSongRecords, rankSongsByPracticeMatch, readBrowserSongRecordSession, recoverSongsFromRecords,
+  bestMatchScore, clearBrowserSongRecordSession, clearSongRecordCache, getMatchQuality, loadSongRecordCache, parsePublicPracticeRanking, parseSongRecords, rankSongsByPracticeMatch, rankSongsByRecordings, readBrowserSongRecordSession, recoverSongsFromRecords,
   saveSongRecordCache, SONG_REQUEST_SESSION_EVENT,
   type PublicPracticeRankingItem, type SongRecord, type SongRecordSession,
 } from './songRecords';
@@ -117,6 +117,9 @@ type PersonalRankingRow = {
   /** 这首歌每段已评录音的分（降序），榜上只显示最高分，其余用作悬停明细。 */
   recordingScores?: number[];
 } & { originalRank: number };
+
+/** 排序前的行（还没拿到名次）；catalogIndex 只用来在分数相同时保持歌单顺序。 */
+type PersonalRankingSeed = Omit<PersonalRankingRow, 'originalRank'> & { catalogIndex?: number };
 
 const QUIZ_LEVEL_STYLES: Record<QuizLevel, { accent: string; panel: string; badge: string }> = {
   warmup: { accent: 'text-emerald-200', panel: 'border-emerald-300/20 bg-emerald-400/[.055]', badge: 'border-emerald-300/35 bg-emerald-300/15 text-emerald-100' },
@@ -268,9 +271,21 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
   const [personalRankingArtist, setPersonalRankingArtist] = useState<string | null>(null);
   const [personalRankingMode, setPersonalRankingMode] = useState<RankingDisplayMode>('normal');
   const [personalRankingBoard, setPersonalRankingBoard] = useState<PracticeBoard>('practice');
-  const [uploadedRecordingSongIds, setUploadedRecordingSongIds] = useState<Set<string>>(() => new Set());
+  // 录音库：本机缓存与云端合并后的全部录音，「有录音的歌曲」「录音榜分数」都由它派生。
+  const [recordingLibrary, setRecordingLibrary] = useState<SongRecording[]>([]);
+  // 有录音已上云的歌曲：榜单里的 🎤 徽章与「只看有录音的歌」筛选都看这一份。
+  const uploadedRecordingSongIds = useMemo(
+    () => new Set(recordingLibrary.filter(({ fileID }) => fileID.startsWith('cloud://')).map(({ songId }) => songId)),
+    [recordingLibrary],
+  );
   // 录音榜的数据源：每首歌取所有录音里最高的录音指数，并记住已评过几段（各段分数留作悬停明细）。
-  const [recordingScoresBySong, setRecordingScoresBySong] = useState<ReturnType<typeof collectRecordingScores>>(() => new Map());
+  const recordingScoresBySong = useMemo(() => collectRecordingScores(recordingLibrary), [recordingLibrary]);
+  // 每首歌一共录了几段（没评分的那段也算），录音榜里显示「录音 N 段」。
+  const recordingCountBySong = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const { songId } of recordingLibrary) map.set(songId, (map.get(songId) ?? 0) + 1);
+    return map;
+  }, [recordingLibrary]);
   // 最近一次合并好的录音列表（本机缓存 + 云端），切榜时据此增量刷新录音指数。
   const recordingSnapshotRef = useRef<SongRecording[]>([]);
   const [personalRankingRecordingsOnly, setPersonalRankingRecordingsOnly] = useState(false);
@@ -915,42 +930,70 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
     [catalogSongs, practiceRankingReturnSongId],
   );
   const personalRankingReversed = personalRankingMode === 'reverse';
+  // 每首歌练过几次（只写感想、没评指数的记录也算），供「只看有录音」时补上练习次数。
+  const practiceCountBySong = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const record of songRecords) {
+      if (record.kind !== 'practice') continue;
+      map.set(record.songId, (map.get(record.songId) ?? 0) + 1);
+    }
+    return map;
+  }, [songRecords]);
   const visiblePersonalRanking = useMemo<PersonalRankingRow[]>(() => {
+    // 点亮「只看有录音的歌」时，有录音却没评过分的歌也要占一行：有分的按分排，没分的自动靠后。
+    const recordingsOnlyRows = (): PersonalRankingSeed[] => rankSongsByRecordings(
+      catalogSongs,
+      uploadedRecordingSongIds,
+      personalRanking,
+      { artist: personalRankingArtist, practiceCounts: practiceCountBySong },
+    ).map((seed) => {
+      const recording = recordingScoresBySong.get(seed.song.id);
+      return {
+        ...seed,
+        recordingScore: recording?.score,
+        recordingCount: recordingCountBySong.get(seed.song.id) ?? recording?.count,
+        recordingScores: recording?.scores,
+      };
+    });
     // 录音榜走另一套数据：只看这首歌有没有评过录音指数，和练习记录无关。
     if (personalRankingBoard === 'recording') {
-      const rows = catalogSongs
-        .flatMap((song, catalogIndex) => {
-          if (personalRankingArtist && song.artist !== personalRankingArtist) return [];
-          const hit = recordingScoresBySong.get(song.id);
-          if (!hit) return [];
-          return [{
-            song, catalogIndex,
-            score: 0, chorusScore: null, strumScore: null, strumBpm: null, stoolScore: null, practiceCount: 0,
-            recordingScore: hit.score, recordingCount: hit.count, recordingScores: hit.scores,
-          }];
-        })
-        .sort((left, right) => right.recordingScore - left.recordingScore || left.catalogIndex - right.catalogIndex);
-      const ordered = orderPersonalRankingItems(rows, personalRankingMode);
-      return personalRankingRecordingsOnly ? ordered.filter(({ song }) => uploadedRecordingSongIds.has(song.id)) : ordered;
+      const rows = personalRankingRecordingsOnly
+        ? recordingsOnlyRows().sort((left, right) => (right.recordingScore ?? 0) - (left.recordingScore ?? 0))
+        : catalogSongs
+          .flatMap((song, catalogIndex) => {
+            if (personalRankingArtist && song.artist !== personalRankingArtist) return [];
+            const hit = recordingScoresBySong.get(song.id);
+            if (!hit) return [];
+            return [{
+              song, catalogIndex,
+              score: 0, chorusScore: null, strumScore: null, strumBpm: null, stoolScore: null, practiceCount: 0,
+              recordingScore: hit.score, recordingCount: hit.count, recordingScores: hit.scores,
+            }];
+          })
+          .sort((left, right) => right.recordingScore - left.recordingScore || left.catalogIndex - right.catalogIndex);
+      return orderPersonalRankingItems(rows, personalRankingMode);
     }
-    const base = personalRankingArtist
-      ? personalRanking.filter(({ song }) => song.artist === personalRankingArtist)
-      : personalRanking;
+    const base: PersonalRankingSeed[] = personalRankingRecordingsOnly
+      ? recordingsOnlyRows()
+      : personalRankingArtist
+        ? personalRanking.filter(({ song }) => song.artist === personalRankingArtist)
+        : personalRanking;
     // 每个分榜只收「评过这项指数」的歌：只评了合唱的歌不该带着空分蹲在狂扫榜底部。
+    // 「只看有录音」时放宽：没评这项分的也留下（分记为 0，自然沉到榜尾）。
+    const allowUnscored = personalRankingRecordingsOnly;
     const ranked = personalRankingBoard === 'chorus'
-      ? base.filter((item) => item.chorusScore !== null)
+      ? base.filter((item) => allowUnscored || item.chorusScore != null)
         .sort((left, right) => ((right.chorusScore ?? 0) - (left.chorusScore ?? 0)) || (right.score - left.score))
       : personalRankingBoard === 'strum'
-        ? base.filter((item) => item.strumScore !== null)
+        ? base.filter((item) => allowUnscored || item.strumScore != null)
           .sort((left, right) => ((right.strumScore ?? 0) - (left.strumScore ?? 0)) || (right.score - left.score))
         : personalRankingBoard === 'stool'
-          ? base.filter((item) => item.stoolScore !== null)
+          ? base.filter((item) => allowUnscored || item.stoolScore != null)
             .sort((left, right) => ((right.stoolScore ?? 0) - (left.stoolScore ?? 0)) || (right.score - left.score))
           // 练习榜只看匹配指数：只评了其它指数的歌会出现在对应的合唱 / 狂扫 / 板凳榜里。
-          : base.filter((item) => item.score > 0);
-    const ordered = orderPersonalRankingItems(ranked, personalRankingMode);
-    return personalRankingRecordingsOnly ? ordered.filter(({ song }) => uploadedRecordingSongIds.has(song.id)) : ordered;
-  }, [personalRanking, personalRankingArtist, personalRankingMode, personalRankingBoard, personalRankingRecordingsOnly, uploadedRecordingSongIds, catalogSongs, recordingScoresBySong])
+          : base.filter((item) => allowUnscored || item.score > 0);
+    return orderPersonalRankingItems(ranked, personalRankingMode);
+  }, [personalRanking, personalRankingArtist, personalRankingMode, personalRankingBoard, personalRankingRecordingsOnly, uploadedRecordingSongIds, catalogSongs, recordingScoresBySong, recordingCountBySong, practiceCountBySong])
   const paginatedPersonalRanking = useMemo(
     () => paginateRankingItems(visiblePersonalRanking, personalRankingPage, PERSONAL_RANKING_PAGE_SIZE),
     [personalRankingPage, visiblePersonalRanking],
@@ -1633,8 +1676,7 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
     let active = true;
     const updateRecordings = (recordings: SongRecording[]) => {
       recordingSnapshotRef.current = recordings;
-      setUploadedRecordingSongIds(new Set(recordings.filter(({ fileID }) => fileID.startsWith('cloud://')).map(({ songId }) => songId)));
-      setRecordingScoresBySong(collectRecordingScores(recordings));
+      setRecordingLibrary(recordings);
     };
 
     const localCache = loadRecordingCache(window.localStorage, songRecordSession.alias);
@@ -1651,7 +1693,7 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
     if (personalRankingBoard !== 'recording' || !songRecordSession) return;
     const merged = mergeSongRecordings(loadRecordingCache(window.localStorage, songRecordSession.alias), recordingSnapshotRef.current);
     recordingSnapshotRef.current = merged;
-    setRecordingScoresBySong(collectRecordingScores(merged));
+    setRecordingLibrary(merged);
   }, [personalRankingBoard, songRecordSession]);
 
   useEffect(() => {
@@ -2692,11 +2734,13 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
                               ) : (
                                 <span className="text-sm leading-none text-white/25" title="这段还没评过录音指数" aria-label="这段还没评过录音指数">—</span>
                               )
-                            ) : (
+                            ) : score > 0 ? (
                               <>
                                 <em className={`practice-quality ${quality?.tone ?? 'white'}`}>{quality?.label ?? '—'}</em>
                                 <strong className="font-serif text-xl text-orange-200">{score}<small className="ml-1 font-sans text-[10px] font-normal text-white/30">匹配指数</small></strong>
                               </>
+                            ) : (
+                              <span className="text-sm leading-none text-white/25" title="还没评过匹配指数" aria-label="还没评过匹配指数">—</span>
                             )}
                           </span>
                         </li>
@@ -2706,7 +2750,7 @@ const SongRequestStation = ({ onBack, canReturnToUniverse, settingsStorage }: So
                       {(songRecordSession || paginatedPersonalRanking.pageCount > 1) && (
                         <nav aria-label="练习榜分页" className="mt-5 flex flex-wrap items-center justify-center gap-3 text-xs text-white/45">
                           {songRecordSession && (
-                            <button type="button" aria-label="只看已上传录音的歌曲" title="只看已上传录音的歌曲" aria-pressed={personalRankingRecordingsOnly}
+                            <button type="button" aria-label="只看已上传录音的歌曲" title="只看已上传录音的歌曲：没评分的也留着，排在后面" aria-pressed={personalRankingRecordingsOnly}
                               onClick={() => setPersonalRankingRecordingsOnly(current => !current)}
                               className="grid h-9 w-9 place-items-center rounded-full border border-amber-200/20 bg-amber-300/10 text-amber-200 hover:bg-amber-300/20 aria-pressed:border-amber-200/60 aria-pressed:bg-amber-300 aria-pressed:text-black">
                               <Mic2 aria-hidden="true" className="h-4 w-4" />

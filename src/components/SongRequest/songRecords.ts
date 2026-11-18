@@ -351,7 +351,18 @@ export const groupPracticeRecordsByCalendar = (records: SongRecord[]): PracticeM
   }));
 };
 
-export const rankSongsByPracticeMatch = (songs: Song[], records: SongRecord[]) => {
+/** 榜单行（排序前）：每首歌一行，四个指数可能是 null（这首歌没评过该项）。 */
+export interface PracticeRankingSeed {
+  song: Song;
+  score: number;
+  practiceCount: number;
+  chorusScore: number | null;
+  strumScore: number | null;
+  strumBpm: number | null;
+  stoolScore: number | null;
+}
+
+export const rankSongsByPracticeMatch = (songs: Song[], records: SongRecord[]): PracticeRankingSeed[] => {
   const practicesBySong = new Map<string, PracticeRecord[]>();
   for (const record of records) {
     if (record.kind !== 'practice') continue;
@@ -379,6 +390,36 @@ export const rankSongsByPracticeMatch = (songs: Song[], records: SongRecord[]) =
     }];
   }).sort((left, right) => right.score - left.score || left.catalogIndex - right.catalogIndex)
     .map(({ song, score, practiceCount, chorusScore, strumScore, strumBpm, stoolScore }) => ({ song, score, practiceCount, chorusScore, strumScore, strumBpm, stoolScore }));
+};
+
+/**
+ * 「只看有录音的歌」用的候选行：只要这首歌有录音就占一行 —— 不管有没有评分。
+ * 评过分的沿用榜上的分（照常按分排），没评过分的全记 0，自然沉到榜尾；
+ * 同一首歌不会重复出现，没录音的歌也不会有。
+ */
+export const rankSongsByRecordings = (
+  songs: Song[],
+  recordedSongIds: Set<string>,
+  ranking: PracticeRankingSeed[],
+  options: { artist?: string | null; practiceCounts?: Map<string, number> } = {},
+): PracticeRankingSeed[] => {
+  const seedBySong = new Map(ranking.map((item) => [item.song.id, item]));
+  const artist = options.artist ?? null;
+  return songs.flatMap((song) => {
+    if (!recordedSongIds.has(song.id)) return [];
+    if (artist && song.artist !== artist) return [];
+    const seed = seedBySong.get(song.id);
+    if (seed) return [seed];
+    return [{
+      song,
+      score: 0,
+      practiceCount: options.practiceCounts?.get(song.id) ?? 0,
+      chorusScore: null,
+      strumScore: null,
+      strumBpm: null,
+      stoolScore: null,
+    }];
+  });
 };
 
 export const parsePublicPracticeRanking = (value: unknown): PublicPracticeRankingItem[] => {
