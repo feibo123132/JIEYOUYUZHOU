@@ -1196,3 +1196,40 @@ test('segment comment ends survive save, trim from an older client, and reload',
     .recording.markers, [marker]);
   assert.deepEqual((await save({ markers: [] })).recording.markers, []);
 });
+
+// 站主练到第 31 段时，云端静默返回 SYNC_FAILED，前端只能显示「云端暂时没有回应」。
+// 现在上限放宽到 2000，并且把「到顶了」「元数据塞满」「数据不合规」分开报给前端。
+test('recording cap allows 2000 takes and reports a dedicated limit error', async () => {
+  const limit = Number(/const SONG_RECORDING_LIMIT = (\d+)/.exec(readFileSync(functionPath, 'utf8'))[1]);
+  assert.ok(limit >= 2000, `recording cap should allow at least 2000 takes, got ${limit}`);
+  const store = memoryStore();
+  const handler = loadFunction().createHandler(store);
+  const account = { alias: 'recording-cap-owner', password: 'recording-cap-fixture-password' };
+  await seedExistingAccount(store, account);
+  const workspaceId = crypto.createHash('sha256').update(account.alias.trim().toLowerCase()).digest('hex');
+  const base = {
+    title: '录音', songId: 'song-cap', songTitle: '我们俩', songArtist: '郭顶',
+    fileID: `cloud://fixture/song-request-recordings/${'a'.repeat(64)}/${'b'.repeat(64)}/take.mp3`,
+    fileName: 'take.mp3', mimeType: 'audio/mpeg', size: 100, duration: 30, clipStart: 0, clipEnd: 30,
+    createdAt: '2026-08-25T12:00:00.000Z', updatedAt: '2026-08-25T12:00:00.000Z',
+  };
+  const take = index => ({ ...base, id: `rec-cap-${index}` });
+  const save = index => handler({ action: 'recordings:save', ...account, recording: take(index) });
+
+  // 先放 limit-1 段，第 limit 段还能存进去。
+  const seeded = await store.getWorkspace(workspaceId);
+  await store.setWorkspace(workspaceId, {
+    ...seeded, recordings: Array.from({ length: limit - 1 }, (_, index) => take(index)),
+  });
+  assert.equal((await save(limit - 1)).ok, true);
+  // 再多一段被拒，且错误码可辨识（前端据此提示「先删旧录音」）。
+  assert.deepEqual(await save(limit), { ok: false, error: 'RECORDING_LIMIT_REACHED' });
+  // 软删一段就腾出名额，符合「只算未删除」的口径。
+  await handler({ action: 'recordings:delete', ...account, id: 'rec-cap-0' });
+  assert.equal((await save(limit)).ok, true);
+  // 校验不通过时也给出明确错误码，不再伪装成云端无响应。
+  assert.deepEqual(await handler({
+    action: 'recordings:save', ...account, recording: { ...take(limit + 1), duration: 0 },
+  }), { ok: false, error: 'INVALID_RECORDING' });
+});
+

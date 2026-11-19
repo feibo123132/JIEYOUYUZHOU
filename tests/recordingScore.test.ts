@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   collectRecordingScores, isRecordingScore, mergeSongRecordings, parseRecordingScoreInput, parseSongRecordings,
+  RECORDING_CACHE_LIMIT, trimRecordingCache,
   type SongRecording,
 } from '../src/components/SongRequest/songRecordings.ts';
 
@@ -80,4 +81,20 @@ test('本机刚评的分不会被云端旧记录盖掉', () => {
   assert.equal(byId.get('a')?.score, 95);
   assert.equal(byId.get('a')?.localBlobId, 'blob-a');
   assert.equal(byId.get('b')?.score, 82);
+});
+
+test('本机缓存裁剪：未同步的一条都不丢，其余留最新的', () => {
+  const synced = Array.from({ length: 500 }, (_, index) => recording({
+    id: `rec-${index}`,
+    updatedAt: `2026-01-01T00:${String(Math.floor(index / 60)).padStart(2, '0')}:${String(index % 60).padStart(2, '0')}.000Z`,
+  }));
+  const pending = [recording({ id: 'pending-old', updatedAt: '2025-01-01T00:00:00.000Z', pendingSync: true })];
+  const trimmed = trimRecordingCache([...synced, ...pending]);
+  assert.equal(trimmed.length, RECORDING_CACHE_LIMIT);
+  assert.equal(trimmed[0].id, 'pending-old', '未同步的排在最前，任何情况下都不被裁掉');
+  assert.equal(trimmed.some((item) => item.id === 'rec-499'), true, '最新的一段要留下');
+  assert.equal(trimmed.some((item) => item.id === 'rec-0'), false, '最老的一段可以被裁掉');
+  // 没超过上限时原样返回，不动顺序。
+  const small = [recording({ id: 'x' }), recording({ id: 'y' })];
+  assert.equal(trimRecordingCache(small), small);
 });

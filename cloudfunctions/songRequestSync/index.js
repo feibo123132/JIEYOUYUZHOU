@@ -25,6 +25,9 @@ const PUBLIC_ERRORS = new Set([
   'INVALID_LOCATION', 'NO_LATEST_ROADSHOW',
   'INVALID_NOTEBOOK',
   'INVALID_SONG_GROUPS',
+  'INVALID_RECORDING',
+  'RECORDING_LIMIT_REACHED',
+  'RECORDING_STORAGE_FULL',
 ]);
 
 const FEATURED_SONGS_OWNER_ALIAS = '2421415030@qq.com';
@@ -33,6 +36,12 @@ const FEATURED_SONGS_OWNER_ALIAS = '2421415030@qq.com';
 const SCORE_PAGE_PROXY_MAX_BYTES = 3_500_000;
 // 录音合并的内存上限：云函数默认 256MB，留足 Buffer + 临时副本余量。
 const SONG_RECORDING_MERGE_MAX_BYTES = 40 * 1024 * 1024;
+// 一个工作台最多存多少段录音（只算未删除的）。原先卡在 30，站主练到第 31 段就传不上去，
+// 而且 INVALID_RECORDING 没进白名单，前端只会看到「云端暂时没有回应」——放宽到 2000 并显式报错。
+const SONG_RECORDING_LIMIT = 2000;
+// 录音元数据（不含音频本身，音频在云存储）的体积上限：recordings:pull 会把这批元数据整个吐回前端，
+// 一旦逼近云函数 6MB 返回上限，所有设备都会拉不到录音列表。留 4MB 余量，超了就让站主先清理旧录音。
+const SONG_RECORDING_META_MAX_BYTES = 4_000_000;
 const OWNER_SONG_SCORE_SEED_VERSION = 1;
 const quizSongPlaysId = (ownerId) => `quiz-song-plays-${ownerId}`;
 const quizRankingResetId = (ownerId) => `quiz-ranking-reset-${ownerId}`;
@@ -936,7 +945,12 @@ function createHandler(store) {
         if (score === undefined) delete saved.score;
         if (index >= 0) recordings[index] = saved;
         else {
-          if (recordings.filter((item) => !item.deletedAt).length >= 30) throw new Error('INVALID_RECORDING');
+          const active = recordings.filter((item) => !item.deletedAt);
+          if (active.length >= SONG_RECORDING_LIMIT) throw new Error('RECORDING_LIMIT_REACHED');
+          // 条数没到顶、但元数据已经胖到会让 pull 撑爆响应体时，同样要挡住，否则全设备一起失联。
+          if (Buffer.byteLength(JSON.stringify([...active, saved])) > SONG_RECORDING_META_MAX_BYTES) {
+            throw new Error('RECORDING_STORAGE_FULL');
+          }
           recordings.push(saved);
         }
         await store.setWorkspace(id, { ...workspace, recordings, updatedAt: saved.updatedAt });

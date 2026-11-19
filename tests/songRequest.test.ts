@@ -2202,7 +2202,8 @@ test('歌曲详情页在路演右侧用谱子标签承载上传与翻谱功能',
   assert.match(panel, /type JournalKind = 'practice' \| 'roadshow' \| 'score'/)
   assert.ok(roadshowButton >= 0 && scoreButton > roadshowButton, '谱子按钮应位于路演按钮右侧')
   assert.match(panel, /aria-pressed=\{activeJournal === 'score'\}/)
-  assert.match(panel, /activeJournal === 'score' && \(\s*<section data-song-score-panel/)
+  // 谱子面板常驻挂载、只隐藏：切到练习 / 路演时不卸载，录音才不会被掐断。
+  assert.match(panel, /<section data-song-score-panel aria-hidden=\{activeJournal !== 'score'\}/)
   assert.match(panel, /activeJournal !== 'score' && \(\s*<div className="grid items-start/)
   assert.match(panel, /\/>打开谱子/)
   assert.match(panel, /\? '添加谱子' : '上传谱子'/)

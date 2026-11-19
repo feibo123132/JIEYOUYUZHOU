@@ -1,6 +1,6 @@
-import { createSamplePeakReader } from './audioClipping';
-import { dbToGain, DEFAULT_RECORDING_GAIN, resolveGainSegments, type RecordingGain } from './audioGain';
-import type { AudioCut } from './songRecordings';
+import { createSamplePeakReader } from './audioClipping.ts';
+import { dbToGain, DEFAULT_RECORDING_GAIN, resolveGainSegments, type RecordingGain } from './audioGain.ts';
+import type { AudioCut } from './songRecordings.ts';
 
 export interface RecordingWaveform {
   id: string;
@@ -25,6 +25,22 @@ export const slicePlayback = (parts: AudioCut[], position: number): AudioCut[] =
 export const joinedPosition = (parts: AudioCut[], sourceTime: number): number => (
   parts.reduce((position, part) => position + Math.max(0, Math.min(sourceTime, part.end) - part.start), 0)
 );
+
+/**
+ * 媒体元素播放时校正播放头：落在保留段内就继续放，
+ * 落在被删掉的段落里就跳到下一段，越过最后一段就算播完。
+ * （<audio> 只能顺序播原文件，删除段得靠这个逐帧纠回来。）
+ */
+export type PlaybackProbe =
+  | { kind: 'ok' }
+  | { kind: 'seek'; at: number }
+  | { kind: 'end' };
+
+export const probePlayback = (parts: AudioCut[], sourceTime: number): PlaybackProbe => {
+  if (parts.some((part) => sourceTime >= part.start && sourceTime < part.end)) return { kind: 'ok' };
+  const next = parts.find((part) => part.start > sourceTime);
+  return next ? { kind: 'seek', at: next.start } : { kind: 'end' };
+};
 
 export const buildPlaybackPeaks = (buffer: AudioBuffer, parts: AudioCut[], gain: RecordingGain = DEFAULT_RECORDING_GAIN) => {
   const readPeak = createSamplePeakReader(buffer);

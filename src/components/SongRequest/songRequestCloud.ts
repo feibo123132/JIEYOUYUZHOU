@@ -17,6 +17,7 @@ import type { ListeningGameRoom } from './listeningGame';
 import type { SongGroupsSnapshot } from './songGroups';
 import type { AudienceSongTagChange, AudienceSongTagLists } from './audienceSongs';
 import type { JournalEntry, JournalSnapshot } from '../Enough/journalModel';
+import { RECORDING_CLOUD_LIMIT } from './songRecordings';
 
 export const pullEnoughJournal = async (credentials: Credentials): Promise<JournalSnapshot> =>
   (await callSync<{ journal: JournalSnapshot }>({ action: 'enough:pull', ...credentials })).journal;
@@ -639,6 +640,9 @@ export const mapSongRecordingError = (error: unknown) => {
   if (code === 'RECORDING_GAIN_UNSUPPORTED') return '增益已保存在本机。云端更新后可点「重试同步」。';
   if (code === 'RECORDING_SCORE_UNSUPPORTED') return '录音指数已保存在本机。云端更新后可点「重试同步」。';
   if (code === 'PAYLOAD_TOO_LARGE') return '录音文件过大，请换更小的文件或先压缩。';
+  if (code === 'RECORDING_LIMIT_REACHED') return `云端最多保存 ${RECORDING_CLOUD_LIMIT} 段录音，先删掉一些旧录音再上传。`;
+  if (code === 'RECORDING_STORAGE_FULL') return '云端录音元数据已经满了（条数未必到顶），先删掉一些旧录音再上传。';
+  if (code === 'INVALID_RECORDING') return '云端没有接下这段录音（数据校验未通过），本机已保存，可点「重试同步」。';
   if (code === 'RECORDING_UPLOAD_FAILED') return '录音未能传到云存储，已保存在本机，可点「重试同步」。';
   if (code === 'RECORDING_TOO_LARGE') return '录音超过 40MB 上限，请先压缩或剪短。';
   if (code === 'RECORDING_LOCAL_MISSING') return '本机找不到这段录音的原始文件（可能被浏览器清理），请重新上传。';
@@ -646,7 +650,7 @@ export const mapSongRecordingError = (error: unknown) => {
   if (code === 'CLOUD_UNAVAILABLE') return '腾讯云暂时未连接，录音只保存在本机。';
   if (code === 'CLOUD_TIMEOUT') return '上传超时，录音已保存在本机，可点「重试同步」。';
   if (code === 'AUTH_FAILED') return '账号验证失败，请重新进入点歌台。';
-  if (/INVALID_ACTION|INVALID_RECORDING/i.test(code)) return '云端尚未部署录音功能，录音暂时只保存在本机。';
+  if (/INVALID_ACTION/i.test(code)) return '云端尚未部署录音功能，录音暂时只保存在本机。';
   return '云端暂时没有回应，录音已保存在本机。';
 };
 

@@ -6,7 +6,7 @@ import type { SongRecordSession } from './songRecords';
 import { getMatchQuality } from './songRecords';
 import {
   deleteRecordingBlob, getRecordingBlob, isRecordingScore, keptDuration, loadRecordingCache, normalizeAudioCuts,
-  parseSongRecordings, putRecordingBlob, RECORDING_MAX_BYTES, resolveKeptSegments, saveRecordingCache,
+  parseSongRecordings, putRecordingBlob, RECORDING_CLOUD_LIMIT, RECORDING_MAX_BYTES, resolveKeptSegments, saveRecordingCache,
   type AudioCut, type SongRecording,
 } from './songRecordings';
 import {
@@ -17,12 +17,14 @@ import { decodeAudioBlob, downloadBlob, encodeAudioClipToWav, formatDuration, fo
 import AudioTrimDialog from './AudioTrimDialog';
 import { loadLegacyAudioMarkers, type AudioMarker } from './audioMarkers';
 import { hasRecordingGain, sameRecordingGain, scheduleAudioGain, type RecordingGain } from './audioGain';
-import { buildPlaybackPeaks, joinedPosition, playbackDuration, slicePlayback, type RecordingWaveform } from './recordingPlayback';
+import { buildPlaybackPeaks, joinedPosition, playbackDuration, probePlayback, slicePlayback, type RecordingWaveform } from './recordingPlayback';
 
 export interface SongRecordingsHandle {
   upload: (file: File) => Promise<void>;
   openTrimPicker: () => void;
   toggleScorePlayback: () => Promise<string | undefined>;
+  /** 切到练习 / 路演时在顶部挂一个「停止」按钮，不用切回谱子就能掐掉播放。 */
+  stopPlayback: () => void;
   readPlaybackPosition: () => number;
   seekPlayback: (position: number) => Promise<string | undefined>;
 }
@@ -40,6 +42,36 @@ interface SongRecordingsProps {
 }
 
 const fileNameOf = (file: File) => file.name.replace(/\.[^.]+$/, '').trim() || '录音';
+
+/**
+ * 一段 0.05 秒的静音 wav。
+ * iOS 只允许「用户手势里 play() 过一次」的媒体元素长期出声，
+ * 所以点击播放时先用它把手势解一次锁，后面换 src 就不会被拦。
+ */
+const SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAABErAAABAAgAZGF0YQAAAAA=';
+
+/**
+ * 锁屏 / 通知栏的控制条：有 metadata 才有锁屏封面与进度，
+ * 否则系统只会把网页当成「静音掉的后台页」，不会当播放器接管。
+ */
+const applyMediaSession = (song: Song | null, recording: SongRecording | null, playing: boolean) => {
+  if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
+  try {
+    if (!recording || !song) {
+      navigator.mediaSession.metadata = null;
+      navigator.mediaSession.playbackState = 'none';
+      return;
+    }
+    if (typeof MediaMetadata !== 'undefined') {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: recording.title,
+        artist: `${song.title} · ${song.artist}`,
+        album: 'JIEYOU 声音档案',
+      });
+    }
+    navigator.mediaSession.playbackState = playing ? 'playing' : 'paused';
+  } catch { /* 老浏览器没有这套 API，忽略即可 */ }
+};
 
 /**
  * 用 <audio> 元数据读时长。比 decodeAudioData 宽容得多，
@@ -82,6 +114,12 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({
   const sourcesRef = useRef<AudioBufferSourceNode[]>([]);
   const playbackGainRef = useRef<GainNode | null>(null);
   const playbackVersionRef = useRef(0);
+  /** 前台追帧的句柄：媒体元素靠它把「删掉的段落」精确跳过（后台自动停，不影响出声）。 */
+  const segmentRafRef = useRef(0);
+  /** 追帧函数本身：从后台切回前台时重新启动它（后台 rAF 会被浏览器停掉）。 */
+  const playbackPumpRef = useRef<(() => void) | null>(null);
+  /** 锁屏 / 线控按钮回调里用的最新播放函数（effect 里只绑一次监听，避免反复解绑）。 */
+  const playbackControlsRef = useRef<{ play?: (recording: SongRecording, position: number) => void; stop?: () => void }>({});
   const urlCacheRef = useRef(new Map<string, string>());
   const recordingsRef = useRef(recordings);
   recordingsRef.current = recordings;
@@ -226,17 +264,19 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({
   }, [commitWith]);
 
   const syncPending = async () => {
-    const targets = recordingsRef.current.filter((item) => item.pendingSync && !item.fileID);
+    const targets = recordingsRef.current.filter((item) => item.pendingSync);
     if (!targets.length) return;
     for (const item of targets) await syncRecording(item.id);
   };
 
   // 进入页面补传一次：上次没传成功的录音（关掉了页面、断网、云函数刚部署）自动续上。
+  // 已经传过音频、只差元数据的那几条（显示「云端待更新」）也一并重试，
+  // 否则修好云端之后还得逐条点「重试同步」。
   useEffect(() => {
     const alias = session?.alias;
     if (!alias || autoSyncRef.current === alias) return;
     autoSyncRef.current = alias;
-    const pending = recordingsRef.current.filter((item) => item.pendingSync && !item.fileID);
+    const pending = recordingsRef.current.filter((item) => item.pendingSync);
     if (!pending.length) return;
     void (async () => {
       for (const item of pending) await syncRecording(item.id);
@@ -245,17 +285,61 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({
 
   useEffect(() => () => {
     playbackVersionRef.current += 1;
+    cancelAnimationFrame(segmentRafRef.current);
     for (const source of sourcesRef.current) { try { source.onended = null; source.stop(); } catch { /* 已停止 */ } }
     sourcesRef.current = [];
     playbackGainRef.current?.disconnect();
     if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
     for (const url of urlCacheRef.current.values()) URL.revokeObjectURL(url);
     urlCacheRef.current.clear();
+    applyMediaSession(null, null, false);
+  }, []);
+
+  /**
+   * 锁屏 / 通知栏的控制条：有 metadata 才有锁屏封面与进度，
+   * 否则系统只会「静音掉这个网页」，不会把它当成正在播放的播放器。
+   */
+  const syncMediaSession = (recording: SongRecording | null, playing: boolean) => applyMediaSession(song, recording, playing);
+
+  // 线控 / 锁屏按钮：只绑一次，通过 ref 调最新的播放函数。
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
+    const mediaSession = navigator.mediaSession;
+    const setHandler = (action: MediaSessionAction, handler: MediaSessionActionHandler | null) => {
+      try { mediaSession.setActionHandler(action, handler); } catch { /* 该设备不支持这个动作 */ }
+    };
+    setHandler('play', () => {
+      const head = playhead.current;
+      const item = head ? recordingsRef.current.find((recording) => recording.id === head.id) : undefined;
+      if (item) playbackControlsRef.current.play?.(item, head?.position ?? 0);
+    });
+    setHandler('pause', () => playbackControlsRef.current.stop?.());
+    setHandler('stop', () => playbackControlsRef.current.stop?.());
+    return () => {
+      setHandler('play', null);
+      setHandler('pause', null);
+      setHandler('stop', null);
+    };
+  }, []);
+
+  // 从后台 / 息屏回来：rAF 被系统停了，重新拉起追帧，删除段才会继续被跳过。
+  useEffect(() => {
+    const restart = () => {
+      if (document.visibilityState !== 'visible' || !playbackRequested.current) return;
+      const pump = playbackPumpRef.current;
+      if (!pump) return;
+      cancelAnimationFrame(segmentRafRef.current);
+      segmentRafRef.current = requestAnimationFrame(pump);
+    };
+    document.addEventListener('visibilitychange', restart);
+    return () => document.removeEventListener('visibilitychange', restart);
   }, []);
 
   const stopPlayback = () => {
     playbackVersionRef.current += 1;
     playbackRequested.current = false;
+    cancelAnimationFrame(segmentRafRef.current);
+    playbackPumpRef.current = null;
     const head = playhead.current;
     if (head?.read) playhead.current = { id: head.id, position: head.read() };
     setBusy(current => current === '正在加载音频…' ? '' : current);
@@ -268,6 +352,20 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({
     const audio = audioRef.current;
     if (audio) { audio.pause(); try { audio.currentTime = 0; } catch { /* ignore */ } }
     setPlayingId(null);
+    applyMediaSession(null, null, false);
+  };
+
+  /**
+   * 点播放时先同步解一次媒体元素的锁（必须在手势里，不能 await 之后再做），
+   * 否则 iOS 会把之后的 play() 当成自动播放拦下来。
+   */
+  const unlockAudioElement = () => {
+    let audio = audioRef.current;
+    if (!audio) { audio = new Audio(); audioRef.current = audio; }
+    if (audio.dataset.unlocked === '1') return;
+    audio.dataset.unlocked = '1';
+    audio.src = SILENT_WAV;
+    void audio.play().catch(() => undefined);
   };
 
   const playableUrl = async (recording: SongRecording): Promise<string> => {
@@ -290,49 +388,65 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({
   };
 
   /**
-   * 兜底播放：解码失败（超大文件 / 特殊编码）时交给 <audio>。
-   * 跳段精度受 timeupdate（约 250ms）限制，所以只当备用。
+   * 媒体元素播放（默认路径）：只有 <audio> 能被系统当成播放器接管，
+   * 息屏、切到别的 App、锁屏后继续出声靠的都是它（酷狗那种体验）。
+   * 裁剪段靠 rAF 逐帧跳过（前台约 16ms，听不出），后台 rAF 停了就由 timeupdate 兜（约 250ms）。
    */
-  const playFromElement = async (recording: SongRecording, version: number, parts: AudioCut[], position: number) => {
+  const playWithMediaElement = async (recording: SongRecording, version: number, parts: AudioCut[], position: number): Promise<boolean> => {
     const url = await playableUrl(recording);
-    if (version !== playbackVersionRef.current) return;
+    if (version !== playbackVersionRef.current) return false;
     const audio = audioRef.current ?? new Audio();
     audioRef.current = audio;
-    audio.src = url;
+    audio.setAttribute('playsinline', 'true');
+    audio.preload = 'auto';
+    if (audio.src !== url) audio.src = url;
     const finish = () => finishPlayback(recording.id, playbackDuration(parts), version);
-    audio.onended = finish;
-    audio.ontimeupdate = () => {
-      if (version !== playbackVersionRef.current) return;
-      const time = audio.currentTime;
-      const next = parts.find(part => time < part.end);
-      if (!next) {
-        audio.pause();
-        finish();
-      } else if (time < next.start) {
-        try { audio.currentTime = next.start; } catch { /* ignore */ }
-      }
+    // 把播放头推回保留段内：返回 false 表示已经放到头了。
+    const settleIntoKeptPart = () => {
+      if (version !== playbackVersionRef.current) return false;
+      if (audio.seeking || audio.paused) return true;
+      const probe = probePlayback(parts, audio.currentTime);
+      if (probe.kind === 'ok') return true;
+      if (probe.kind === 'end') { audio.pause(); finish(); return false; }
+      try { audio.currentTime = probe.at; } catch { /* 还没 seekable */ }
+      return true;
     };
-    audio.currentTime = slicePlayback(parts, position)[0].start;
+    const pump = () => {
+      // 暂停 / 播完就停掉追帧，别空转；回到前台时由 visibilitychange 重新拉起。
+      if (audio.paused || !settleIntoKeptPart()) return;
+      if (document.visibilityState === 'visible') segmentRafRef.current = requestAnimationFrame(pump);
+    };
+    audio.onended = () => { if (version === playbackVersionRef.current) finish(); };
+    audio.ontimeupdate = () => { settleIntoKeptPart(); };
+    const first = slicePlayback(parts, position)[0];
+    audio.currentTime = (first ?? parts[0]).start;
     await audio.play();
-    if (version === playbackVersionRef.current && playbackRequested.current) {
-      playhead.current = { id: recording.id, position, read: () => joinedPosition(parts, audio.currentTime) };
-      setPlayingId(recording.id);
-    }
+    if (version !== playbackVersionRef.current || !playbackRequested.current) return false;
+    playhead.current = { id: recording.id, position, read: () => joinedPosition(parts, audio.currentTime) };
+    playbackPumpRef.current = pump;
+    segmentRafRef.current = requestAnimationFrame(pump);
+    setPlayingId(recording.id);
+    syncMediaSession(recording, true);
+    return true;
   };
 
   const finishPlayback = (id: string, duration: number, version: number) => {
     if (version !== playbackVersionRef.current) return;
     playbackRequested.current = false;
     playhead.current = { id, position: duration };
+    cancelAnimationFrame(segmentRafRef.current);
+    playbackPumpRef.current = null;
     setPlayingId(null);
+    applyMediaSession(null, null, false);
   };
 
   /**
-   * 播放裁剪结果：直接把保留段排进 AudioBufferSourceNode。
-   * 删除段在调度阶段就被跳过（采样级精确、无 timeupdate 的 250ms 滞后），
-   * 所以「删掉中间一小段」听上去是真的一剪就没。
+   * 播放录音。默认交给 <audio>（息屏 / 后台能继续播），
+   * 存过增益的录音才走 Web Audio —— <audio> 的 volume 上限是 1，抬不动电平。
    */
   const playRecording = async (recording: SongRecording, position = 0) => {
+    // 必须在 await 之前、在这个点击手势里把媒体元素解一次锁（iOS 的硬要求）。
+    unlockAudioElement();
     stopPlayback();
     setSelectedRecordingId(recording.id);
     playhead.current = { id: recording.id, position };
@@ -347,6 +461,16 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({
     const parts = slicePlayback(kept, position);
     if (!parts.length) return fail('没有可播放的部分。');
 
+    if (!hasRecordingGain(recording.gain)) {
+      try {
+        if (await playWithMediaElement(recording, version, kept, position)) return;
+        if (version !== playbackVersionRef.current) return;
+      } catch {
+        if (version !== playbackVersionRef.current) return;
+        // 媒体元素也放不了（编码特殊 / 取不到地址），退到解码后的 Web Audio。
+      }
+    }
+
     let buffer = bufferCacheRef.current?.id === recording.id ? bufferCacheRef.current.buffer : null;
     if (!buffer) {
       setBusy('正在加载音频…');
@@ -359,7 +483,7 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({
         return fail('无法读取音频来应用已保存的增益，请重试。');
       }
       try {
-        await playFromElement(recording, version, kept, position);
+        await playWithMediaElement(recording, version, kept, position);
       } catch {
         if (version === playbackVersionRef.current) return fail('这段录音暂时无法播放，请重新上传。');
       }
@@ -401,11 +525,18 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({
         read: () => position + Math.max(0, Math.min(cursor - startedAt, context.currentTime - startedAt)),
       };
       setPlayingId(recording.id);
+      syncMediaSession(recording, true);
     } catch {
       if (version !== playbackVersionRef.current) return;
       stopPlayback();
       return fail('这段录音暂时无法播放，请重新上传。');
     }
+  };
+
+  // 锁屏按钮用的是这里的最新函数，避免在 effect 里反复解绑监听。
+  playbackControlsRef.current = {
+    play: (recording, position) => { void playRecording(recording, position); },
+    stop: () => stopPlayback(),
   };
 
   const togglePlay = async (recording: SongRecording) => {
@@ -493,6 +624,11 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({
   const upload = async (file: File) => {
     if (!session || !canManage) { setMessage('只有登录后的站主可以上传录音。'); return; }
     if (file.size > RECORDING_MAX_BYTES) { setMessage(`录音超过 ${formatRecordingSize(RECORDING_MAX_BYTES)} 上限，请先压缩或剪短。`); return; }
+    // 云端上限是「录音条数」，先拦一下，别等 4MB 传完才被拒。
+    if (recordingsRef.current.length >= RECORDING_CLOUD_LIMIT) {
+      setMessage(`云端最多保存 ${RECORDING_CLOUD_LIMIT} 段录音，先删掉一些旧录音再上传。`);
+      return;
+    }
     stopPlayback();
     setMessage('');
     setBusy('正在读取音频信息…');
@@ -640,6 +776,7 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({
 
   useImperativeHandle(ref, () => ({
     upload,
+    stopPlayback: () => stopPlayback(),
     toggleScorePlayback: async () => {
       if (playbackRequested.current) { stopPlayback(); return; }
       if (selectedRecording) {
@@ -670,7 +807,8 @@ const SongRecordings = forwardRef<SongRecordingsHandle, SongRecordingsProps>(({
 
   if (!songRecordings.length && !busy && !message && !trimming) return null;
 
-  const pendingCount = songRecordings.filter((item) => item.pendingSync && !item.fileID).length;
+  // 批量补传包含「已上传音频、只差元数据」的那几条，和单条的「重试同步」保持同一口径。
+  const pendingCount = songRecordings.filter((item) => item.pendingSync).length;
 
   return (
     <section id={`recording-list-${song.id}`} className="mt-5 rounded-2xl border border-orange-200/12 bg-orange-300/[.035] p-4">

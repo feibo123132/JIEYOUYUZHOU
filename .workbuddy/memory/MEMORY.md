@@ -14,6 +14,8 @@
 - 练习徽章：`songPracticeStats` memo 聚合 `{count, score}`；显示开关持久化在 `localStorage` `jieyou_show_practice_badges`。
 - **录音指数（第五个指数，2026-11 新增）**：存在录音记录 `SongRecording.score`（70–100 整数，同一套 `getMatchQuality` 分档），跟着录音上云。线上用 `score: 0` 表示「这段没评」（省略字段=本次客户端没带，云端沿用已有值）；云函数 `validation.js` 把 0 落成不存字段，`index.js recordings:save` 里「显式 0=清空、省略=沿用」。旧云函数会把它洗掉，客户端回环比对抛 `RECORDING_SCORE_UNSUPPORTED` 并保留本机（与 markers/gain 同一套降级范式）。录入位置：`AudioTrimDialog` 留言框左侧，失焦/回车/关闭/保存时提交。
 - **录音榜**：`PracticeBoard` 第五个成员 `'recording'`。数据不走 `rankSongsByPracticeMatch`（只收有匹配指数的歌），而是 `collectRecordingScores(录音)` 按 songId 取最高分；数据源＝本机 `loadRecordingCache` + 云端 `pullCloudSongRecordings`，用 `mergeSongRecordings` 按 id（较新 updatedAt 胜出）合并，防止云端旧数据盖掉本机刚评的分。
+- **录音条数上限**：云函数 `SONG_RECORDING_LIMIT`（2026-11-18 从 30 → 200 → 2000，只算未标 deletedAt 的）+ 前端 `RECORDING_CLOUD_LIMIT`（songRecordings.ts）同值，上传前先拦。超限抛 `RECORDING_LIMIT_REACHED`、元数据体积过 4MB 抛 `RECORDING_STORAGE_FULL`（`SONG_RECORDING_META_MAX_BYTES`，为 `recordings:pull` 的 6MB 返回上限留余量）、校验不过抛 `INVALID_RECORDING`，三者都必须在 `PUBLIC_ERRORS` 白名单里，否则会被兜成 `SYNC_FAILED`，前端只显示「云端暂时没有回应」——排查录音上传失败先看这两处。
+- **本机录音缓存的 5MB 配额**：`saveRecordingCache` 会先用 `trimRecordingCache` 裁到 `RECORDING_CACHE_LIMIT = 400` 条（未同步的优先全留，其余按 updatedAt 取最新）。2000 段时 localStorage 按 UTF-16 计字节会撞 5MB 配额，裁掉的老记录靠 `pullCloudSongRecordings` 补回。
 
 ## 谱子（SongScore）图片加载（重要坑）
 - 云端只存 `cloud://.../song-request-scores/...jpg` fileID（`toStoredSongScore` 会剥离 pageUrls）；显示必须用 `getTempFileURL` 换签名地址，**签名地址有有效期**。

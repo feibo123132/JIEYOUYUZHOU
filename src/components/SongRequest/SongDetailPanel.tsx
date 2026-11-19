@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CalendarDays, ChevronDown, ChevronUp, Cloud, Disc3, FileText, Guitar, MessageCircle, Mic, Music4, Pencil, Save, Scissors, Target, Trash2, Upload } from 'lucide-react';
+import { CalendarDays, ChevronDown, ChevronUp, Cloud, Disc3, FileText, Guitar, Headphones, MessageCircle, Mic, Music4, Pencil, Save, Scissors, Target, Trash2, Upload } from 'lucide-react';
 import SongRecordings, { type SongRecordingsHandle } from './SongRecordingPanel';
 import { isFeaturedSongManager } from './songRequest';
 import type { Song } from './songCatalog';
@@ -530,6 +530,16 @@ const SongDetailPanel = ({
               </>}
             </div>
             <div data-journal-toolbar className="flex w-full flex-wrap items-center justify-end gap-3">
+              {activeJournal !== 'score' && isRecordingPlaying && (
+                <button
+                  type="button"
+                  onClick={() => recordingsRef.current?.stopPlayback()}
+                  title="停止正在播放的录音"
+                  className="inline-flex h-9 items-center gap-1.5 rounded-full border border-emerald-300/25 bg-emerald-400/10 px-3 text-xs font-black text-emerald-100 transition hover:bg-emerald-400/20"
+                >
+                  <Headphones className="h-3.5 w-3.5" />正在播放录音<span className="font-bold text-emerald-200/70">· 停止</span>
+                </button>
+              )}
               <div role="group" aria-label="切换记录类型" className="inline-flex rounded-2xl border border-white/10 bg-black/25 p-1">
                 {session && <><button type="button" aria-pressed={activeJournal === 'practice'} onClick={() => setActiveJournal('practice')} className={`inline-flex h-9 items-center gap-2 rounded-xl px-3 text-xs font-bold transition ${activeJournal === 'practice' ? 'bg-orange-300 text-black shadow-[0_8px_25px_rgba(251,146,60,.2)]' : 'text-white/40 hover:text-white/75'}`}><Guitar className="h-4 w-4" />练习</button>
                 {isOwner && <button type="button" aria-pressed={activeJournal === 'roadshow'} onClick={() => setActiveJournal('roadshow')} className={`inline-flex h-9 items-center gap-2 rounded-xl px-3 text-xs font-bold transition ${activeJournal === 'roadshow' ? 'bg-orange-300 text-black shadow-[0_8px_25px_rgba(251,146,60,.2)]' : 'text-white/40 hover:text-white/75'}`}><MessageCircle className="h-4 w-4" />路演</button>}</>}
@@ -540,8 +550,8 @@ const SongDetailPanel = ({
         </div>
       </div>
 
-      {activeJournal === 'score' && (
-      <section data-song-score-panel className="rounded-[1.75rem] border border-white/10 bg-[#09090d]/80 p-5 backdrop-blur-xl sm:p-7">
+      {/* 谱子面板常驻挂载，切到练习/路演只隐藏：录音还在播的时候换个维度不该被卸载掐断。 */}
+      <section data-song-score-panel aria-hidden={activeJournal !== 'score'} className={`${activeJournal === 'score' ? '' : 'hidden '}rounded-[1.75rem] border border-white/10 bg-[#09090d]/80 p-5 backdrop-blur-xl sm:p-7`}>
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex min-w-0 max-w-full items-start gap-3">
             <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-orange-200/15 bg-orange-300/10 text-orange-200"><Music4 className="h-5 w-5" /></span>
@@ -700,7 +710,6 @@ const SongDetailPanel = ({
           </p>
         )}
       </section>
-      )}
 
       {scoreViewerOpen && scorePages.length > 0 && (
         <ScoreViewer

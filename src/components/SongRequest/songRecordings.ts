@@ -43,6 +43,13 @@ export const RECORDINGS_CACHE_PREFIX = 'jieyou-song-recordings-v1:';
 /** 与云函数 SONG_RECORDING_MERGE_MAX_BYTES / SONG_RECORDING_MAX_BYTES 保持一致。 */
 export const RECORDING_MAX_BYTES = 40 * 1024 * 1024;
 export const RECORDING_MAX_CUTS = 30;
+/**
+ * 云端一个工作台最多存多少段录音（只算未删除的）。
+ * 与云函数 SONG_RECORDING_LIMIT 保持一致：超过时云端会拒收（RECORDING_LIMIT_REACHED），
+ * 这里提前拦一下，免得上传完 4MB 才失败。云端还有一道元数据体积闸（约 4MB），
+ * 条数没到顶也可能因为标记太多被拒（RECORDING_STORAGE_FULL）。
+ */
+export const RECORDING_CLOUD_LIMIT = 2000;
 
 const isFiniteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
 
@@ -150,12 +157,29 @@ export const loadRecordingCache = (storage: { getItem: (key: string) => string |
 
 export const saveRecordingCache = (storage: { setItem: (key: string, value: string) => void }, alias: string, recordings: SongRecording[]) => {
   try {
-    storage.setItem(`${RECORDINGS_CACHE_PREFIX}${alias}`, JSON.stringify(recordings));
+    storage.setItem(`${RECORDINGS_CACHE_PREFIX}${alias}`, JSON.stringify(trimRecordingCache(recordings)));
     return true;
   } catch {
     // 缓存失败不影响云端权威数据。
     return false;
   }
+};
+
+/**
+ * localStorage 里最多缓存多少段录音。
+ * 云端才是权威数据，缓存太大在接近 2000 段时会撞上浏览器 5MB 配额（Chrome 按 UTF-16 计字节），
+ * 所以只留最近的一批 + 全部「还没同步」的；更早的靠 pullCloudSongRecordings 拉回来。
+ */
+export const RECORDING_CACHE_LIMIT = 400;
+
+/** 按「未同步优先、其余取最新」裁剪缓存，保证待补传的录音一条都不会被挤掉。 */
+export const trimRecordingCache = (recordings: SongRecording[]): SongRecording[] => {
+  if (recordings.length <= RECORDING_CACHE_LIMIT) return recordings;
+  const pending = recordings.filter((item) => item.pendingSync);
+  const synced = recordings
+    .filter((item) => !item.pendingSync)
+    .sort((left, right) => String(right.updatedAt ?? '').localeCompare(String(left.updatedAt ?? '')));
+  return [...pending, ...synced].slice(0, Math.max(RECORDING_CACHE_LIMIT, pending.length));
 };
 
 /* ------------------------------------------------------------------ */
